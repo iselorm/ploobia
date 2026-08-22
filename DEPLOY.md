@@ -71,6 +71,12 @@ can be forwarded. That is the right trade for a first round; if it needs to
 tighten later, Cloudflare Access can put an email allowlist in front of the
 whole project without touching a line of code.
 
+**Send a link, not a file.** An iPhone tester was emailed the HTML and got a
+blank screen: Safari will not run a module script from a `file://` origin. If
+someone genuinely needs an offline copy, build the one made for it —
+`npm run build:offline` → `dist-offline/Ploobia-offline.html` — which uses a
+classic script and opens from Mail, Files or a USB stick.
+
 Worth saying in the invitation:
 
 - **It's a browser thing.** No install. Chrome, Edge, Safari or Firefox, on a

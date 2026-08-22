@@ -10,3 +10,4 @@ app/shots/
 shots/
 *.log
 .DS_Store
+dist-offline/

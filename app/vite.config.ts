@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 import { inspectAttr } from 'plugin-inspect-react-code'
 import { viteSingleFile } from 'vite-plugin-singlefile'
+import { bootGuard } from '../boot-guard.js'
 
 // https://vite.dev/config/
 //
@@ -19,9 +20,54 @@ import { viteSingleFile } from 'vite-plugin-singlefile'
 const BUILD_ID =
   process.env.PLOOBIA_BUILD ?? `${new Date().toISOString().slice(0, 16).replace('T', ' ')} local`
 
+/**
+ * Offline build (`PLOOBIA_OFFLINE=1`) — a copy that survives being opened as a
+ * FILE rather than served.
+ *
+ * Safari refuses `<script type="module">` on a `file://` origin: it treats file
+ * as an opaque origin and applies CORS to module fetches, inline ones included.
+ * So an .html emailed to an iPhone shows a blank screen, while the same file on
+ * a laptop works — which is exactly how a tester found it. Chromium is more
+ * permissive, so this never shows up in local testing.
+ *
+ * The fix is to stop being a module: bundle as an IIFE and drop the
+ * `type="module" crossorigin` attributes, leaving a classic script, which every
+ * browser will run from a file. Nothing in the app needs module semantics once
+ * it is a single bundled chunk.
+ *
+ * The hosted build stays a module — this variant exists for handing the arcade
+ * to someone with no reliable connection, which for this product is a real case
+ * and not an edge one.
+ */
+const OFFLINE = process.env.PLOOBIA_OFFLINE === '1'
+
+/**
+ * Turns the emitted module tag into a classic one. Offline builds only.
+ *
+ * This runs while the tag still carries its `src` — vite-plugin-singlefile
+ * inlines the code later, in generateBundle — so it strips the attributes and
+ * leaves the tag itself alone, rather than trying to match the finished inline
+ * form.
+ */
+const classicScript = {
+  name: 'ploobia-classic-script',
+  enforce: 'post' as const,
+  transformIndexHtml(html: string) {
+    return html.replace(/<script\b[^>]*>/g, (tag) =>
+      /type="module"/.test(tag) ? tag.replace(/\s+type="module"/, '').replace(/\s+crossorigin/, '') : tag,
+    )
+  },
+}
+
 export default defineConfig(({ command }) => ({
   base: './',
-  plugins: [...(command === 'serve' ? [inspectAttr()] : []), react(), viteSingleFile()],
+  plugins: [
+    ...(command === 'serve' ? [inspectAttr()] : []),
+    bootGuard(BUILD_ID),
+    react(),
+    viteSingleFile(),
+    ...(OFFLINE ? [classicScript] : []),
+  ],
   define: {
     __PLOOBIA_BUILD__: JSON.stringify(BUILD_ID),
   },
@@ -33,6 +79,9 @@ export default defineConfig(({ command }) => ({
   // only folds in JS and CSS.
   build: {
     assetsInlineLimit: 4 * 1024 * 1024,
+    // An IIFE has no import/export to resolve, so it can run as a classic
+    // script — which is what makes the offline copy openable from a file.
+    ...(OFFLINE ? { rollupOptions: { output: { format: 'iife' as const } } } : {}),
   },
   resolve: {
     alias: {

@@ -1,0 +1,197 @@
+<!--
+  Boot guard — the thing that stands between a learner and a blank screen.
+
+  A tester on an older iPhone reported "nothing shows, just a blank screen",
+  and nothing in the app could tell us why: `SceneErrorBoundary` only catches
+  React errors *after* React mounts, the pilot report tab is rendered by React,
+  and `<body>` was a single empty `<div id="root">`. If the bundle never runs,
+  there is literally nothing on screen and nothing to press.
+
+  So this is a CLASSIC script — deliberately not `type="module"` — placed before
+  the module bundle. A classic script runs in every situation the module script
+  might not, which is the whole point:
+
+    * Safari refuses `<script type="module">` on a `file://` origin (it treats
+      file as an opaque origin and applies CORS to module fetches, inline ones
+      included). Chromium allows it, which is why an offline test on a laptop
+      passes and an emailed .html file on an iPhone shows nothing at all.
+    * A syntax error anywhere in the bundle kills the whole thing at parse time
+      on browsers older than the build target.
+    * iOS Safari reclaims memory-hungry pages, sometimes before first paint.
+
+  It shows a real message with the likely reason, and a Copy button, so a
+  blank screen becomes a report instead of a shrug.
+-->
+<div id="boot-shell" aria-live="polite">
+  <div class="boot-card">
+    <div class="boot-eyes" aria-hidden="true"><span></span><span></span></div>
+    <p class="boot-msg" id="boot-msg">Starting Ploobia…</p>
+    <div id="boot-fail" hidden>
+      <h1>Ploobia could not start on this device</h1>
+      <p id="boot-why"></p>
+      <pre id="boot-detail"></pre>
+      <div class="boot-actions">
+        <button type="button" id="boot-copy">Copy the details</button>
+        <button type="button" id="boot-reload">Try again</button>
+      </div>
+      <p class="boot-foot">Send the copied text to whoever gave you this link — it says exactly what went wrong.</p>
+    </div>
+  </div>
+</div>
+<noscript>
+  <div style="padding:2rem;font:600 16px/1.6 system-ui,sans-serif;color:#402222;background:#FBF5EA">
+    Ploobia needs JavaScript switched on. Everything here is a simulation you run in the browser, so there is
+    nothing to show without it.
+  </div>
+</noscript>
+<style>
+  #boot-shell{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;
+    padding:1.5rem;background:#17130F;font-family:Nunito,system-ui,-apple-system,"Segoe UI",sans-serif}
+  #boot-shell.gone{display:none}
+  .boot-card{width:100%;max-width:34rem;text-align:center;color:#E9E1CF}
+  .boot-eyes{display:flex;gap:.55rem;justify-content:center;margin-bottom:1rem}
+  .boot-eyes span{width:2rem;height:2.35rem;border-radius:50%;background:radial-gradient(circle at 38% 30%,#FFF3CF,#F5C862 45%,#C97A1F);
+    border:2px solid #8A5410;position:relative;animation:boot-bob 2.4s ease-in-out infinite}
+  .boot-eyes span:last-child{animation-delay:.2s}
+  .boot-eyes span::after{content:"";position:absolute;left:34%;top:38%;width:.62rem;height:.62rem;border-radius:50%;background:#2A1A08}
+  @keyframes boot-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-.28rem)}}
+  @media (prefers-reduced-motion:reduce){.boot-eyes span{animation:none}}
+  .boot-msg{font-size:.95rem;font-weight:700;opacity:.65;margin:0}
+  #boot-fail h1{font-size:1.3rem;font-weight:900;margin:.25rem 0 .6rem;color:#FBF5EA;line-height:1.25}
+  #boot-fail p{font-size:.95rem;font-weight:600;line-height:1.55;margin:0 0 .9rem;color:#E9E1CF;opacity:.9}
+  #boot-detail{text-align:left;white-space:pre-wrap;word-break:break-word;font:500 11px/1.5 ui-monospace,Menlo,Consolas,monospace;
+    background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.12);border-radius:.75rem;padding:.7rem .8rem;
+    max-height:11rem;overflow:auto;color:#CFC6B4;margin:0 0 .9rem}
+  .boot-actions{display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap}
+  .boot-actions button{font:800 14px/1 inherit;border:0;border-radius:999px;padding:.85rem 1.4rem;cursor:pointer;
+    min-height:44px;color:#17130F;background:#E8A33D}
+  .boot-actions button#boot-reload{background:transparent;color:#E9E1CF;border:1px solid rgba(255,255,255,.25)}
+  .boot-foot{font-size:.8rem;opacity:.55;margin:.9rem 0 0}
+</style>
+<script>
+  /* Classic script on purpose — see the comment above. No modern syntax here:
+     this file's whole job is to run where the bundle could not, including on a
+     browser too old to parse it. ES5 only, no arrow functions, no const. */
+  (function () {
+    var shell = document.getElementById('boot-shell')
+    var failed = false
+    var errors = []
+
+    function note(what) {
+      if (errors.length < 6) errors.push(String(what).slice(0, 400))
+    }
+
+    window.addEventListener('error', function (e) {
+      // Resource errors (a blocked script) have no message but do have a target.
+      note(e && e.message ? e.message : 'load error: ' + ((e && e.target && (e.target.src || e.target.tagName)) || '?'))
+    }, true)
+    window.addEventListener('unhandledrejection', function (e) {
+      note('promise: ' + ((e && e.reason) || '?'))
+    })
+
+    function mounted() {
+      var root = document.getElementById('root')
+      return !!(root && root.firstChild)
+    }
+
+    function gl() {
+      try {
+        var c = document.createElement('canvas')
+        if (c.getContext('webgl2')) return 'webgl2'
+        if (c.getContext('webgl') || c.getContext('experimental-webgl')) return 'webgl1 only'
+        return 'NONE'
+      } catch (err) {
+        return 'blocked'
+      }
+    }
+
+    /* The specific, actionable diagnosis comes first; the generic one last. */
+    function why() {
+      var isFile = location.protocol === 'file:'
+      var ua = navigator.userAgent
+      var isApple = /iPhone|iPad|iPod/.test(ua) || (/Safari/.test(ua) && !/Chrome|Chromium|Edg|Firefox/.test(ua))
+      if (isFile && isApple) {
+        return 'This page was opened as a file rather than from a web address, and Safari will not run an app opened that way. It is a Safari rule, not a fault on your device. Ask for the web link instead — it will work straight away.'
+      }
+      if (isFile) {
+        return 'This page was opened as a file rather than from a web address. Some browsers refuse to run an app that way. Ask for the web link instead.'
+      }
+      if (gl() === 'NONE') {
+        return 'This browser cannot draw 3D graphics (WebGL is unavailable), which is everything Ploobia does. Try another browser, or switch off any "lite" or data-saving mode.'
+      }
+      if (gl() === 'webgl1 only') {
+        return 'This browser only supports the older version of 3D graphics (WebGL 1). Ploobia needs WebGL 2, which usually means the browser or the device software needs updating.'
+      }
+      if (errors.length) {
+        return 'Ploobia hit an error while starting up. The details below say what it was.'
+      }
+      return 'Ploobia did not finish starting. That is usually an out-of-date browser, or the device running out of memory for the 3D scene.'
+    }
+
+    function details() {
+      var lines = [
+        'Ploobia failed to start',
+        'when   ' + new Date().toISOString(),
+        'build  ' + (window.__PLOOBIA_BUILD_ID__ || 'unknown'),
+        'where  ' + location.protocol + '//' + (location.host || '(local file)') + location.pathname.slice(-40) + location.hash,
+        'device ' + navigator.userAgent,
+        'screen ' + screen.width + 'x' + screen.height + ' @' + (window.devicePixelRatio || 1),
+        'webgl  ' + gl(),
+        'modules ' + ('noModule' in document.createElement('script') ? 'supported' : 'NOT supported'),
+        'memory ' + (navigator.deviceMemory || '?') + 'GB · cores ' + (navigator.hardwareConcurrency || '?'),
+      ]
+      lines.push(errors.length ? 'errors:\n  ' + errors.join('\n  ') : 'errors: none captured')
+      return lines.join('\n')
+    }
+
+    function fail() {
+      if (failed || mounted()) return
+      failed = true
+      document.getElementById('boot-msg').style.display = 'none'
+      document.getElementById('boot-why').textContent = why()
+      document.getElementById('boot-detail').textContent = details()
+      document.getElementById('boot-fail').hidden = false
+      var copy = document.getElementById('boot-copy')
+      copy.onclick = function () {
+        var text = details()
+        try {
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(text)
+            copy.textContent = 'Copied'
+            return
+          }
+        } catch (err) {
+          /* fall through to selection */
+        }
+        var d = document.getElementById('boot-detail')
+        var r = document.createRange()
+        r.selectNodeContents(d)
+        var s = window.getSelection()
+        s.removeAllRanges()
+        s.addRange(r)
+        copy.textContent = 'Select and copy'
+      }
+      document.getElementById('boot-reload').onclick = function () {
+        location.reload()
+      }
+    }
+
+    /* Poll rather than fire once: a slow phone may legitimately take a while,
+       and the moment React mounts we want the shell gone, not a timer racing it. */
+    var waited = 0
+    var tick = setInterval(function () {
+      waited += 250
+      if (mounted()) {
+        clearInterval(tick)
+        shell.className = 'gone'
+        return
+      }
+      // Twelve seconds is generous for a cheap tablet compiling shaders, and
+      // short enough that a person has not yet given up and closed the tab.
+      if (waited >= 12000) {
+        clearInterval(tick)
+        fail()
+      }
+    }, 250)
+  })()
+</script>

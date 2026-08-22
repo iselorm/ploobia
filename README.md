@@ -54,6 +54,30 @@ For a pilot build, add the report tab and stamp the build:
 VITE_PILOT=1 PLOOBIA_BUILD=$(git rev-parse --short HEAD) npm run build
 ```
 
+### Handing someone a file
+
+```bash
+npm run build:offline        # → dist-offline/Ploobia-offline.html
+```
+
+**Use this build, not `dist/app/index.html`, for anything a person opens as a
+file** — emailed, AirDropped, on a USB stick, in a folder with no server.
+
+Safari refuses `<script type="module">` on a `file://` origin: it treats file as
+an opaque origin and applies CORS to module fetches, inline ones included. So
+the hosted build shows an iPhone a completely blank screen when tapped from
+Mail, while the identical file works on a laptop — Chromium is permissive here,
+which is why it passed every local `file://` test until a tester found it. The
+offline build bundles as an IIFE and drops `type="module"`, leaving a classic
+script every browser will run from a file.
+
+Both builds now also carry a **boot guard** (`boot-guard.html`): a static shell
+and a classic-script watchdog that, if the app has not mounted after twelve
+seconds, replaces the blank screen with a readable explanation, the device
+details and a Copy button. A boot failure used to be invisible and unreportable
+— the error boundary only catches crashes *after* React mounts, and the report
+tab is itself rendered by React.
+
 See `.env.example` for every switch. All of them are read at build time.
 
 ## Verifying

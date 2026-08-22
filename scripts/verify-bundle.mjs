@@ -11,7 +11,7 @@
  */
 
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, devices } from 'playwright'
@@ -231,6 +231,57 @@ const CABS = [
   check('tablet: no console errors', errs.length === 0, errs.slice(0, 1).join(''))
   await page.screenshot({ path: join(shots, 'bundle-tablet.png') })
   await ctx.close()
+}
+
+/* ---------------- 6. A blank screen must explain itself ---------------- */
+{
+  // The failure a tester actually hit: the module script never runs, and the
+  // page is a bare <div id="root">. Simulate it by removing the module tag,
+  // then require that the boot guard says something useful instead of nothing.
+  const src = readFileSync(join(dist, 'app', 'index.html'), 'utf8')
+  const gutted = src.replace(/<script type="module"[^>]*>[\s\S]*?<\/script>/, '')
+  const tmp = join(shots, 'boot-simulated-failure.html')
+  writeFileSync(tmp, gutted)
+
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+  const page = await ctx.newPage()
+  await page.goto(`file://${tmp}`, { waitUntil: 'load' })
+  // The guard waits 12 s before giving up, deliberately — a cheap tablet
+  // compiling shaders deserves that much patience.
+  await page.waitForTimeout(14000)
+  const shown = await page.evaluate(() => {
+    const f = document.getElementById('boot-fail')
+    return f ? !f.hidden : false
+  })
+  check('a boot failure shows an explanation, not a blank screen', shown)
+  const why = await page.evaluate(() => document.getElementById('boot-why')?.textContent ?? '')
+  check('it names the file:// cause', /opened as a file/i.test(why), why.slice(0, 70))
+  const detail = await page.evaluate(() => document.getElementById('boot-detail')?.textContent ?? '')
+  check('it carries the device details to copy', /device .*Mozilla/.test(detail) && /webgl/.test(detail))
+  await page.screenshot({ path: join(shots, 'bundle-boot-failure.png') })
+  await ctx.close()
+}
+
+/* ---------------- 7. The offline copy opens from a file ---------------- */
+{
+  const offline = join(root, 'dist-offline', 'Ploobia-offline.html')
+  if (!existsSync(offline)) {
+    check('offline copy built (npm run build:offline)', false, 'dist-offline/Ploobia-offline.html missing')
+  } else {
+    const html = readFileSync(offline, 'utf8')
+    check('offline copy has no module scripts', !/<script[^>]*type="module"/.test(html))
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+    const page = await ctx.newPage()
+    const errs = []
+    watch(page, errs)
+    await page.goto(`file://${offline}`, { waitUntil: 'load' })
+    await page.waitForTimeout(10000)
+    check('offline copy mounts from a file', await page.evaluate(() => (document.getElementById('root')?.childElementCount ?? 0) > 0))
+    check('offline copy hides the boot shell', await page.evaluate(() => document.getElementById('boot-shell')?.className === 'gone'))
+    check('offline copy has no page errors', errs.length === 0, errs.slice(0, 1).join(''))
+    await page.screenshot({ path: join(shots, 'bundle-offline.png') })
+    await ctx.close()
+  }
 }
 
 await browser.close()
