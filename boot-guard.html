@@ -26,6 +26,7 @@
   <div class="boot-card">
     <div class="boot-eyes" aria-hidden="true"><span></span><span></span></div>
     <p class="boot-msg" id="boot-msg">Starting Ploobia…</p>
+    <p class="boot-msg boot-sub" id="boot-sub" hidden></p>
     <div id="boot-fail" hidden>
       <h1>Ploobia could not start on this device</h1>
       <p id="boot-why"></p>
@@ -57,6 +58,7 @@
   @keyframes boot-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-.28rem)}}
   @media (prefers-reduced-motion:reduce){.boot-eyes span{animation:none}}
   .boot-msg{font-size:.95rem;font-weight:700;opacity:.65;margin:0}
+  .boot-sub{font-size:.8rem;opacity:.45;margin-top:.5rem;max-width:22rem;margin-left:auto;margin-right:auto}
   #boot-fail h1{font-size:1.3rem;font-weight:900;margin:.25rem 0 .6rem;color:#FBF5EA;line-height:1.25}
   #boot-fail p{font-size:.95rem;font-weight:600;line-height:1.55;margin:0 0 .9rem;color:#E9E1CF;opacity:.9}
   #boot-detail{text-align:left;white-space:pre-wrap;word-break:break-word;font:500 11px/1.5 ui-monospace,Menlo,Consolas,monospace;
@@ -73,6 +75,14 @@
      this file's whole job is to run where the bundle could not, including on a
      browser too old to parse it. ES5 only, no arrow functions, no const. */
   (function () {
+    /* Object.hasOwn is Safari 16.4+ and three.js calls it unguarded. One line
+       here costs nothing and removes a whole class of "it just stopped". */
+    if (typeof Object.hasOwn !== 'function') {
+      Object.hasOwn = function (o, k) {
+        return Object.prototype.hasOwnProperty.call(o, k)
+      }
+    }
+
     var shell = document.getElementById('boot-shell')
     var failed = false
     var errors = []
@@ -122,6 +132,9 @@
       if (gl() === 'webgl1 only') {
         return 'This browser only supports the older version of 3D graphics (WebGL 1). Ploobia needs WebGL 2, which usually means the browser or the device software needs updating.'
       }
+      if (window.__ploobiaBootError) {
+        return 'Ploobia crashed while starting up. The details below say exactly where.'
+      }
       if (errors.length) {
         return 'Ploobia hit an error while starting up. The details below say what it was.'
       }
@@ -140,6 +153,7 @@
         'modules ' + ('noModule' in document.createElement('script') ? 'supported' : 'NOT supported'),
         'memory ' + (navigator.deviceMemory || '?') + 'GB · cores ' + (navigator.hardwareConcurrency || '?'),
       ]
+      if (window.__ploobiaBootError) lines.push('boot   ' + window.__ploobiaBootError)
       lines.push(errors.length ? 'errors:\n  ' + errors.join('\n  ') : 'errors: none captured')
       return lines.join('\n')
     }
@@ -177,8 +191,14 @@
     }
 
     /* Poll rather than fire once: a slow phone may legitimately take a while,
-       and the moment React mounts we want the shell gone, not a timer racing it. */
+       and the moment React mounts we want the shell gone, not a timer racing it.
+
+       The heartbeat matters as much as the timeout. A tester who sees a frozen
+       "Starting Ploobia…" reports "it got stuck"; one who sees the seconds
+       counting knows it is still trying, waits, and tells us something useful
+       either way. */
     var waited = 0
+    var sub = document.getElementById('boot-sub')
     var tick = setInterval(function () {
       waited += 250
       if (mounted()) {
@@ -186,9 +206,17 @@
         shell.className = 'gone'
         return
       }
-      // Twelve seconds is generous for a cheap tablet compiling shaders, and
-      // short enough that a person has not yet given up and closed the tab.
-      if (waited >= 12000) {
+      if (waited === 3000) {
+        sub.hidden = false
+        sub.textContent = 'First load can take a little while on an older phone — keep this page open.'
+      }
+      if (waited > 3000 && waited % 1000 === 0) {
+        sub.textContent =
+          'Still loading — ' + waited / 1000 + 's. First load can take a while on an older phone.'
+      }
+      // Ten seconds without a mount, on a page that has already had three
+      // seconds of grace, is a failure rather than slowness.
+      if (waited >= 10000) {
         clearInterval(tick)
         fail()
       }

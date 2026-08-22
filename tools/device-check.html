@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Can this device run Ploobia?</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;padding:1.25rem;background:#17130F;color:#E9E1CF;
+    font:600 15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+  h1{font-size:1.15rem;font-weight:900;margin:0 0 .25rem;color:#FBF5EA}
+  p.lede{margin:0 0 1.1rem;opacity:.6;font-size:.85rem}
+  .row{display:flex;gap:.6rem;align-items:flex-start;padding:.55rem 0;border-bottom:1px solid rgba(255,255,255,.08)}
+  .mark{flex:0 0 1.4rem;font-size:1.05rem;line-height:1.4}
+  .k{flex:1}
+  .k b{display:block;font-weight:800;color:#FBF5EA}
+  .k span{font-size:.78rem;opacity:.6;word-break:break-word}
+  #verdict{margin:1.1rem 0;padding:.85rem 1rem;border-radius:.9rem;font-weight:800;font-size:.95rem;line-height:1.45}
+  .ok{background:rgba(62,124,67,.22);border:1px solid rgba(62,124,67,.5)}
+  .bad{background:rgba(193,59,51,.2);border:1px solid rgba(193,59,51,.55)}
+  canvas{width:100%;max-width:220px;height:130px;display:block;margin:.6rem auto;border-radius:.6rem;background:#000}
+  button{width:100%;min-height:48px;margin-top:1rem;border:0;border-radius:999px;background:#E8A33D;color:#17130F;
+    font:900 15px/1 inherit}
+  pre{white-space:pre-wrap;word-break:break-word;font:500 11px/1.5 ui-monospace,Menlo,monospace;
+    background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.12);border-radius:.7rem;padding:.7rem;margin-top:.9rem;color:#CFC6B4}
+</style>
+</head>
+<body>
+<h1>Can this device run Ploobia?</h1>
+<p class="lede">Nothing is installed or sent anywhere. This page just checks, and gives you something to copy back.</p>
+<div id="rows"></div>
+<canvas id="c" width="440" height="260"></canvas>
+<div id="verdict"></div>
+<button id="copy">Copy the results</button>
+<pre id="out"></pre>
+<script>
+/* Deliberately ES5, classic script, no build step, ~5 kB: this has to run on the
+   phone that could not run the app, including from a file. It answers one
+   question — is the device capable, or is our bundle at fault? */
+(function () {
+  var rows = document.getElementById('rows')
+  var lines = []
+
+  function add(ok, name, detail) {
+    lines.push((ok === true ? 'PASS ' : ok === false ? 'FAIL ' : '---- ') + name + ' :: ' + detail)
+    var r = document.createElement('div')
+    r.className = 'row'
+    r.innerHTML =
+      '<div class="mark">' + (ok === true ? '✅' : ok === false ? '❌' : 'ℹ️') + '</div>' +
+      '<div class="k"><b></b><span></span></div>'
+    r.querySelector('b').textContent = name
+    r.querySelector('span').textContent = detail
+    rows.appendChild(r)
+  }
+
+  var ua = navigator.userAgent
+  var iosM = /OS (\d+)[._](\d+)/.exec(ua)
+  var iosVer = iosM ? Number(iosM[1]) + Number(iosM[2]) / 10 : null
+
+  add(null, 'Device', ua)
+  if (iosVer) add(iosVer >= 15, 'iOS version', iosVer + (iosVer >= 15 ? '' : ' — Ploobia needs iOS 15 or newer'))
+  add(null, 'Screen', screen.width + '×' + screen.height + ' at ' + (window.devicePixelRatio || 1) + '×')
+  add(location.protocol !== 'file:', 'Opened from',
+      location.protocol === 'file:' ? 'a file — Safari blocks apps opened this way' : location.protocol + '//' + location.host)
+
+  var canModules = 'noModule' in document.createElement('script')
+  add(canModules, 'Modern scripts', canModules ? 'supported' : 'not supported — browser is very old')
+
+  /* WebGL 2 is the one hard requirement: the 3D engine needs it. */
+  var canvas = document.getElementById('c')
+  var gl = null, which = 'none'
+  try { gl = canvas.getContext('webgl2'); if (gl) which = 'WebGL 2' } catch (e) {}
+  if (!gl) { try { gl = canvas.getContext('webgl'); if (gl) which = 'WebGL 1 only' } catch (e) {} }
+  add(which === 'WebGL 2', '3D graphics', which === 'none' ? 'unavailable' : which)
+
+  if (gl) {
+    var dbg = null
+    try { dbg = gl.getExtension('WEBGL_debug_renderer_info') } catch (e) {}
+    try {
+      add(null, 'Graphics chip', String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)))
+    } catch (e) {}
+    add(null, 'Max texture size', String(gl.getParameter(gl.MAX_TEXTURE_SIZE)))
+  }
+
+  add(null, 'Processor cores', String(navigator.hardwareConcurrency || 'unknown'))
+  add(null, 'Memory reported', (navigator.deviceMemory || 'not reported') + (navigator.deviceMemory ? ' GB' : ''))
+
+  var storeOk = false
+  try { localStorage.setItem('__p', '1'); localStorage.removeItem('__p'); storeOk = true } catch (e) {}
+  add(storeOk, 'Saving progress', storeOk ? 'works' : 'blocked — private browsing loses progress')
+
+  /* Actually draw something. A green frame means the whole pipeline works. */
+  var drew = false
+  if (which === 'WebGL 2') {
+    try {
+      var vs = gl.createShader(gl.VERTEX_SHADER)
+      gl.shaderSource(vs, '#version 300 es\nin vec2 p;void main(){gl_Position=vec4(p,0.,1.);}')
+      gl.compileShader(vs)
+      var fs = gl.createShader(gl.FRAGMENT_SHADER)
+      gl.shaderSource(fs, '#version 300 es\nprecision mediump float;out vec4 o;void main(){o=vec4(.24,.49,.26,1.);}')
+      gl.compileShader(fs)
+      var pr = gl.createProgram()
+      gl.attachShader(pr, vs); gl.attachShader(pr, fs); gl.linkProgram(pr); gl.useProgram(pr)
+      var buf = gl.createBuffer()
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf)
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW)
+      var loc = gl.getAttribLocation(pr, 'p')
+      gl.enableVertexAttribArray(loc)
+      gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0)
+      gl.drawArrays(gl.TRIANGLES, 0, 3)
+      var px = new Uint8Array(4)
+      gl.readPixels(2, 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
+      drew = px[1] > 60
+      add(drew, 'Drawing test', drew ? 'the green box below rendered' : 'nothing came out of the renderer')
+    } catch (e) {
+      add(false, 'Drawing test', 'threw: ' + e)
+    }
+  } else {
+    canvas.style.display = 'none'
+  }
+
+  var v = document.getElementById('verdict')
+  var capable = which === 'WebGL 2' && drew && (!iosVer || iosVer >= 15)
+  v.className = capable ? 'ok' : 'bad'
+  v.textContent = capable
+    ? 'This device can run Ploobia. If the arcade still will not start, the fault is ours, not your phone — please copy the results and send them over.'
+    : (which !== 'WebGL 2'
+        ? 'This device cannot run Ploobia yet: it needs WebGL 2, the modern 3D graphics support. Usually that means the software needs updating.'
+        : 'Something here will stop Ploobia working. Please copy the results and send them over.')
+
+  var out = document.getElementById('out')
+  var text = 'Ploobia device check\n' + new Date().toISOString() + '\n\n' + lines.join('\n')
+  out.textContent = text
+  document.getElementById('copy').onclick = function () {
+    var btn = this
+    try {
+      if (navigator.clipboard) { navigator.clipboard.writeText(text); btn.textContent = 'Copied'; return }
+    } catch (e) {}
+    var r = document.createRange(); r.selectNodeContents(out)
+    var s = window.getSelection(); s.removeAllRanges(); s.addRange(r)
+    btn.textContent = 'Now press Copy'
+  }
+})()
+</script>
+</body>
+</html>

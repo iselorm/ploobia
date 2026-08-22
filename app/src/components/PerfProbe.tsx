@@ -1,7 +1,7 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
-import { getQualityTier, resetFrameSampling } from '@/lib/quality'
-import { FrameWindow, clearPerf, publishPerf } from '@/lib/perf'
+import { getQualityTier, noteRenderer, resetFrameSampling } from '@/lib/quality'
+import { FrameWindow, clearPerf, publishPerf, setRenderer } from '@/lib/perf'
 
 /**
  * Publishes what the scene actually costs, once a second, from inside the
@@ -27,8 +27,25 @@ export default function PerfProbe({ cabinet }: { cabinet: string }) {
     // and ratcheting a capable tablet down a tier per room. Mounting this probe
     // is therefore not optional — it is how adaptive quality stays honest.
     resetFrameSampling()
+
+    // Read the GPU from the context the scene already owns. Nothing else in
+    // the app may create a WebGL context just to ask this: iOS Safari grants
+    // very few, and an import-time probe can stall the bundle before React
+    // mounts. One read, shared with the tier system and the pilot report.
+    try {
+      const ctx = gl.getContext()
+      const ext = ctx.getExtension('WEBGL_debug_renderer_info')
+      const name = String(
+        ext ? ctx.getParameter(ext.UNMASKED_RENDERER_WEBGL) : ctx.getParameter(ctx.RENDERER),
+      )
+      setRenderer(name)
+      noteRenderer(name)
+    } catch {
+      /* a renderer that will not identify itself is not worth a crash */
+    }
+
     return clearPerf
-  }, [cabinet, frames])
+  }, [cabinet, frames, gl])
 
   useFrame((_, dt) => {
     win.current.push(dt * 1000)

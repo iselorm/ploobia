@@ -69,42 +69,26 @@ export function clearPerf(): void {
 let cachedRenderer: string | null | undefined
 
 /**
- * The GPU string, e.g. "Mali-G52" or "ANGLE (… SwiftShader …)". Probed once
- * into a throwaway context, which is then explicitly lost so we are not holding
- * one of the browser's handful of WebGL contexts open for a diagnostic.
+ * Recorded by `PerfProbe` from the scene's own context.
+ *
+ * **Never create a WebGL context just to read this.** iOS Safari grants very
+ * few, and an earlier version probed one during module evaluation — before
+ * React had mounted — which is a fine way to stall a bundle on a phone and
+ * leave the boot shell up with nothing behind it. A scene already has a
+ * context; ask that one, once.
  */
-export function glRenderer(): string | null {
-  if (cachedRenderer !== undefined) return cachedRenderer
-  cachedRenderer = null
-  try {
-    const canvas = document.createElement('canvas')
-    const gl = (canvas.getContext('webgl2') ?? canvas.getContext('webgl')) as WebGLRenderingContext | null
-    if (gl) {
-      const ext = gl.getExtension('WEBGL_debug_renderer_info')
-      cachedRenderer = ext
-        ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL))
-        : String(gl.getParameter(gl.RENDERER))
-      gl.getExtension('WEBGL_lose_context')?.loseContext()
-    }
-  } catch {
-    cachedRenderer = null
-  }
-  return cachedRenderer
+export function setRenderer(name: string | null): void {
+  if (name) cachedRenderer = name
 }
 
 /**
- * True when there is no GPU behind WebGL — SwiftShader, llvmpipe, Mesa's
- * software rasteriser, Microsoft's Basic Render Driver.
- *
- * Worth knowing at boot rather than discovering three seconds in: it happens on
- * locked-down school laptops, on Android devices whose driver is blocklisted,
- * and in every headless test runner. Software rendering is one to two orders of
- * magnitude slower than the weakest real GPU, so no amount of adaptive stepping
- * gets there from `high` in time.
+ * The GPU string, e.g. "Mali-G52" or "ANGLE (… SwiftShader …)", or null until a
+ * scene has reported one. A report filed from the hall, before any cabinet has
+ * opened, will honestly say it does not know rather than spending a context to
+ * find out.
  */
-export function isSoftwareRenderer(): boolean {
-  const r = glRenderer()
-  return !!r && /swiftshader|llvmpipe|softwarerasterizer|basic render|software adapter/i.test(r)
+export function glRenderer(): string | null {
+  return cachedRenderer ?? null
 }
 
 /* ------------------------------------------------------------------ */

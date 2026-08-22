@@ -78,6 +78,12 @@ export default defineConfig(({ command }) => ({
   // inlined as data URIs rather than emitted beside it — vite-plugin-singlefile
   // only folds in JS and CSS.
   build: {
+    // Measured, not guessed: esbuild reports nothing to lower for Safari 14
+    // and above, and only ~6 kB for Safari 13 — so an explicit floor here is
+    // almost free and removes "the parser choked" from the list of reasons a
+    // learner's phone shows nothing. three.js needs WebGL2 (iOS 15+) in
+    // practice, so 13 is a courtesy rather than a promise.
+    target: ['es2020', 'safari13', 'chrome87', 'firefox78', 'edge88'],
     assetsInlineLimit: 4 * 1024 * 1024,
     // An IIFE has no import/export to resolve, so it can run as a classic
     // script — which is what makes the offline copy openable from a file.

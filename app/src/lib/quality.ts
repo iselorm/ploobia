@@ -13,7 +13,6 @@
  */
 
 import { useSyncExternalStore } from 'react'
-import { isSoftwareRenderer } from './perf'
 
 export type QualityTier = 'high' | 'medium' | 'low'
 
@@ -65,6 +64,23 @@ export function getQualityCaps(): QualityCaps {
   return QUALITY_CAPS[tier]
 }
 
+/**
+ * Told by `PerfProbe` what the live renderer actually is, once a scene exists.
+ *
+ * Software rendering (SwiftShader, llvmpipe, Apple's fallback, Microsoft's
+ * Basic Render Driver) is one to two orders of magnitude slower than the
+ * weakest real GPU, so no amount of adaptive stepping reaches a usable tier
+ * from `high` in time. Drop straight to `low` — but leave it unlocked, so an
+ * explicit `?q=` still wins and this is only a default.
+ */
+export function noteRenderer(renderer: string | null | undefined): void {
+  if (locked || tier === 'low' || !renderer) return
+  if (/swiftshader|llvmpipe|softwarerasterizer|basic render|software adapter/i.test(renderer)) {
+    tier = 'low'
+    notify()
+  }
+}
+
 /** Explicit choice (a settings menu later). Locks out adaptive changes. */
 export function setQualityTier(t: QualityTier, lock = true): void {
   locked = lock
@@ -92,15 +108,19 @@ export function useQualityCaps(): QualityCaps {
 /* Boot-time guess                                                    */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Cheap signals only. **Nothing here may touch WebGL.**
+ *
+ * This runs during module evaluation, before React has mounted anything, and an
+ * earlier version created a throwaway WebGL context here to detect software
+ * rendering. That was a bad place for it: iOS Safari grants very few WebGL
+ * contexts and can be slow to hand one over, so a probe at import time can
+ * stall the whole bundle before a single pixel is drawn — leaving the boot
+ * shell up and nothing behind it. The software check now happens inside
+ * `PerfProbe`, using the renderer the scene already has (`noteRenderer`).
+ */
 function guessTier(): QualityTier {
   if (typeof navigator === 'undefined') return 'medium'
-
-  // No GPU at all — a blocklisted Android driver, a locked-down school laptop,
-  // a headless runner. Software rendering is one to two orders of magnitude
-  // slower than the weakest real GPU, so starting anywhere but `low` just means
-  // several seconds of a slideshow before adaptive stepping arrives at the same
-  // answer. Cheap to know now; expensive to discover later.
-  if (isSoftwareRenderer()) return 'low'
 
   const nav = navigator as Navigator & { deviceMemory?: number }
   const cores = nav.hardwareConcurrency ?? 4

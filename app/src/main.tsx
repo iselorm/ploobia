@@ -6,21 +6,33 @@ import { installInputRuntime } from './lib/input'
 import { installPilotRuntime } from './lib/pilot'
 import './lib/profiles'
 
+declare global {
+  interface Window {
+    /** Read by the boot guard so a startup crash is shown, not swallowed. */
+    __ploobiaBootError?: string
+  }
+}
+
 function start() {
   const root = document.getElementById('root')
   if (!root) {
-    // The boot guard in index.html is watching for exactly this and will say so
-    // on screen rather than leaving a blank rectangle.
     console.error('Ploobia: #root is missing from the document')
     return
   }
-  installInputRuntime()
-  installPilotRuntime()
-  createRoot(root).render(
-    <HashRouter>
-      <App />
-    </HashRouter>,
-  )
+  // Anything that throws in here leaves the page on the boot shell forever,
+  // and the shell's watchdog can only guess at why. Hand it the real message.
+  try {
+    installInputRuntime()
+    installPilotRuntime()
+    createRoot(root).render(
+      <HashRouter>
+        <App />
+      </HashRouter>,
+    )
+  } catch (e) {
+    window.__ploobiaBootError = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+    throw e
+  }
 }
 
 /**
