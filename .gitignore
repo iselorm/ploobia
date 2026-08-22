@@ -11,3 +11,4 @@ shots/
 *.log
 .DS_Store
 dist-offline/
+shots-bundle/
