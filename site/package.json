@@ -1,0 +1,18 @@
+{
+  "name": "ploobia-site",
+  "private": true,
+  "type": "module",
+  "description": "ploobia.com — the front door. Builds to one self-contained index.html with the live Ploob model inlined.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "vite": "^7.2.4",
+    "vite-plugin-singlefile": "^2.3.3"
+  }
+}

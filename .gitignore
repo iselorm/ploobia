@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.wrangler/
+.env
+.env.*
+!.env.example
+
+# Playwright screenshot droppings — these are what bloated the source zips 10×.
+app/shots/
+shots/
+*.log
+.DS_Store

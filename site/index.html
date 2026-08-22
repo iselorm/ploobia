@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ploobia — a world where nothing works until you find out why</title>
+<meta name="description" content="Ploobia is the school arcade: interactive 3D science, geography and chemistry for ages 10–17. Enter, change something, measure what happens, then explain it. Free to enter, nothing to install." />
+<meta name="theme-color" content="#17130F" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Ploobia" />
+<meta property="og:title" content="Ploobia — a world where nothing works until you find out why" />
+<meta property="og:description" content="The school arcade for ages 10–17. Enter, change something, measure what happens, then explain it." />
+<meta property="og:url" content="https://ploobia.com/" />
+<meta property="og:image" content="https://ploobia.com/og.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Ploobia — a world where nothing works until you find out why" />
+<meta name="twitter:description" content="The school arcade for ages 10–17. Enter, change something, measure what happens." />
+<meta name="twitter:image" content="https://ploobia.com/og.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,400..1000;1,400..1000&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --ink:#2A1A08; --cream:#FBF5EA; --sand:#E9E1CF; --dark:#17130F;
+    --amber:#E8A33D; --gold:#F5D28C; --gold-hi:#FFF7E4;
+    --green:#3E7C43; --red:#C13B33; --blue:#2E6DA8; --brass:#B97D10; --teal:#2E86A8;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --maxw:1120px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--dark); color:var(--cream);
+    font-family:Nunito,system-ui,-apple-system,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased; overflow-x:hidden;
+  }
+  a{color:inherit}
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
+  .mono{font-family:var(--mono); letter-spacing:.24em; text-transform:uppercase; font-size:11px; font-weight:700}
+  .eyebrow{color:var(--gold); text-shadow:0 1px 10px rgba(0,0,0,.7)}
+  h1,h2,h3{margin:0; line-height:1.05; font-weight:900; letter-spacing:-.02em}
+  p{margin:0}
+  .rule{display:flex; align-items:center; justify-content:center; gap:12px; color:rgba(232,163,61,.7)}
+  .rule i{display:block; height:1px; width:64px; background:linear-gradient(90deg,transparent,rgba(232,163,61,.6))}
+  .rule i+i{background:linear-gradient(270deg,transparent,rgba(232,163,61,.6))}
+
+  /* ---------- wordmark: the o's are Ploob's eyes ---------- */
+  .wordmark{display:inline-flex; align-items:baseline; font-weight:900; letter-spacing:-.03em; line-height:1}
+  .wordmark .txt{
+    background:linear-gradient(180deg,var(--gold-hi) 0%,#F8DFA6 55%,var(--amber) 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .wordmark.ink .txt{background:none; color:var(--ink)}
+  .wordmark svg{display:block; align-self:flex-end}
+
+  /* ---------- buttons ---------- */
+  .btn{
+    display:inline-flex; align-items:center; gap:8px; border-radius:999px; cursor:pointer;
+    font-weight:900; text-decoration:none; border:1px solid rgba(245,210,140,.6);
+    background:linear-gradient(180deg,#F3C463,#D98E2B); color:#2A1A08;
+    padding:14px 26px; font-size:17px; box-shadow:0 10px 40px rgba(232,163,61,.32);
+    transition:transform .18s ease, box-shadow .18s ease;
+  }
+  .btn:hover{transform:translateY(-2px); box-shadow:0 16px 52px rgba(232,163,61,.46)}
+  .btn.sm{padding:10px 18px; font-size:14px}
+  .btn.ghost{background:rgba(0,0,0,.28); color:#fff; border-color:rgba(255,255,255,.22); box-shadow:none; backdrop-filter:blur(6px)}
+  .btn.ghost:hover{background:rgba(0,0,0,.45)}
+
+  /* ---------- header ---------- */
+  header{position:fixed; inset:0 0 auto 0; z-index:50; padding:14px 0;
+    transition:background .3s ease, backdrop-filter .3s ease, border-color .3s ease;
+    border-bottom:1px solid transparent}
+  header.stuck{background:rgba(16,13,10,.72); backdrop-filter:blur(14px); border-bottom-color:rgba(255,255,255,.08)}
+  header .bar{display:flex; align-items:center; justify-content:space-between; gap:16px}
+  header nav{display:flex; align-items:center; gap:22px}
+  header nav a.link{font-size:13.5px; font-weight:800; color:rgba(255,255,255,.75); text-decoration:none}
+  header nav a.link:hover{color:#fff}
+  @media (max-width:760px){ header nav a.link{display:none} }
+
+  /* ---------- hero ---------- */
+  .hero{position:relative; min-height:100svh; display:flex; flex-direction:column; justify-content:center; padding:110px 0 40px;
+    background:
+      radial-gradient(120% 80% at 50% -10%, #4A3B2A 0%, transparent 58%),
+      radial-gradient(90% 60% at 50% 108%, #1E3422 0%, transparent 60%),
+      var(--dark);
+    overflow:hidden}
+  .hero .glowfield{position:absolute; inset:0; pointer-events:none;
+    background:radial-gradient(50% 40% at 50% 44%, rgba(232,163,61,.20), transparent 70%)}
+  .hero-grid{display:grid; grid-template-columns:1.05fr .95fr; gap:36px; align-items:center; position:relative}
+  @media (max-width:900px){
+    .hero{padding:96px 0 32px}
+    .hero-grid{grid-template-columns:1fr; text-align:center; gap:4px}
+    .hero-grid > .stage{order:-1; max-width:min(62vw,300px)}
+    .hero-grid h1.big{font-size:clamp(46px,13vw,72px)}
+    .hero-grid .tagline{font-size:clamp(19px,5.2vw,24px)}
+  }
+  .stage{position:relative; aspect-ratio:1/1; width:100%; max-width:520px; margin-inline:auto; touch-action:pan-y}
+  .stage canvas{width:100%; height:100%; display:block; cursor:grab}
+  .stage canvas:active{cursor:grabbing}
+  .stage img.fallback{width:100%; height:100%; object-fit:contain}
+  .stage .hint{position:absolute; left:50%; bottom:2%; transform:translateX(-50%); white-space:nowrap;
+    color:rgba(255,255,255,.55); opacity:0; transition:opacity .5s ease}
+  .stage.ready .hint{opacity:1}
+  .stage .plinth{position:absolute; left:50%; bottom:14%; transform:translateX(-50%);
+    width:46%; height:7%; border-radius:50%; background:radial-gradient(ellipse at center, rgba(0,0,0,.62), transparent 72%)}
+  h1.big{font-size:clamp(56px,9vw,104px)}
+  .tagline{margin-top:18px; font-size:clamp(20px,2.6vw,28px); font-weight:800; line-height:1.15; max-width:17ch;
+    text-shadow:0 2px 18px rgba(0,0,0,.7)}
+  @media (max-width:900px){ .tagline{max-width:none; margin-inline:auto} }
+  .sub{margin-top:14px; font-size:15.5px; font-weight:600; color:var(--sand); max-width:44ch; line-height:1.55;
+    text-shadow:0 1px 10px rgba(0,0,0,.8)}
+  @media (max-width:900px){ .sub{margin-inline:auto} }
+  .cta-row{margin-top:26px; display:flex; flex-wrap:wrap; gap:12px}
+  @media (max-width:900px){ .cta-row{justify-content:center} }
+  .fineprint{margin-top:16px; color:rgba(255,255,255,.5)}
+  .fieldlog{position:absolute; left:24px; right:24px; bottom:18px; display:flex; justify-content:space-between; gap:12px;
+    color:rgba(245,235,211,.6); pointer-events:none}
+  @media (max-width:760px){ .fieldlog span.right{display:none} }
+
+  /* ---------- sections ---------- */
+  section.band{padding:96px 0; position:relative}
+  .band.light{background:var(--cream); color:var(--ink)}
+  .head{text-align:center; max-width:62ch; margin:0 auto 44px}
+  .head h2{font-size:clamp(30px,4.4vw,46px); margin-top:10px}
+  .head p{margin-top:14px; font-size:16px; font-weight:600; line-height:1.6; color:var(--sand)}
+  .band.light .head p{color:#7A5252}
+  .band.light .eyebrow{color:#A08750; text-shadow:none}
+
+  /* loop of three */
+  .loop{display:grid; grid-template-columns:repeat(3,1fr); gap:18px}
+  @media (max-width:820px){ .loop{grid-template-columns:1fr} }
+  .step{border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.035); border-radius:22px; padding:26px}
+  .step .n{font-family:var(--mono); font-size:12px; color:var(--amber); font-weight:700}
+  .step h3{margin-top:10px; font-size:22px}
+  .step p{margin-top:10px; font-size:14.5px; font-weight:600; line-height:1.6; color:rgba(233,225,207,.82)}
+
+  /* regions */
+  .regions{display:grid; grid-template-columns:repeat(3,1fr); gap:18px}
+  @media (max-width:980px){ .regions{grid-template-columns:repeat(2,1fr)} }
+  @media (max-width:640px){ .regions{grid-template-columns:1fr} }
+  .region{position:relative; display:flex; flex-direction:column; border-radius:22px; padding:22px; text-decoration:none;
+    border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04);
+    transition:transform .2s ease, background .2s ease, border-color .2s ease; overflow:hidden}
+  .region::before{content:""; position:absolute; inset:-1px -1px auto -1px; height:3px; background:var(--t)}
+  .region:hover{transform:translateY(-4px); background:rgba(255,255,255,.07); border-color:rgba(255,255,255,.2)}
+  .region.soon{opacity:.62; pointer-events:none}
+  .region .top{display:flex; align-items:center; justify-content:space-between; gap:10px}
+  .region .subject{font-family:var(--mono); font-size:10.5px; font-weight:700; color:var(--t)}
+  .region .pill{font-family:var(--mono); font-size:9.5px; padding:3px 8px; border-radius:999px;
+    background:rgba(255,255,255,.1); color:rgba(255,255,255,.8)}
+  .region h3{margin-top:12px; font-size:24px}
+  .region .real{margin-top:2px; font-size:12.5px; font-weight:800; color:rgba(255,255,255,.6)}
+  .region p{margin-top:12px; flex:1; font-size:14px; font-weight:600; line-height:1.55; color:rgba(233,225,207,.85)}
+  .region .topics{margin-top:16px; font-family:var(--mono); font-size:9.5px; color:rgba(255,255,255,.42); line-height:1.7}
+  .region .go{margin-top:14px; display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:900; color:var(--t)}
+
+  /* companion strip */
+  .companion{display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:38px}
+  .companion figure{margin:0; text-align:center; width:132px}
+  .companion img{width:112px; height:112px; object-fit:contain; filter:drop-shadow(0 12px 22px rgba(0,0,0,.5))}
+  .companion figcaption{font-family:var(--mono); font-size:9.5px; color:rgba(255,255,255,.5); margin-top:2px}
+
+  /* doors */
+  .doors{display:grid; grid-template-columns:repeat(3,1fr); gap:16px}
+  @media (max-width:820px){ .doors{grid-template-columns:1fr} }
+  .door{border-radius:22px; padding:24px; border:2px solid #F3E9D7; background:rgba(255,255,255,.65)}
+  .door .ages{font-family:var(--mono); font-size:10.5px; color:#A08750}
+  .door h3{margin-top:8px; font-size:23px; color:var(--c)}
+  .door .q{margin-top:8px; font-size:15px; font-weight:900; font-style:italic; color:var(--ink)}
+  .door p{margin-top:10px; font-size:13.5px; font-weight:600; line-height:1.55; color:#7A5252}
+
+  /* grown-ups */
+  .grown{max-width:900px; margin:0 auto}
+  .grown h2{font-size:clamp(28px,4.2vw,44px); line-height:1.08}
+  .grown .lede{margin-top:20px; font-size:16.5px; font-weight:600; line-height:1.7; color:#7A5252}
+  .facts{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:32px}
+  @media (max-width:820px){ .facts{grid-template-columns:1fr} }
+  .fact{border:1px solid #F3E9D7; background:#fff; border-radius:20px; padding:18px}
+  .fact h4{margin:0; font-size:15.5px; font-weight:900; color:var(--ink)}
+  .fact p{margin-top:8px; font-size:13px; font-weight:600; line-height:1.55; color:#7A5252}
+  .honest{margin-top:26px; font-size:14px; font-weight:600; line-height:1.65; color:#7A5252}
+
+  /* footer */
+  footer{padding:70px 0 56px; text-align:center; border-top:1px solid rgba(255,255,255,.08)}
+  footer .links{margin-top:16px; display:flex; gap:18px; justify-content:center; flex-wrap:wrap;
+    font-family:var(--mono); font-size:10.5px; color:rgba(255,255,255,.45)}
+  footer a{text-decoration:none}
+  footer a:hover{color:var(--gold)}
+
+  /* reveal */
+  .rv{opacity:0; transform:translateY(18px); transition:opacity .7s cubic-bezier(.16,1,.3,1), transform .7s cubic-bezier(.16,1,.3,1)}
+  .rv.in{opacity:1; transform:none}
+  @media (prefers-reduced-motion:reduce){ .rv{opacity:1; transform:none; transition:none} html{scroll-behavior:auto} }
+</style>
+</head>
+<body>
+
+<header id="hdr">
+  <div class="wrap bar">
+    <a href="#top" style="text-decoration:none" aria-label="Ploobia">
+      <span class="wordmark" style="font-size:26px"><span class="txt">Pl</span><span class="eyes" data-eyes="17"></span><span class="txt">bia</span></span>
+    </a>
+    <nav>
+      <a class="link" href="#regions">Regions</a>
+      <a class="link" href="#levels">Levels</a>
+      <a class="link" href="#grown-ups">For grown-ups</a>
+      <a class="btn sm" data-app href="#">Enter Ploobia</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ================= HERO ================= -->
+  <section class="hero">
+    <div class="glowfield"></div>
+    <div class="wrap hero-grid">
+      <div>
+        <div class="mono eyebrow">You are standing at the border of</div>
+        <h1 class="big" style="margin-top:12px">
+          <span class="wordmark" style="font-size:inherit"><span class="txt">Pl</span><span class="eyes" data-eyes="0.62em"></span><span class="txt">bia</span></span>
+        </h1>
+        <p class="tagline">A world where nothing works until you find out why.</p>
+        <p class="sub">Enter. Change something. Measure what happens. Then explain it — that’s how the world here comes to life.</p>
+        <div class="cta-row">
+          <a class="btn" data-app href="#">Enter Ploobia →</a>
+          <a class="btn ghost" href="#regions">See the regions ↓</a>
+        </div>
+        <div class="mono fineprint">ages 10–17 · free to enter · nothing to install</div>
+      </div>
+
+      <div class="stage" id="stage">
+        <div class="plinth"></div>
+        <canvas id="ploob" aria-label="Ploob, a jelly Ploobian you can spin and poke"></canvas>
+        <noscript><img class="fallback" src="" alt="Ploob" /></noscript>
+        <div class="mono hint">drag to spin · poke to squish</div>
+      </div>
+    </div>
+    <div class="wrap mono fieldlog">
+      <span>field log · ploobia · <span id="regionCount">5</span> regions open</span>
+      <span class="right">more still under the mist</span>
+    </div>
+  </section>
+
+  <!-- ================= THE LOOP ================= -->
+  <section class="band" id="how">
+    <div class="wrap">
+      <div class="head rv">
+        <div class="mono eyebrow">How anything is learned here</div>
+        <h2>Four moves, in every single region.</h2>
+        <p>Ploobia is not a textbook with buttons on it. Every region is a working model — change an input and the
+          consequences propagate, whether or not that is convenient for the lesson.</p>
+      </div>
+      <div class="loop">
+        <div class="step rv"><div class="n">01 / CHANGE</div><h3>Change something</h3>
+          <p>Move the sun, raise the temperature, add a tributary, pour in another electron. Nothing is on rails.</p></div>
+        <div class="step rv"><div class="n">02 / MEASURE</div><h3>Measure what happens</h3>
+          <p>Every region carries real instruments — a gauge, a stopwatch, a bubble counter, a shell meter — and your
+            readings go into a table and a live graph.</p></div>
+        <div class="step rv"><div class="n">03 / EXPLAIN</div><h3>Explain why</h3>
+          <p>Then the hard part, and the whole point: a claim, the evidence you actually recorded, and the reasoning
+            that joins them.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= REGIONS ================= -->
+  <section class="band" id="regions" style="background:linear-gradient(180deg,transparent,rgba(255,255,255,.03),transparent)">
+    <div class="wrap">
+      <div class="head rv">
+        <div class="mono eyebrow">You are here</div>
+        <h2>The map so far</h2>
+        <p>Ploobia is drawn one region at a time, and every region is a real experiment you can walk into.
+          Some are open. Some are still under the mist.</p>
+      </div>
+      <div class="regions" id="regionGrid"></div>
+
+      <div class="head rv" style="margin-top:70px; margin-bottom:0">
+        <div class="mono eyebrow">Ploob comes with you</div>
+        <h2 style="font-size:clamp(24px,3.2vw,34px)">And takes the colour of wherever he is.</h2>
+      </div>
+      <div class="companion rv" id="companion"></div>
+    </div>
+  </section>
+
+  <!-- ================= LEVELS ================= -->
+  <section class="band light" id="levels">
+    <div class="wrap">
+      <div class="head rv">
+        <div class="mono eyebrow">Three doors, one world</div>
+        <h2>Pick a door. Change it any time.</h2>
+        <p>Ploobia doesn’t have a kids’ version and a serious version. It has one world and three ways in — the same
+          meadow answers a ten-year-old’s “what if?” and a seventeen-year-old’s “prove it”.</p>
+      </div>
+      <div class="doors" id="doorGrid"></div>
+    </div>
+  </section>
+
+  <!-- ================= GROWN-UPS ================= -->
+  <section class="band light" id="grown-ups" style="padding-top:0">
+    <div class="wrap grown rv">
+      <div class="mono eyebrow">For the grown-ups</div>
+      <h2 style="margin-top:14px">This is how we wish we’d discovered science, geography, history and the world.</h2>
+      <p class="lede">Not as chapters to memorise, but as places to go: a leaf you can mount in an apparatus, a river you
+        can flood, a circuit you can break and fix, an atom you can build one proton at a time. Ploobia is made for ages
+        10 to 17 and shaped to sit alongside the IGCSE curriculum, so what a learner discovers here is what they will
+        meet in the exam room later — except they will have watched it move, measured it, and argued about it first.</p>
+      <div class="facts">
+        <div class="fact"><h4>Free to enter</h4><p>The first regions and the whole Explorer level are free forever.
+          Nothing to install, and no account needed to start.</p></div>
+        <div class="fact"><h4>Made to be measured</h4><p>Every region ends in evidence — a prediction, readings, a graph
+          and a written conclusion — and the family home shows what was actually done.</p></div>
+        <div class="fact"><h4>One world, three levels</h4><p>The same simulations serve a ten-year-old and a
+          seventeen-year-old; the vocabulary, mathematics and rigour grow with the learner.</p></div>
+      </div>
+      <p class="honest">Ploobia is early and honest about it: five regions are open today, more are being drawn, and the
+        map will keep growing. If you can chip in, it pays for hosting and the next region. If you can’t, please don’t —
+        that is exactly who this is for.</p>
+      <div class="cta-row" style="margin-top:26px">
+        <a class="btn" data-app href="#">Enter Ploobia →</a>
+        <a class="btn ghost" style="background:rgba(232,163,61,.15); color:#8A5A12; border-color:rgba(232,163,61,.5)"
+           href="mailto:sponsors@ploobia.com?subject=Sponsoring%20a%20region">♥ Support Ploobia</a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <div class="rule"><i></i><span style="font-size:10px">✦</span><i></i></div>
+      <div style="margin-top:18px">
+        <span class="wordmark" style="font-size:34px"><span class="txt">Pl</span><span class="eyes" data-eyes="22"></span><span class="txt">bia</span></span>
+      </div>
+      <p style="margin-top:10px; font-size:13.5px; font-weight:800; color:rgba(255,255,255,.7)">
+        The school arcade. Made with care for curious people, ages 10–17.</p>
+      <div class="links">
+        <a href="mailto:hello@ploobia.com">hello@ploobia.com</a>
+        <a href="mailto:sponsors@ploobia.com">sponsors@ploobia.com</a>
+        <a data-app href="#">enter</a>
+      </div>
+      <div class="cta-row" style="justify-content:center; margin-top:22px">
+        <a class="btn sm" data-app href="#">Enter Ploobia →</a>
+      </div>
+    </div>
+  </footer>
+</main>
+
+<script type="module" src="/main.js"></script>
+</body>
+</html>

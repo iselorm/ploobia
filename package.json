@@ -1,0 +1,21 @@
+{
+  "name": "ploobia",
+  "private": true,
+  "type": "module",
+  "description": "Ploobia — the school arcade. The public site and the cabinet app, built into one hostable bundle.",
+  "scripts": {
+    "install:all": "npm install --prefix app && npm install --prefix site",
+    "dev": "npm run dev --prefix app",
+    "dev:site": "npm run dev --prefix site",
+    "build": "node scripts/build-deploy.mjs",
+    "lint": "npm run lint --prefix app",
+    "verify": "node scripts/verify.mjs",
+    "serve": "npx --yes http-server dist -p 8080 -s"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

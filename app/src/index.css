@@ -1,0 +1,276 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 32 47% 95%;
+    --foreground: 6 30% 19%;
+    --card: 36 56% 95%;
+    --card-foreground: 6 30% 19%;
+    --popover: 36 56% 95%;
+    --popover-foreground: 6 30% 19%;
+    --primary: 3 58% 48%;
+    --primary-foreground: 36 56% 95%;
+    --secondary: 33 45% 90%;
+    --secondary-foreground: 6 30% 19%;
+    --muted: 33 45% 90%;
+    --muted-foreground: 8 20% 40%;
+    --accent: 33 45% 90%;
+    --accent-foreground: 3 58% 48%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 33 40% 87%;
+    --input: 33 40% 87%;
+    --ring: 3 58% 48%;
+    --radius: 0.875rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+    overscroll-behavior: none;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Nunito', ui-rounded, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* ---- Blood Voyage animations ---- */
+
+@keyframes welcome-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(24px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fact-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.9) rotate(-1.5deg);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.02) rotate(0.4deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+}
+
+@keyframes ticker-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes counter-pop {
+  0% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.welcome-pop {
+  animation: welcome-pop 550ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.fact-pop {
+  animation: fact-pop 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ticker-fade {
+  animation: ticker-fade 600ms ease-out both;
+}
+
+.counter-pop {
+  animation: counter-pop 300ms ease-out both;
+}
+/* ---- Input model: hit targets and focus (see src/lib/input.ts) ----
+   `<html data-input>` is pointer | touch | gamepad | tv. Everything that can be
+   tapped or landed on grows with the mode. Visual size only changes for `.tile`
+   controls; every other HUD control keeps its look and gains an invisible,
+   centred hit area of at least --hit via a pseudo-element. */
+
+:root {
+  --hit: 36px;
+  --focus-ring: #e8a33d;
+}
+html[data-input='touch'],
+html[data-input='gamepad'] {
+  --hit: 48px;
+}
+html[data-input='tv'] {
+  --hit: 64px;
+  font-size: 118%;
+}
+
+.tile {
+  min-height: var(--hit);
+  min-width: var(--hit);
+  touch-action: manipulation;
+}
+.tile-round {
+  height: var(--hit);
+  width: var(--hit);
+  min-height: var(--hit);
+  min-width: var(--hit);
+}
+html[data-input='pointer'] .tile-round {
+  /* Pointer mode keeps the compact 32px icon buttons the layout was drawn with. */
+  height: 2rem;
+  width: 2rem;
+  min-height: 2rem;
+  min-width: 2rem;
+}
+
+/* Invisible hit-area extension for every HUD control that is not a Tile. */
+html:not([data-input='pointer']) .hud button:not(.absolute):not(.fixed):not(.tile),
+html:not([data-input='pointer']) .hud a:not(.absolute):not(.fixed):not(.tile) {
+  position: relative;
+}
+html:not([data-input='pointer']) .hud button:not(.absolute):not(.fixed):not(.tile)::after,
+html:not([data-input='pointer']) .hud a:not(.absolute):not(.fixed):not(.tile)::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, var(--hit));
+  height: max(100%, var(--hit));
+  transform: translate(-50%, -50%);
+  border-radius: inherit;
+}
+
+/* Sliders: a bigger thumb and a taller track on glass. */
+html:not([data-input='pointer']) [data-slot='slider-thumb'] {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-width: 2px;
+}
+html:not([data-input='pointer']) [data-slot='slider-track'][data-orientation='horizontal'] {
+  height: 0.625rem;
+}
+html:not([data-input='pointer']) [data-slot='slider'] {
+  padding-block: 0.5rem;
+}
+/* Extend the thumb's hit area without changing its look. */
+[data-slot='slider-thumb'] {
+  position: relative;
+}
+[data-slot='slider-thumb']::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, var(--hit));
+  height: max(100%, var(--hit));
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+}
+
+/* Focus you can see from a sofa. Pointer mode keeps the subtle library ring. */
+html:not([data-input='pointer']) .hud :focus-visible,
+html:not([data-input='pointer']) [data-focus-layer] :focus-visible,
+html[data-input='gamepad'] :focus,
+html[data-input='tv'] :focus {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px rgba(232, 163, 61, 0.28);
+}
+html[data-input='gamepad'] [data-slot='slider-thumb']:focus,
+html[data-input='tv'] [data-slot='slider-thumb']:focus {
+  outline-offset: 2px;
+}
+
+/* ---- Arcade hall attract mode ---- */
+@keyframes attract-bob {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-6px) scale(1.06);
+  }
+}
+.attract-bob {
+  animation: attract-bob 1.6s ease-in-out infinite;
+}
+
+/* ---- Ploob, the Ploobian ---- */
+@keyframes ploob-squish {
+  0%, 100% { transform: scale(1, 1); }
+  50% { transform: scale(1.035, 0.965); }
+}
+@keyframes ploob-blink {
+  0%, 93%, 100% { transform: scaleY(1); }
+  96% { transform: scaleY(0.08); }
+}
+@keyframes ploob-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.ploob-animated .ploob-body { animation: ploob-squish 3.2s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+.ploob-animated .ploob-eyes { animation: ploob-blink 5.2s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 50%; }
+.ploob-bob { animation: ploob-bob 2.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .ploob-animated .ploob-body, .ploob-animated .ploob-eyes, .ploob-bob { animation: none; }
+}
