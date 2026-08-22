@@ -60,8 +60,8 @@ j = await page.evaluate(() => ({ o2: window.__journey.o2, co2: window.__journey.
 check('late lungs: O₂ topped up, CO₂ breathed out', j.o2 === 4 && j.co2 === 0, JSON.stringify(j))
 
 // 4 — heart
-await page.evaluate(() => { window.__bloodSim.camZ = -60 })
-await page.waitForTimeout(1500)
+await page.evaluate(() => { window.__bloodSim.camZ = -51 })
+await page.waitForTimeout(1200)
 j = await page.evaluate(() => ({ stage: window.__journey.stageIndex, o2: window.__journey.o2 }))
 check('left heart reached with full O₂', j.stage === 1 && j.o2 === 4, JSON.stringify(j))
 check('HUD shows The left heart', await page.getByText('The left heart').count() > 0)
@@ -69,12 +69,7 @@ const race1 = await page.evaluate(() => ({
   split: window.__journey.lastSplit,
   crossed: window.__journey.crossedIndex,
 }))
-// Intent is "crossing a gate records a split", not "exactly one gate has been
-// passed": camZ −60 clears two of them, so the old `crossed === 1` made this a
-// test of the ride's pacing rather than of the split timer. Stale since the
-// gates were respaced — reproduced identically on an unmerged blood6 build, so
-// it is not a merge regression.
-check('checkpoint crossing recorded a sector split', race1.crossed >= 1 && typeof race1.split === 'number', JSON.stringify(race1))
+check('checkpoint crossing recorded a sector split', race1.crossed === 1 && typeof race1.split === 'number', JSON.stringify(race1))
 check('checkpoint banner shown', await page.getByText(/Checkpoint/i).count() > 0)
 await page.screenshot({ path: 'shots/journey-heart.png' })
 

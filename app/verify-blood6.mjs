@@ -110,9 +110,21 @@ await page.getByRole('radio', { name: /Resting/i }).click({ force: true })
 await page.waitForTimeout(500)
 check('moving the dial mid-lap voids the trial',
   await page.evaluate(() => window.__journey.lapDemand === -1))
-const mixedCompleted = await rideALap('mixed', 90000)
+/**
+ * Watch the specific lap rollover rather than "wait for a trial to appear":
+ * a discarded lap is silent, so waiting for a trial just catches the NEXT,
+ * clean lap and looks like a pass-through failure.
+ */
+const lapBefore = await page.evaluate(() => window.__journey.lap)
+let rolled = false
+const tMix = Date.now()
+while (Date.now() - tMix < 95000) {
+  await page.waitForTimeout(700)
+  if ((await page.evaluate(() => window.__journey.lap)) > lapBefore) { rolled = true; break }
+}
 lab = await page.evaluate(() => window.__bloodLab())
-check('a mixed-demand lap is discarded, not recorded', !mixedCompleted && lab.trials.length === before,
+check('the mixed-demand lap did complete', rolled)
+check('a mixed-demand lap is discarded, not recorded', lab.trials.length === before,
   `${before} → ${lab.trials.length}`)
 
 // --- and a lap that was jumped rather than ridden is refused too.
