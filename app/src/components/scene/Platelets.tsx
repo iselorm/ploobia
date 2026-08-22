@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import type { ThreeEvent } from '@react-three/fiber'
 import type { SimState, Highlight } from '@/lib/sim'
-import { FIELD_LENGTH, PLATELET_COUNT, VESSEL_RADIUS } from '@/lib/sim'
+import { CELL_VERGE, FIELD_LENGTH, PLATELET_COUNT, VESSEL_RADIUS } from '@/lib/sim'
 import { radiusAtDist } from '@/lib/journey'
 import type { CellType } from '@/lib/facts'
 
@@ -111,7 +111,7 @@ export default function Platelets({ sim, highlighted, onCellClick }: Props) {
 
       d.angle += d.swirl * dt
       const localR = radiusAtDist(-d.z, VESSEL_RADIUS)
-      const maxR = Math.max(0.45, localR - 0.9)
+      const maxR = Math.max(0.45, localR - 0.6 - CELL_VERGE)
       const r = Math.min(d.orbit + Math.sin(sim.time * 2.4 + d.wobblePhase) * 0.3, maxR)
       dq.setFromAxisAngle(d.rotAxis, d.rotRate * dt)
       dummy.position.set(Math.cos(d.angle) * r, Math.sin(d.angle) * r, d.z)

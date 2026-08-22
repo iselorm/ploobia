@@ -7,18 +7,23 @@
  * The budgets below are the contract: exceed one and this goes red before a
  * learner on a cheap Android finds out for you.
  *
- * It also tests the mechanism rather than trusting it:
- *  - the low tier must actually cost less than the high tier;
- *  - the DPR cap must reach the drawing buffer;
- *  - walking cabinet to cabinet must NOT ratchet the tier down (the bug this
- *    was written to catch: the frame-time window carried across mounts, so a
- *    new room's shader-compile burst read as sustained slowness).
+ * It also tests the mechanism rather than trusting it: the low tier must cost
+ * measurably less than the high tier, and walking cabinet to cabinet must not
+ * ratchet the tier down (the bug this was written to catch — the frame-time
+ * window used to carry across mounts, so a new room's shader-compile burst read
+ * as sustained slowness and cost a tier, permanently).
+ *
+ * **One browser context at a time, always closed before the next.** Browsers
+ * cap live WebGL contexts at around sixteen; holding a low-tier and a high-tier
+ * page open per cabinet exhausted them, and the later cabinets then reported no
+ * snapshot at all — which reads as "the probe is missing" when the truth is
+ * "this page never got a GL context". Measure, close, move on.
  *
  *   node verify-perf.mjs
  */
 
 import { chromium } from 'playwright'
-import { reporter } from './verify-lib.mjs'
+import { reporter, resilientClick } from './verify-lib.mjs'
 
 const BASE = 'http://localhost:8765/index.html'
 const { check, skip, tally } = reporter()
@@ -39,22 +44,14 @@ const BUDGETS = {
 const ENTER = ['Start measuring', 'Start experimenting', 'Start forging', 'Start the fieldwork', 'Start in the lungs']
 const DISMISS = ['Skip intro', 'Skip']
 
-/**
- * `page.goto` to a URL that differs only in its hash does NOT reload the
- * document, and the quality tier is pinned once at module load — so navigating
- * between `?q=low` and `?q=high` in one page silently measures the same tier
- * twice. (It did, and produced byte-identical "low" and "high" numbers that
- * looked like the tier system doing nothing.) Force the reload.
- */
-async function open(page, route, tier) {
-  const url = `${BASE}#/${route}${tier ? `?q=${tier}` : ''}`
-  await page.goto(url, { waitUntil: 'networkidle' })
-  await page.reload({ waitUntil: 'networkidle' })
-  await page.waitForTimeout(2500)
+const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] })
+
+/** Get past the welcome card and any concepts intro so the scene is real. */
+async function enter(page, route) {
   for (const label of ENTER) {
     const b = page.getByRole('button', { name: label })
     if (await b.count()) {
-      await b.first().click({ force: true })
+      await resilientClick(b.first(), { label: `${route} enter` })
       break
     }
   }
@@ -62,120 +59,131 @@ async function open(page, route, tier) {
   for (const label of DISMISS) {
     const b = page.getByRole('button', { name: label, exact: true })
     if (await b.count()) {
-      await b.first().click({ force: true })
+      await resilientClick(b.first(), { label: `${route} dismiss` })
       break
     }
   }
 }
 
 /**
- * Poll for a snapshot rather than sleeping a fixed time. The probe wants ten
- * frames before it will report a median, and at the high tier under software
- * rendering the Rate Lab manages about one frame a second — a fixed nine-second
- * wait returned nothing at all, which read as "no probe mounted" when the truth
- * was "not ten frames yet".
+ * Poll for a snapshot rather than sleeping a fixed time: the probe wants ten
+ * frames before it reports a median, and at the high tier under software
+ * rendering the Rate Lab manages about one frame a second.
+ *
+ * A snapshot of one call and one triangle is a half-composed first frame, not a
+ * measurement — hence the `calls > 5` floor.
  */
-async function readPerf(page, timeoutMs = 60000) {
+async function awaitSnapshot(page, timeoutMs = 45000) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     const p = await page.evaluate(() => window.__perf ?? null)
-    if (p) return p
+    if (p && p.calls > 5) return p
     await page.waitForTimeout(1000)
   }
   return null
 }
 
-const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] })
-const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+/** Open one cabinet in a throwaway context, measure it, close everything. */
+async function snapshot(route, tier) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  const page = await ctx.newPage()
+  try {
+    const url = `${BASE}#/${route}${tier ? `?q=${tier}` : ''}`
+    // A hash-only goto does not reload, and the tier is pinned at module load —
+    // the reload is what makes `?q=` mean anything on a second navigation.
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 })
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 })
+    await page.waitForTimeout(2500)
+    await enter(page, route)
+    const snap = await awaitSnapshot(page)
+    await ctx.close()
+    return { snap }
+  } catch (e) {
+    await ctx.close().catch(() => {})
+    return { snap: null, error: String(e).split('\n')[0] }
+  }
+}
 
 const table = []
 
 for (const [route, budget] of Object.entries(BUDGETS)) {
-  const page = await ctx.newPage()
-  try {
-    await open(page, route, 'low')
-    const low = await readPerf(page)
-    if (!low) {
-      check(`${route}: probe reported`, false, 'no snapshot — is <PerfProbe/> mounted in this Canvas?')
-      await page.close()
-      continue
-    }
-    check(`${route}: probe reported`, true, `${low.calls} calls · ${low.triangles.toLocaleString()} tris · ${low.programs} programs`)
-    check(`${route}: draw calls within budget at low tier`, low.calls <= budget.calls, `${low.calls} / ${budget.calls}`)
-    check(
-      `${route}: triangles within budget at low tier`,
-      low.triangles <= budget.triangles,
-      `${low.triangles.toLocaleString()} / ${budget.triangles.toLocaleString()}`,
-    )
-    table.push({ route, ...low })
-
-    // The tier has to buy something. If high and low cost the same, a cabinet
-    // is ignoring the caps and the whole adaptive system is decoration.
-    // A separate page, because the tier is pinned at module load.
-    const hp = await ctx.newPage()
-    await open(hp, route, 'high')
-    const high = await readPerf(hp)
-    // A snapshot of one call and one triangle is a half-composed first frame,
-    // not a measurement of the high tier — the probe published its median as
-    // soon as it had ten frames, and on this renderer those ten frames can all
-    // predate the scene being built. Treat it as no snapshot.
-    if (high && high.calls > 5) {
-      const cheaper =
-        low.triangles < high.triangles || low.calls < high.calls || low.drawingBuffer !== high.drawingBuffer
-      check(
-        `${route}: low tier is measurably cheaper than high`,
-        cheaper,
-        `low ${low.calls}c/${low.triangles.toLocaleString()}/${low.drawingBuffer} vs high ${high.calls}c/${high.triangles.toLocaleString()}/${high.drawingBuffer}`,
-      )
-    } else {
-      // At the high tier a software renderer can sit under one frame per
-      // second, so the probe never gathers its ten frames. That says nothing
-      // about the tier system — only about this renderer.
-      skip(`${route}: low tier is measurably cheaper than high`, 'no high-tier snapshot within 60 s on this renderer')
-    }
-    await hp.close()
-  } catch (e) {
-    check(`${route}: perf pass did not crash`, false, String(e).split('\n')[0])
+  const { snap: low, error } = await snapshot(route, 'low')
+  if (!low) {
+    check(`${route}: probe reported at low tier`, false, error ?? 'no snapshot within 45 s')
+    continue
   }
-  await page.close()
+  check(
+    `${route}: probe reported at low tier`,
+    true,
+    `${low.calls} calls · ${low.triangles.toLocaleString()} tris · ${low.programs} programs`,
+  )
+  check(`${route}: draw calls within budget`, low.calls <= budget.calls, `${low.calls} / ${budget.calls}`)
+  check(
+    `${route}: triangles within budget`,
+    low.triangles <= budget.triangles,
+    `${low.triangles.toLocaleString()} / ${budget.triangles.toLocaleString()}`,
+  )
+  table.push({ route, ...low })
+
+  // The tier has to buy something. If high and low cost the same, a cabinet is
+  // ignoring the caps and the whole adaptive system is decoration.
+  const { snap: high } = await snapshot(route, 'high')
+  if (high) {
+    const cheaper =
+      low.triangles < high.triangles || low.calls < high.calls || low.drawingBuffer !== high.drawingBuffer
+    check(
+      `${route}: low tier is measurably cheaper than high`,
+      cheaper,
+      `low ${low.calls}c/${low.triangles.toLocaleString()} vs high ${high.calls}c/${high.triangles.toLocaleString()}`,
+    )
+  } else {
+    skip(
+      `${route}: low tier is measurably cheaper than high`,
+      'the high tier never reached ten frames on this renderer within 45 s',
+    )
+  }
 }
 
-/* -- The ratchet bug: walking the arcade must not cost you a tier ---- */
+/* -- The ratchet: walking the arcade must not cost you a tier -------- */
 {
+  // Deliberately unpinned so the tier is free to adapt. One context, four
+  // rooms inside it — what carries between mounts is the whole point.
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } })
   const page = await ctx.newPage()
   try {
-    // No ?q= pin here: the tier must be free to adapt, which is the point.
-    await open(page, 'photosynthesis', '')
-    const first = (await readPerf(page))?.tier ?? null
-    let last = first
-    for (const route of ['atoms', 'rivers', 'blood']) {
-      await open(page, route, '')
-      last = (await readPerf(page))?.tier ?? last
+    const visit = async (route) => {
+      await page.goto(`${BASE}#/${route}`, { waitUntil: 'domcontentloaded', timeout: 60000 })
+      await page.waitForTimeout(2000)
+      await enter(page, route)
+      const snap = await awaitSnapshot(page)
+      return snap?.tier ?? null
     }
+
+    const first = await visit('photosynthesis')
+    let last = first
+    for (const route of ['atoms', 'rivers', 'blood']) last = (await visit(route)) ?? last
 
     const ORDER = ['high', 'medium', 'low']
     if (!first) {
-      skip('walking four cabinets costs at most one tier step', 'no snapshot from the first cabinet — this renderer never reached ten frames')
+      skip('walking four cabinets costs at most one tier step', 'no snapshot from the first cabinet on this renderer')
     } else if (first === 'low') {
       // Software renderers are detected at boot and start at `low`, where
-      // reportFrame returns early — so there is no ratchet left to exercise.
+      // reportFrame returns early — there is no ratchet left to exercise here.
       // This becomes a real assertion the moment it runs on a GPU.
-      skip('walking four cabinets costs at most one tier step', `renderer starts at the ${first} tier, so the ratchet cannot be exercised here`)
+      skip(
+        'walking four cabinets costs at most one tier step',
+        `renderer starts at the ${first} tier, so the ratchet cannot be exercised here`,
+      )
     } else {
-      // The bug this guards: the frame-time window used to carry across
-      // cabinet mounts, so each new room's shader-compile burst read as
-      // sustained slowness and cost a tier — permanently, since downgrades
-      // never reverse. Four rooms should cost at most one honest step.
       const slid = ORDER.indexOf(last) - ORDER.indexOf(first)
       check('walking four cabinets costs at most one tier step', slid <= 1, `${first} → ${last} (${slid} steps)`)
     }
   } catch (e) {
     check('ratchet pass did not crash', false, String(e).split('\n')[0])
   }
-  await page.close()
+  await ctx.close().catch(() => {})
 }
 
-await ctx.close()
 await browser.close()
 
 if (table.length) {

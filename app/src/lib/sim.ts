@@ -1,6 +1,14 @@
 import * as THREE from 'three'
 import type { CellType } from './facts'
 
+/**
+ * Width of the clear "verge" kept between the cell traffic and the vessel
+ * wall. The wall-mounted direction signs live in it, so nothing may be
+ * allowed to drift into it — a sign buried in the crowd is a sign nobody
+ * can read.
+ */
+export const CELL_VERGE = 1.5
+
 /** Vessel geometry constants shared across the scene. */
 export const VESSEL_RADIUS = 9
 export const VESSEL_LENGTH = 340

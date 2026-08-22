@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import type { ThreeEvent } from '@react-three/fiber'
 import type { SimState, Highlight } from '@/lib/sim'
-import { FIELD_LENGTH, MAX_RBC, VESSEL_RADIUS, heartbeat } from '@/lib/sim'
+import { CELL_VERGE, FIELD_LENGTH, MAX_RBC, VESSEL_RADIUS, heartbeat } from '@/lib/sim'
 import { getJourney, oxygenationAt, radiusAtDist, beatsPerSecond } from '@/lib/journey'
 import { getQualityCaps } from '@/lib/quality'
 import type { CellType } from '@/lib/facts'
@@ -162,7 +162,7 @@ export default function RedBloodCells({ sim, highlighted, onCellClick }: Props) 
       data.angle[i] += data.swirl[i] * dt
       const wob = Math.sin(sim.time * data.wobbleSpeed[i] + data.wobblePhase[i]) * 0.18
       const localR = radiusAtDist(-data.z[i], VESSEL_RADIUS)
-      const maxR = Math.max(0.55, localR - 1.15 * data.scale[i] - 0.4)
+      const maxR = Math.max(0.55, localR - 1.15 * data.scale[i] - CELL_VERGE)
       const minR = Math.min(2.0, maxR * 0.5)
       const r = Math.min(Math.max(data.orbit[i] + wob, minR), maxR)
 
@@ -172,9 +172,28 @@ export default function RedBloodCells({ sim, highlighted, onCellClick }: Props) 
 
       dummy.position.set(Math.cos(data.angle[i]) * r, Math.sin(data.angle[i]) * r, data.z[i])
       dummy.quaternion.copy(data.quats[i])
+      /**
+       * Thin the crowd where the vessel narrows. Keeping the same number of
+       * cells in a bore three times narrower does not look like a capillary —
+       * it looks like a wall of cells, and it hides everything the stage is
+       * there to show. A real capillary carries FEWER cells at once, in
+       * single file, which is exactly what falling density gives us.
+       *
+       * The allowance is compared against the cell's own index, so the same
+       * cells drop out each time rather than flickering at random.
+       */
+      const boreK = Math.min(1, Math.max(0.12, Math.pow(localR / VESSEL_RADIUS, 1.6)))
+      const allowance = count * boreK
+      const crowdFade = Math.min(1, Math.max(0, (allowance - i) / (count * 0.1)))
+
       // cells fold slightly to fit the narrow vessels
       const squeeze = Math.min(1, Math.max(0, (localR - 2.2) / 6.8))
-      let s = data.scale[i] * (i === hiId ? 1.45 : 1) * (1 + beat * 0.03) * (0.78 + 0.22 * squeeze)
+      let s =
+        data.scale[i] *
+        (i === hiId ? 1.45 : 1) *
+        (1 + beat * 0.03) *
+        (0.78 + 0.22 * squeeze) *
+        crowdFade
       // never let a cell swallow the camera: shrink smoothly as it passes
       const pdx = dummy.position.x
       const pdy = dummy.position.y

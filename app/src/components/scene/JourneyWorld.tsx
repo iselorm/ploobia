@@ -8,6 +8,7 @@ import { LAP_LENGTH, STAGE_ENDS, getJourney, radiusAtDist } from '@/lib/journey'
 import type { CellType } from '@/lib/facts'
 import GlyphInstances, { glyphTexture, hideGlyph, writeGlyph } from '@/components/photo/Glyphs'
 import { getQualityCaps } from '@/lib/quality'
+import { attachFade, commitFade, makeFadeMaterial } from './fadeMaterial'
 
 /**
  * Everything the learner sees THROUGH the vessel wall on the window
@@ -30,6 +31,39 @@ const FIELD_HALF = 140
 interface Props {
   sim: SimState
   onCellClick: (type: CellType, id: number) => void
+}
+
+/**
+ * A bare chevron, drawn white so a per-instance tint can colour it. These are
+ * only ever drawn ATTACHED to a labelled molecule, so the arrow always has a
+ * name beside it — a chevron on its own is a puzzle, not a signpost.
+ */
+let chevronTex: THREE.CanvasTexture | null = null
+function chevronTexture(): THREE.CanvasTexture {
+  if (chevronTex) return chevronTex
+  const size = 128
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (ctx) {
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.shadowColor = 'rgba(255,255,255,0.9)'
+    ctx.shadowBlur = 10
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 22
+    ctx.beginPath()
+    ctx.moveTo(42, 26)
+    ctx.lineTo(96, 64)
+    ctx.lineTo(42, 102)
+    ctx.stroke()
+  }
+  chevronTex = new THREE.CanvasTexture(canvas)
+  chevronTex.colorSpace = THREE.SRGBColorSpace
+  chevronTex.minFilter = THREE.LinearFilter
+  chevronTex.magFilter = THREE.LinearFilter
+  return chevronTex
 }
 
 /** Deterministic pseudo-random stream so layouts are stable across mounts. */
@@ -223,7 +257,24 @@ function GasLanes({
   const atomRef = useRef<THREE.InstancedMesh>(null)
   const coreRef = useRef<THREE.InstancedMesh>(null)
   const labelRef = useRef<THREE.InstancedMesh>(null)
+  const arrowRef = useRef<THREE.InstancedMesh>(null)
   const { camera } = useThree()
+
+  // One direction arrow per molecule, sitting just ahead of it along its path.
+  const arrowGeo = useMemo(() => new THREE.PlaneGeometry(0.68, 0.68), [])
+  const arrowMat = useMemo(() => makeFadeMaterial(chevronTexture()), [])
+  const arrowFade = useMemo(() => attachFade(arrowGeo, count), [arrowGeo, count])
+  const arrowTint = useMemo(
+    () => new THREE.Color(species === 'o2' ? '#8FD2F2' : '#FF8E78'),
+    [species],
+  )
+  const scratchDir = useMemo(() => ({
+    right: new THREE.Vector3(),
+    up: new THREE.Vector3(),
+    dir: new THREE.Vector3(),
+    qz: new THREE.Quaternion(),
+    zAxis: new THREE.Vector3(0, 0, 1),
+  }), [])
 
   const LABEL_EVERY = 4
   const labelCount = Math.ceil(count / LABEL_EVERY)
@@ -247,7 +298,11 @@ function GasLanes({
     const atoms = species === 'o2' ? atomRef.current : coreRef.current
     const sats = species === 'co2' ? atomRef.current : null
     const label = labelRef.current
+    const arrows = arrowRef.current
     if (!atoms || !label) return
+    const { right, up, dir, qz, zAxis } = scratchDir
+    right.set(1, 0, 0).applyQuaternion(camera.quaternion)
+    up.set(0, 1, 0).applyQuaternion(camera.quaternion)
     for (let i = 0; i < count; i++) {
       const d = data[i]
       const z = nearestWorldZ(d.local, sim.camZ)
@@ -260,6 +315,10 @@ function GasLanes({
           hideGlyph(sats, i * 2 + 1, dummy)
         }
         if (i % LABEL_EVERY === 0) hideGlyph(label, li, dummy)
+        if (arrows) {
+          arrowFade[i] = 0
+          hideGlyph(arrows, i, dummy)
+        }
         continue
       }
       const localR = radiusAtDist(-z, VESSEL_RADIUS)
@@ -300,10 +359,34 @@ function GasLanes({
         dummy.position.set(x, y, z)
         writeGlyph(label, li, dummy, camera, dummy.position, fade * 2.4, 0.5)
       }
+
+      // --- the direction arrow, riding just ahead of this molecule and
+      // pointing the way it is travelling. Because it is pinned to a molecule
+      // that wears its own formula, the arrow can never be mistaken for
+      // scenery: it always reads as "this O₂ is going that way".
+      if (arrows) {
+        const travel = -d.zone.dir // dir 1 = inward, so travel is toward the axis
+        const ax = Math.cos(d.angle) * (r + travel * 1.0)
+        const ay = Math.sin(d.angle) * (r + travel * 1.0)
+        dummy.position.set(ax, ay, z)
+        dir.set(Math.cos(d.angle) * travel, Math.sin(d.angle) * travel, 0)
+        const ang = Math.atan2(dir.dot(up), dir.dot(right))
+        dummy.quaternion.copy(camera.quaternion).multiply(qz.setFromAxisAngle(zAxis, ang))
+        dummy.scale.setScalar(1)
+        dummy.updateMatrix()
+        arrows.setMatrixAt(i, dummy.matrix)
+        arrows.setColorAt(i, arrowTint)
+        arrowFade[i] = fade * 0.95
+      }
     }
     atoms.instanceMatrix.needsUpdate = true
     if (sats) sats.instanceMatrix.needsUpdate = true
     label.instanceMatrix.needsUpdate = true
+    if (arrows) {
+      arrows.instanceMatrix.needsUpdate = true
+      if (arrows.instanceColor) arrows.instanceColor.needsUpdate = true
+      commitFade(arrowGeo)
+    }
   })
 
   if (species === 'o2') {
@@ -314,6 +397,12 @@ function GasLanes({
           <meshStandardMaterial color="#7EC8EE" emissive="#5FB6E8" emissiveIntensity={0.75} roughness={0.15} transparent opacity={0.92} />
         </instancedMesh>
         <GlyphInstances ref={labelRef} text="O₂" color="#14567D" count={labelCount} size={0.2} />
+        <instancedMesh
+          ref={arrowRef}
+          args={[arrowGeo, arrowMat, count]}
+          frustumCulled={false}
+          renderOrder={2}
+        />
       </group>
     )
   }
@@ -328,6 +417,12 @@ function GasLanes({
         <meshStandardMaterial color="#E14B3C" emissive="#B22A1C" emissiveIntensity={0.5} roughness={0.4} />
       </instancedMesh>
       <GlyphInstances ref={labelRef} text="CO₂" color="#7A1E14" count={labelCount} size={0.2} />
+      <instancedMesh
+        ref={arrowRef}
+        args={[arrowGeo, arrowMat, count]}
+        frustumCulled={false}
+        renderOrder={2}
+      />
     </group>
   )
 }

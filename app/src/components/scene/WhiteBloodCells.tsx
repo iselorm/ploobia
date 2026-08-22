@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import type { ThreeEvent } from '@react-three/fiber'
 import type { SimState, Highlight } from '@/lib/sim'
-import { FIELD_LENGTH, VESSEL_RADIUS, WBC_COUNT, heartbeat } from '@/lib/sim'
+import { CELL_VERGE, FIELD_LENGTH, VESSEL_RADIUS, WBC_COUNT, heartbeat } from '@/lib/sim'
 import { radiusAtDist, beatsPerSecond } from '@/lib/journey'
 import { WBC_KINDS, WBC_ROSTER, type CellType } from '@/lib/facts'
 
@@ -106,7 +106,7 @@ export default function WhiteBloodCells({ sim, highlighted, onCellClick }: Props
       // a white cell HAS to deform through a capillary — hug the axis and shrink
       const localR = radiusAtDist(-d.z, VESSEL_RADIUS)
       const fit = Math.min(1, Math.max(0.42, (localR - 0.6) / (2.35 * d.scale * 2.3)))
-      const maxR = Math.max(0.0, localR - 2.35 * d.scale * fit - 0.5)
+      const maxR = Math.max(0.0, localR - 2.35 * d.scale * fit - CELL_VERGE)
       const r = Math.min(d.orbit, maxR)
       mesh.position.set(Math.cos(d.angle) * r, Math.sin(d.angle) * r, d.z)
       sim.wbcPos[i].copy(mesh.position)

@@ -77,7 +77,7 @@ export const STAGES: StageDef[] = [
   {
     id: 'lungs', length: 47,
     title: 'The lungs',
-    toast: 'Oxygen loading station — air is on the other side of this thin wall',
+    toast: 'Oxygen loading station. Blue O₂ arrows point IN through the wall; red CO₂ arrows point out to be breathed away',
     radiusK: 0.82, wall: '#B24A55', window: 0.55, flowK: 0.9, pulseK: 0.5,
     fog: '#5A1E26', fogDensity: 0.034, light: '#FFB9A0',
   },
@@ -91,7 +91,7 @@ export const STAGES: StageDef[] = [
   {
     id: 'artery', length: 52,
     title: 'An artery',
-    toast: 'The motorway — bright red blood racing out to the body',
+    toast: 'The motorway. The O₂ ❯ signs on the walls show the cargo you are carrying out to the body',
     radiusK: 1.0, wall: '#8E2028', window: 0, flowK: 1.3, pulseK: 1.0,
     fog: '#4A0E12', fogDensity: 0.042, light: '#FF9A76',
   },
@@ -105,14 +105,14 @@ export const STAGES: StageDef[] = [
   {
     id: 'tissue', length: 55,
     title: 'Body tissue',
-    toast: 'Delivery time — living cells are waiting for their oxygen',
+    toast: 'Delivery time. Now the blue O₂ arrows point OUT to the waiting cells, and red CO₂ arrows come back in',
     radiusK: 0.34, wall: '#9C4A4A', window: 0.6, flowK: 0.65, pulseK: 0.1,
     fog: '#4E1A1E', fogDensity: 0.046, light: '#FFC2A2',
   },
   {
     id: 'vein', length: 47,
     title: 'A vein',
-    toast: 'The quiet road home — darker blood drifting back to the heart',
+    toast: 'The quiet road home. CO₂ ❯ signs now — that is the waste gas riding back with you',
     radiusK: 1.15, wall: '#5E141C', window: 0, flowK: 0.85, pulseK: 0.25,
     fog: '#380A0E', fogDensity: 0.05, light: '#E58A70',
   },

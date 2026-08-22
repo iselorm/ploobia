@@ -40,7 +40,10 @@ export async function resilientClick(locator, { timeout = 8000, label = 'element
     await locator.click({ timeout })
     return 'click'
   } catch {
-    await locator.dispatchEvent('click')
+    // The fallback needs a *longer* budget than the real click, not the same
+    // one: it is used precisely when the main thread is saturated, and the
+    // Motion Yard has gone over 30 s at its welcome card.
+    await locator.dispatchEvent('click', { timeout: 90000 })
     console.log(`   · ${label}: real click timed out on a slow renderer, dispatched the event instead`)
     return 'dispatched'
   }
