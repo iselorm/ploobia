@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { getQualityCaps, reportFrame, useQualityCaps } from '@/lib/quality'
+import PerfProbe from '@/components/PerfProbe'
 import { WorldState } from '@/lib/world'
 import { stepRiver, type RiverSim } from '@/lib/river'
 import PostFX from '@/components/photo/world/PostFX'
@@ -63,6 +64,7 @@ export default function RiverScene({ sim, sections, onContextLost }: Props) {
       }}
     >
       <SimTicker sim={sim} />
+      <PerfProbe cabinet="rivers" />
       <RiverCamera sim={sim} />
       <BasinWorld sim={sim} world={world} />
       <MapSheet sim={sim} />

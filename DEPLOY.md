@@ -10,11 +10,22 @@ Everything below assumes the repository is on GitHub as `ploobia` and that
 
 ## 1. First deploy (about ten minutes)
 
-**Push the repository.**
+**Push the repository.** It already has its full history committed, so this is
+two commands — the repo must be created by you, since a build agent's GitHub
+token is scoped to repositories it has already been given.
 
 ```bash
-git init && git add -A && git commit -m "Ploobia: six cabinets, one bundle"
-gh repo create ploobia --private --source=. --push
+gh repo create ploobia --private          # or make it in the GitHub web UI
+git remote add origin git@github.com:iselorm/ploobia.git
+git push -u origin main
+```
+
+If you were handed `ploobia.gitbundle` rather than a working tree:
+
+```bash
+git clone ploobia.gitbundle ploobia && cd ploobia
+git remote set-url origin git@github.com:iselorm/ploobia.git
+git push -u origin main
 ```
 
 **Connect it to Pages.** In the Cloudflare dashboard → Workers & Pages →
@@ -137,6 +148,17 @@ build id.
   laptop and continues on a tablet starts over. Fine for a pilot; the event log
   in `app/src/lib/events.ts` was written with a backend swap in mind — the
   schema does not change, only the adapter.
+- **The Rate Lab is the heaviest cabinet** since the Cinematic Lab IV light
+  pass — contact occlusion, leaf translucency, light shafts, depth of field. Its
+  draw-call count is low (42 at the low tier), so the cost is shader and fill
+  work, which real GPUs handle far better than the software renderer CI uses.
+  It has **not been measured on a real tablet yet**, and that is the single most
+  useful thing the first pilot session can tell you: open `#/photosynthesis`,
+  and the report tab will attach the tier, frame time and draw count.
+- **Quality adapts downward only, and never recovers within a session.** That is
+  deliberate — flapping looks worse than a steady lower tier — but it means one
+  genuinely bad moment pins the tier until reload. `?q=high` in the URL forces it
+  back for a demo.
 - **Private browsing loses everything on close.** The app detects this
   (`persist.available`) so it can be honest rather than pretending to save.
 - **Build-time variables are baked in.** Changing `VITE_PILOT` or

@@ -20,6 +20,7 @@
  */
 
 import { read, write, available as storageAvailable } from './persist'
+import { getPerf, glRenderer, type PerfSnapshot } from './perf'
 
 /* ------------------------------------------------------------------ */
 /* Build-time configuration                                           */
@@ -140,28 +141,6 @@ export interface DeviceInfo {
   language: string
 }
 
-let cachedRenderer: string | null | undefined
-
-function glRenderer(): string | null {
-  if (cachedRenderer !== undefined) return cachedRenderer
-  cachedRenderer = null
-  try {
-    const canvas = document.createElement('canvas')
-    const gl = (canvas.getContext('webgl2') ?? canvas.getContext('webgl')) as WebGLRenderingContext | null
-    if (gl) {
-      const ext = gl.getExtension('WEBGL_debug_renderer_info')
-      cachedRenderer = ext
-        ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL))
-        : String(gl.getParameter(gl.RENDERER))
-      const lose = gl.getExtension('WEBGL_lose_context')
-      lose?.loseContext()
-    }
-  } catch {
-    cachedRenderer = null
-  }
-  return cachedRenderer
-}
-
 export function deviceInfo(): DeviceInfo {
   const nav = navigator as Navigator & { deviceMemory?: number }
   return {
@@ -202,6 +181,8 @@ export interface Report {
   mood: Mood
   note: string
   device: DeviceInfo
+  /** What the scene was actually costing when the report was filed. */
+  perf: PerfSnapshot | null
   errors: CapturedError[]
   /** Counts only — never the readings themselves. */
   activity: { events: number; readings: number; missions: number }
@@ -235,6 +216,7 @@ export function buildReport(draft: ReportDraft): Report {
     build: BUILD,
     ...draft,
     device: deviceInfo(),
+    perf: getPerf(),
     errors: getErrors(),
     sent: false,
   }
@@ -294,6 +276,9 @@ export function reportText(r: Report): string {
     `${d.ua}`,
     `screen ${d.screen} · viewport ${d.viewport} · dpr ${d.dpr} · ${d.touch ? 'touch' : 'pointer'} · ${d.language}`,
     `gpu ${d.renderer ?? 'unknown'} · fps ${d.fps ?? '—'} · cores ${d.cores ?? '—'} · ram ${d.memoryGb ?? '—'}GB · storage ${d.storage ? 'on' : 'OFF'}`,
+    r.perf
+      ? `scene ${r.perf.tier} tier · ${r.perf.fps} fps (median ${r.perf.frameMs} ms, worst ${r.perf.worstMs} ms) · ${r.perf.calls} draw calls · ${r.perf.triangles.toLocaleString()} tris · ${r.perf.programs} programs · buffer ${r.perf.drawingBuffer}`
+      : 'scene cost not sampled',
     `activity ${r.activity.events} events · ${r.activity.readings} readings · ${r.activity.missions} missions`,
     r.errors.length
       ? `\nerrors:\n${r.errors.map((e) => `  [${e.kind}] ${e.message}`).join('\n')}`

@@ -21,7 +21,7 @@ export const CABINET_SPONSORS: Record<string, Sponsor | undefined> = {
   // photosynthesis: { name: 'Example Foundation', line: 'Supporting STEM in Ghana', kind: 'cabinet' },
 }
 
-export const SPONSOR_CONTACT = 'mailto:sponsors@ploobia.com?subject=Sponsoring%20a%20cabinet'
+export const SPONSOR_CONTACT = 'mailto:sponsors@schoolarcade.org?subject=Sponsoring%20a%20cabinet'
 export const SUPPORT_URL = '#/home?support=1'
 
 /** Suggested one-tap amounts, in Ghana cedis (mobile money) and USD (card / PayPal). */

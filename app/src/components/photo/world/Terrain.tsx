@@ -4,6 +4,7 @@ import { useFrame } from '@react-three/fiber'
 import type { WorldState } from '@/lib/world'
 import { CLEARING, GROUND_Y, landH } from '@/lib/world'
 import { useQualityCaps } from '@/lib/quality'
+import { injectContactAO } from './shading'
 
 /* ------------------------------------------------------------------ */
 /* Polar heightfield: dense near the clearing, sparse at the horizon    */
@@ -82,6 +83,7 @@ function makeTerrainMaterial() {
   const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95, metalness: 0 })
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms)
+    injectContactAO(shader, 1)
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -130,7 +132,7 @@ function makeTerrainMaterial() {
         roughnessFactor = mix(roughnessFactor, 0.55, uWet * clamp(vParams.y, 0.0, 1.0));`,
       )
   }
-  mat.customProgramCacheKey = () => 'terrain-v1'
+  mat.customProgramCacheKey = () => 'terrain-v2-ao'
   return { mat, uniforms }
 }
 

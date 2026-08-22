@@ -24,8 +24,8 @@ export const VIEWPOINTS: Viewpoint[] = [
     id: 'overview',
     label: 'Overview',
     hint: 'The whole bench: leaf, climate, and the oxygen tube.',
-    position: [0, 3.4, 10.5],
-    target: [0, 2.2, 0],
+    position: [0.8, 3.1, 8.4],
+    target: [0, 2.05, 0],
   },
   {
     id: 'bench',
@@ -51,10 +51,10 @@ export const VIEWPOINTS: Viewpoint[] = [
   },
   {
     id: 'sunset',
-    label: 'Low sun',
-    hint: 'From behind the leaf, into the light.',
-    position: [-2.6, 1.9, -6.2],
-    target: [0, 2.6, 0.5],
+    label: 'Backlit',
+    hint: 'From low in the grass, up through the leaf into the light.',
+    position: [-1.7, 0.75, 4.0],
+    target: [0.1, 2.7, -0.2],
   },
 ]
 

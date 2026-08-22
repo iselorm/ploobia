@@ -33,12 +33,17 @@ const ALL = [
   'touch',
   'progression',
   'cinematic',
+  'light',
+  'stereo',
   'journey',
   'blood5',
   'blood6',
   'motion',
   'atoms',
   'river',
+  // Last, because it is the slow one and its failures are budgets rather than
+  // correctness — you want the correctness answer first.
+  'perf',
 ]
 
 const want = process.argv.slice(2).filter((a) => !a.startsWith('-'))
@@ -121,19 +126,28 @@ for (const name of suites) {
     p.stderr.on('data', (d) => (buf += d))
     p.on('close', (code) => resolve({ buf, code }))
   })
-  const fails = out.buf.split('\n').filter((l) => l.trimStart().startsWith('FAIL'))
+  const lines = out.buf.split('\n')
+  const fails = lines.filter((l) => l.trimStart().startsWith('FAIL'))
+  const skips = lines.filter((l) => l.trimStart().startsWith('SKIP'))
   const tally = out.buf.match(/(\d+)\/(\d+) checks passed/)
   const line = tally ? tally[0] : out.code === 0 ? 'completed' : `exited ${out.code}`
-  console.log(fails.length ? `${line}  ✗` : `${line}  ✓`)
+  const mark = fails.length ? '✗' : skips.length ? '⚠' : '✓'
+  console.log(`${line}${skips.length ? `, ${skips.length} skipped` : ''}  ${mark}`)
   fails.forEach((f) => console.log(`    ${f.trim()}`))
-  results.push({ name, fails: fails.length, line })
+  // Skips are printed too: a skip that becomes permanent is a test nobody runs.
+  skips.forEach((s) => console.log(`    ${s.trim()}`))
+  results.push({ name, fails: fails.length, skips: skips.length, line })
 }
 
 stop()
 
 const broken = results.filter((r) => r.fails > 0)
+const skipped = results.reduce((n, r) => n + (r.skips ?? 0), 0)
 console.log(
   `\n${results.length - broken.length}/${results.length} suites clean` +
-    (broken.length ? ` — failing: ${broken.map((b) => b.name).join(', ')}` : ''),
+    (broken.length ? ` — failing: ${broken.map((b) => b.name).join(', ')}` : '') +
+    (skipped
+      ? `\n${skipped} check${skipped === 1 ? '' : 's'} skipped because this renderer is too slow to measure them — VERIFY_STRICT=1 demands them on real hardware.`
+      : ''),
 )
 process.exit(broken.length ? 1 : 0)

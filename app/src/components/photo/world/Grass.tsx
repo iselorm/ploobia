@@ -5,6 +5,7 @@ import type { PhotoSim } from '@/lib/photo'
 import type { WorldState } from '@/lib/world'
 import { CLEARING, GROUND_Y, landH } from '@/lib/world'
 import { useQualityCaps } from '@/lib/quality'
+import { injectContactAO } from './shading'
 
 /* ------------------------------------------------------------------ */
 /* One blade: a tapered 5-segment ribbon. Everything else is the shader */
@@ -92,6 +93,7 @@ export default function Grass({ sim, world }: { sim: PhotoSim; world: WorldState
     const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85, metalness: 0, side: THREE.DoubleSide })
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms)
+      injectContactAO(shader, 0.7)
       shader.vertexShader = shader.vertexShader
         .replace(
           '#include <common>',
@@ -156,7 +158,7 @@ export default function Grass({ sim, world }: { sim: PhotoSim; world: WorldState
           }`,
         )
     }
-    mat.customProgramCacheKey = () => 'grass-v1'
+    mat.customProgramCacheKey = () => 'grass-v2-ao'
     return { geo, mat, uniforms }
   }, [total])
 

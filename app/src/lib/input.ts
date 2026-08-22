@@ -536,8 +536,8 @@ function installGamepadAdapter(onPresence: () => void): () => void {
     return null
   }
 
-  const poll = (now: number) => {
-    raf = requestAnimationFrame(poll)
+  const poll = () => {
+    const now = performance.now()
     const pads = navigator.getGamepads?.() ?? []
     let gp: Gamepad | null = null
     for (const p of pads) if (p && p.connected) gp = gp ?? p
@@ -617,9 +617,11 @@ function installGamepadAdapter(onPresence: () => void): () => void {
   }
   window.addEventListener('gamepadconnected', onConnect)
   window.addEventListener('gamepaddisconnected', onDisconnect)
-  raf = requestAnimationFrame(poll)
+  // A timer, not requestAnimationFrame: on a slow device frames can be 100 ms+
+  // apart and a real button press would fall between two polls.
+  raf = window.setInterval(poll, 16)
   return () => {
-    cancelAnimationFrame(raf)
+    window.clearInterval(raf)
     window.removeEventListener('gamepadconnected', onConnect)
     window.removeEventListener('gamepaddisconnected', onDisconnect)
   }

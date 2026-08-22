@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import type { PhotoSim } from '@/lib/photo'
 import type { WorldState } from '@/lib/world'
-import { GROUND_Y } from '@/lib/world'
+import { CLEARING, GROUND_Y } from '@/lib/world'
 import { useQualityCaps } from '@/lib/quality'
 
 /* ------------------------------------------------------------------ */
@@ -21,6 +21,19 @@ function streakTexture() {
   g.addColorStop(1, 'rgba(220,235,255,0)')
   ctx.fillStyle = g
   ctx.fillRect(6, 0, 4, 64)
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.SRGBColorSpace
+  return t
+}
+function ringTexture() {
+  const c = document.createElement('canvas')
+  c.width = c.height = 64
+  const ctx = c.getContext('2d')!
+  ctx.strokeStyle = 'rgba(235,245,255,0.9)'
+  ctx.lineWidth = 3
+  ctx.beginPath()
+  ctx.arc(32, 32, 24, 0, Math.PI * 2)
+  ctx.stroke()
   const t = new THREE.CanvasTexture(c)
   t.colorSpace = THREE.SRGBColorSpace
   return t
@@ -106,6 +119,21 @@ export default function Weather({ sim, world }: { sim: PhotoSim; world: WorldSta
 
   const rainRef = useRef<THREE.Points>(null)
   const snowRef = useRef<THREE.Points>(null)
+  // Splash rings on the clearing: what makes rain read as *falling* rain.
+  const SPLASH_N = 48
+  const splashRef = useRef<THREE.InstancedMesh>(null)
+  const splashes = useMemo(
+    () =>
+      Array.from({ length: SPLASH_N }, () => ({
+        x: 0,
+        z: 0,
+        t: Math.random(),
+        speed: 1.6 + Math.random() * 1.2,
+      })),
+    [],
+  )
+  const ringTex = useMemo(() => ringTexture(), [])
+  const dummy = useMemo(() => new THREE.Object3D(), [])
   const anchor = useMemo(() => new THREE.Vector3(), [])
   const fwd = useMemo(() => new THREE.Vector3(), [])
 
@@ -144,6 +172,37 @@ export default function Weather({ sim, world }: { sim: PhotoSim; world: WorldSta
       rain.mat.size = 0.45 + world.rain * 0.4
     }
 
+    // Splashes
+    const sm = splashRef.current
+    if (sm) {
+      const density = THREE.MathUtils.clamp((world.rain - 0.28) * 2.6, 0, 1)
+      const active = Math.round(SPLASH_N * density)
+      sm.visible = active > 0
+      for (let i = 0; i < SPLASH_N; i++) {
+        const sp = splashes[i]
+        if (i < active) {
+          if (!sim.paused) sp.t += dt * sp.speed
+          if (sp.t > 1) {
+            sp.t = 0
+            const r = Math.sqrt(Math.random()) * CLEARING * 0.7
+            const a = Math.random() * Math.PI * 2
+            sp.x = Math.cos(a) * r
+            sp.z = Math.sin(a) * r
+          }
+          const grow = 0.08 + sp.t * 0.3
+          dummy.position.set(sp.x, GROUND_Y + 0.02, sp.z)
+          dummy.rotation.set(-Math.PI / 2, 0, 0)
+          dummy.scale.set(grow, grow, 1)
+        } else {
+          dummy.scale.setScalar(0)
+        }
+        dummy.updateMatrix()
+        sm.setMatrixAt(i, dummy.matrix)
+      }
+      sm.instanceMatrix.needsUpdate = true
+      ;(sm.material as THREE.MeshBasicMaterial).opacity = 0.35 + density * 0.3
+    }
+
     // Snow
     const sp = snowRef.current
     if (sp) {
@@ -174,6 +233,10 @@ export default function Weather({ sim, world }: { sim: PhotoSim; world: WorldSta
     <>
       <points ref={rainRef} geometry={rain.geo} material={rain.mat} frustumCulled={false} />
       <points ref={snowRef} geometry={snow.geo} material={snow.mat} frustumCulled={false} />
+      <instancedMesh ref={splashRef} args={[undefined, undefined, SPLASH_N]} frustumCulled={false}>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial map={ringTex} transparent depthWrite={false} opacity={0.5} />
+      </instancedMesh>
     </>
   )
 }

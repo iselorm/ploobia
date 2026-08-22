@@ -1,6 +1,7 @@
 import { Canvas, useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { getQualityCaps, reportFrame, useQualityCaps } from '@/lib/quality'
+import PerfProbe from '@/components/PerfProbe'
 import { stepAtoms, type AtomSim } from '@/lib/atoms'
 import PostFX from '@/components/photo/world/PostFX'
 import FoundryWorld from './FoundryWorld'
@@ -71,6 +72,7 @@ export default function AtomScene({
       }}
     >
       <SimTicker sim={sim} />
+      <PerfProbe cabinet="atoms" />
       <AtomCamera sim={sim} />
       <FoundryWorld />
       <BuildAtom sim={sim} protons={protons} neutrons={neutrons} electrons={electrons} cloudView={cloudView} showMass={showMass} onFact={onFact} />

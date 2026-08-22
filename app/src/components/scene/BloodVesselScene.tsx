@@ -1,5 +1,6 @@
 import { Canvas } from '@react-three/fiber'
 import { getQualityCaps, setQualityTier, useQualityCaps } from '@/lib/quality'
+import PerfProbe from '@/components/PerfProbe'
 import type { SimState, Highlight } from '@/lib/sim'
 import type { CellType } from '@/lib/facts'
 import Vessel from './Vessel'
@@ -60,6 +61,7 @@ export default function BloodVesselScene({
       <color attach="background" args={['#4A0E12']} />
       <fogExp2 attach="fog" args={['#4A0E12', 0.042]} />
       <CameraRig sim={sim} />
+      <PerfProbe cabinet="blood" />
       <Vessel sim={sim} />
       <RedBloodCells sim={sim} highlighted={highlighted} onCellClick={onCellClick} />
       <WhiteBloodCells sim={sim} highlighted={highlighted} onCellClick={onCellClick} />

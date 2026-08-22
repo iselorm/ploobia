@@ -1,6 +1,7 @@
 import { Canvas, useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { getQualityCaps, reportFrame, useQualityCaps } from '@/lib/quality'
+import PerfProbe from '@/components/PerfProbe'
 import { stepMotion, type MassId, type MotionSim, type SurfaceId, type WorldId } from '@/lib/motion'
 import type { LauncherId, VenueId } from '@/lib/yard'
 import PostFX from '@/components/photo/world/PostFX'
@@ -101,6 +102,7 @@ export default function MotionScene({
       }}
     >
       <SimTicker sim={sim} />
+      <PerfProbe cabinet="motion" />
       <MotionCamera sim={sim} />
       <YardWorld sim={sim} venue={venue} />
       <YardKit

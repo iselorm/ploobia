@@ -214,6 +214,12 @@ export default function Atmosphere({ sim, world }: { sim: PhotoSim; world: World
       ))}
       <ambientLight ref={ambRef} intensity={0.3} color="#FFF6E0" />
       <hemisphereLight ref={hemiRef} args={['#CFEAF5', '#7CB56B', 0.6]} />
+      {/*
+        The shadow map is spent where the subject is. A ±14 box over a 2048 map
+        gave the specimen leaf about 57 texels across its width, which is why
+        its shadow read as a grey smudge; ±7.5 doubles that. Ground beyond the
+        clearing loses its shadows and loses nothing — it is grass.
+      */}
       <directionalLight
         ref={keyRef}
         position={[8, 10, 3]}
@@ -222,14 +228,14 @@ export default function Atmosphere({ sim, world }: { sim: PhotoSim; world: World
         castShadow={shadowsOn}
         shadow-mapSize-width={shadowsOn ? 2048 : 512}
         shadow-mapSize-height={shadowsOn ? 2048 : 512}
-        shadow-camera-near={5}
-        shadow-camera-far={70}
-        shadow-camera-left={-14}
-        shadow-camera-right={14}
-        shadow-camera-top={14}
-        shadow-camera-bottom={-14}
-        shadow-bias={-0.0006}
-        shadow-normalBias={0.02}
+        shadow-camera-near={14}
+        shadow-camera-far={48}
+        shadow-camera-left={-7.5}
+        shadow-camera-right={7.5}
+        shadow-camera-top={7.5}
+        shadow-camera-bottom={-7.5}
+        shadow-bias={-0.0004}
+        shadow-normalBias={0.012}
       />
       <directionalLight ref={fillRef} position={[-8, 8, -3]} intensity={0.4} color="#DCE9F5" />
     </>

@@ -1,4 +1,4 @@
-import { Orbit, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react'
+import { Glasses, Orbit, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react'
 import { VIEWPOINTS, type ViewId } from '@/lib/viewpoints'
 import { Tile } from '@/components/ui/tile'
 import { useCameraHint } from '@/lib/input'
@@ -13,6 +13,8 @@ interface Props {
   onView?: (id: ViewId) => void
   /** Override the authored viewpoint list (other cabinets bring their own). */
   views?: Array<{ id: string; label: string; hint: string }>
+  /** Enter the cardboard stereo tour. Omitted by cabinets that have no tour. */
+  onCardboard?: () => void
 }
 
 /**
@@ -21,7 +23,16 @@ interface Props {
  * trackpad — or one who has orbited themselves into a corner — always has an
  * obvious way back.
  */
-export default function ViewControls({ autoOrbit, onZoom, onToggleOrbit, onReset, viewId, onView, views }: Props) {
+export default function ViewControls({
+  autoOrbit,
+  onZoom,
+  onToggleOrbit,
+  onReset,
+  viewId,
+  onView,
+  views,
+  onCardboard,
+}: Props) {
   const list = views ?? VIEWPOINTS
   const hint = useCameraHint()
   const btn =
@@ -69,6 +80,17 @@ export default function ViewControls({ autoOrbit, onZoom, onToggleOrbit, onReset
       <Tile round onClick={onReset} className={btn} aria-label="Reset the view" title="Reset the view">
         <RotateCcw className="h-4 w-4" />
       </Tile>
+      {onCardboard && (
+        <Tile
+          round
+          onClick={onCardboard}
+          className={btn}
+          aria-label="Cardboard view"
+          title="Cardboard: side-by-side 3D for a phone-in-a-viewer"
+        >
+          <Glasses className="h-4 w-4" />
+        </Tile>
+      )}
       <span className="px-2 text-[10px] font-bold text-[#B08A7A] select-none">
         {hint}
       </span>

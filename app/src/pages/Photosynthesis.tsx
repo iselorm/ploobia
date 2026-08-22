@@ -43,7 +43,11 @@ import ProgressToasts from '@/components/hud/ProgressToasts'
 import ProgressChip from '@/components/hud/ProgressChip'
 import EquationCard from '@/components/photo/hud/EquationCard'
 import { EQ_STEPS } from '@/components/photo/EquationStage'
-import { VIEW_BY_ID, type ViewId } from '@/lib/viewpoints'
+import { VIEW_BY_ID, VIEWPOINTS, type ViewId } from '@/lib/viewpoints'
+import { enterStereo, useStereo } from '@/lib/stereo'
+import StereoOverlay from '@/components/hud/StereoOverlay'
+import { Glasses } from 'lucide-react'
+import { Tile } from '@/components/ui/tile'
 import {
   GlucoseChip,
   PhotoAbout,
@@ -106,6 +110,7 @@ export default function Photosynthesis() {
   const caps = BAND_CAPS[band]
   const layout = useLayoutMode()
   const compact = layout === 'compact'
+  const stereo = useStereo()
   const short = useShortViewport(900)
 
   const [started, setStarted] = useState(false)
@@ -339,6 +344,19 @@ export default function Photosynthesis() {
     [sim],
   )
 
+  const startCardboard = useCallback(() => {
+    // The tour begins at the overview; a tap moves to the next authored stop.
+    if (sim.equationOpen) closeEquationRef.current?.()
+    handleView('overview')
+    void enterStereo()
+  }, [sim, handleView])
+
+  const tourNext = useCallback(() => {
+    const order = VIEWPOINTS.map((v) => v.id)
+    const i = order.indexOf(sim.viewId as ViewId)
+    handleView(order[(i + 1) % order.length])
+  }, [sim, handleView])
+
   const openEquation = useCallback(() => {
     sim.equationOpen = true
     sim.equationT = 0
@@ -350,6 +368,7 @@ export default function Photosynthesis() {
     setEquationPlaying(true)
   }, [sim])
 
+  const closeEquationRef = useRef<(() => void) | null>(null)
   const closeEquation = useCallback(() => {
     sim.equationOpen = false
     sim.equationPlaying = false
@@ -357,6 +376,8 @@ export default function Photosynthesis() {
     setEquationPlaying(false)
     setViewId('overview')
   }, [sim])
+
+  closeEquationRef.current = closeEquation
 
   const equationPlayPause = useCallback(() => {
     sim.equationPlaying = !sim.equationPlaying
@@ -663,9 +684,11 @@ export default function Photosynthesis() {
         }}
       />
 
+      {stereo.on && <StereoOverlay onTap={tourNext} />}
+
       {/* Shared panels — the same elements go into side columns (wide) or the
           bottom drawer (compact), so behaviour never forks by layout. */}
-      {(() => {
+      {!stereo.on && (() => {
         const controlsPanel = (
           <PhotoPanel
             mode={mode}
@@ -740,6 +763,14 @@ export default function Photosynthesis() {
                 <BandSwitch />
                 <GlucoseChip sim={sim} compact />
                 <ProgressChip compact />
+                <Tile
+                  round
+                  onClick={startCardboard}
+                  aria-label="Cardboard view"
+                  className="pointer-events-auto flex items-center justify-center rounded-full border border-[#F3E9D7] bg-[#FBF5EA]/90 text-[#7A5252] shadow-lg backdrop-blur-md"
+                >
+                  <Glasses className="h-4 w-4" />
+                </Tile>
               </div>
 
               {!equationOpen && (
@@ -872,6 +903,7 @@ export default function Photosynthesis() {
               onReset={handleResetView}
               viewId={viewId}
               onView={handleView}
+              onCardboard={startCardboard}
             />
           </div>
         )}
@@ -920,8 +952,8 @@ export default function Photosynthesis() {
       })()}
 
       {!started && <PhotoWelcome onStart={handleStart} onDemo={startDemo} />}
-      <InputHints extra={[['LB/RB', 'Leaf lab / Membranes']]} />
-      <ProgressToasts />
+      {!stereo.on && <InputHints extra={[['LB/RB', 'Leaf lab / Membranes']]} />}
+      {!stereo.on && <ProgressToasts />}
       {contextLost && <WebglFallback />}
     </div>
   )

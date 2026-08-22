@@ -1,6 +1,8 @@
 import { Canvas, useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { getQualityCaps, reportFrame, useQualityCaps } from '@/lib/quality'
+import PerfProbe from '@/components/PerfProbe'
+import { useStereo } from '@/lib/stereo'
 import { simEnv, simLeaf, type LabMode, type MembraneDemo, type PhotoSim } from '@/lib/photo'
 import { BIOME_BY_ID } from '@/lib/leaves'
 import { solveLeaf, stepWater } from '@/lib/ratelab'
@@ -87,10 +89,12 @@ export default function PhotoScene({
   // effect at once); antialias is fixed at context creation, so it reads the
   // boot-time guess.
   const quality = useQualityCaps()
+  // Two eyes cost two renders: cap the pixel ratio while stereo is on.
+  const stereo = useStereo()
   return (
     <Canvas
-      dpr={[1, quality.maxDpr]}
-      camera={{ fov: 50, near: 0.1, far: 400, position: [0, 3.4, 10.5] }}
+      dpr={[1, stereo.on ? Math.min(1.25, quality.maxDpr) : quality.maxDpr]}
+      camera={{ fov: 50, near: 0.1, far: 400, position: [0.8, 3.1, 8.4] }}
       gl={{ antialias: getQualityCaps().antialias, powerPreference: 'high-performance' }}
       shadows={quality.shadows ? { type: THREE.PCFSoftShadowMap } : false}
       style={{ position: 'fixed', inset: 0 }}
@@ -106,6 +110,7 @@ export default function PhotoScene({
       }}
     >
       <SimTicker sim={sim} />
+      <PerfProbe cabinet="photosynthesis" />
       {mode === 'garden' ? (
         <GardenWorld
           sim={sim}

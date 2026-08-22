@@ -1,4 +1,5 @@
 import { chromium, devices } from 'playwright'
+import { resilientClick } from './verify-lib.mjs'
 
 const BASE = 'http://localhost:8765/index.html'
 const out = (n) => `/tmp/arcade/shots/${n}.png`
@@ -38,7 +39,10 @@ const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable
     await skip.waitFor({ state: 'visible', timeout: 20000 }).catch(() => {})
     check('demo link starts the guided demo', (await skip.count()) >= 1)
     await page.screenshot({ path: out('p3-03-demo-autostart') })
-    await skip.click()
+    // The Rate Lab is the heaviest cabinet since the Cinematic Lab IV light
+    // pass; under SwiftShader it renders at ~1 fps and a plain click cannot
+    // complete inside any sane timeout, though the button is perfectly fine.
+    await resilientClick(skip, { label: 'demo skip' })
     await page.waitForTimeout(1500)
 
     // Run one real trial: commit a point prediction on the graph, start trial, wait

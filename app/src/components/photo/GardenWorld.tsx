@@ -9,31 +9,31 @@ import { EQUATION_VIEW, VIEW_BY_ID } from '@/lib/viewpoints'
 import { Co2Molecules, WaterDroplets, OxygenBubbles, GlucoseCubes } from './MoleculeFlows'
 import Chloroplast from './Chloroplast'
 import BubbleTube from './BubbleTube'
-import { glowTexture, leafTexture, shadowTexture, starburstTexture } from './Sprites'
+import { glowTexture, leafTexture, leafThicknessTexture, shadowTexture, starburstTexture } from './Sprites'
 import { WORLD_PRESETS, WorldState } from '@/lib/world'
 import Atmosphere from './world/Atmosphere'
 import Terrain from './world/Terrain'
 import Grass from './world/Grass'
 import Stones from './world/Stones'
 import Weather from './world/Weather'
+import LightShafts from './world/LightShafts'
 import EquationStage from './EquationStage'
 import PostFX from './world/PostFX'
+import StereoRig from './world/StereoRig'
+import { useStereo } from '@/lib/stereo'
+import { SUN_DIR, SUN_DISTANCE, SUN_POS, SUN_STATE, SUN_TINT } from '@/lib/sunlight'
+import { OCC_SLOT, setOccluder } from '@/lib/occluders'
+import { applyContactAO, applyLeafTranslucency, syncSunUniforms } from './world/shading'
 
 /** World-space anchor points shared by everything in the garden. */
 export const LEAF_CENTER = new THREE.Vector3(0, 2.55, 0)
-/** Live sun position — the world driver moves it with the light slider. */
-const SUN_POS = new THREE.Vector3(6.5, 8, -4.5)
-const SUN_DISTANCE = 12.5
-/** Live sun tint (white-gold at noon, amber at dusk) and daylight 0..1. */
-const SUN_TINT = new THREE.Color('#FFE27A')
-const SUN_STATE = { daylight: 1 }
 
 /* ------------------------------------------------------------------ */
 /* Camera rig: orbits the leaf, or flies inside to meet a chloroplast  */
 /* ------------------------------------------------------------------ */
 
-const OVERVIEW_POS = new THREE.Vector3(0, 3.4, 10.5)
-const OVERVIEW_TARGET = new THREE.Vector3(0, 2.2, 0)
+const OVERVIEW_POS = new THREE.Vector3(0.8, 3.1, 8.4)
+const OVERVIEW_TARGET = new THREE.Vector3(0, 2.05, 0)
 const ZOOM_POS = new THREE.Vector3(0.2, 3.2, 3.4)
 const ZOOM_TARGET = new THREE.Vector3(0, 2.8, 0.45)
 
@@ -58,17 +58,43 @@ interface OrbitLike {
  * and dolly freely.
  */
 function GardenCamera({ sim }: { sim: PhotoSim }) {
+  const stereo = useStereo()
   const controls = useThree((s) => s.controls) as OrbitLike | null
   const camera = useThree((s) => s.camera)
   const mounted = useRef(false)
-  /** Seconds of scripted movement still owed. */
-  const transition = useRef(0)
   const lastZoomed = useRef(sim.zoomed)
   const lastReset = useRef(sim.viewReset)
   const lastViewSeq = useRef(sim.viewSeq)
   const lastEquation = useRef(sim.equationOpen)
   const flyPos = useMemo(() => new THREE.Vector3().copy(OVERVIEW_POS), [])
   const flyTarget = useMemo(() => new THREE.Vector3().copy(OVERVIEW_TARGET), [])
+  /**
+   * A flight is a GSAP-eased progress 0→1 along a gently arched path from
+   * where the camera *is* to the destination — anticipation, ease-in, ease-out,
+   * the way a camera operator moves — rather than an exponential slide.
+   */
+  const flight = useMemo(
+    () => ({
+      t: 1,
+      duration: 1.6,
+      active: false,
+      fromPos: new THREE.Vector3(),
+      fromTarget: new THREE.Vector3(),
+      arc: 0,
+    }),
+    [],
+  )
+  // power2.inOut — the same curve GSAP calls by that name; driven from the
+  // frame loop so it stays in lock-step with the render.
+  const easeInOut = (x: number) => (x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2)
+  const startFlight = (seconds: number, arc = 0.6) => {
+    flight.fromPos.copy(camera.position)
+    flight.fromTarget.copy(controls ? controls.target : OVERVIEW_TARGET)
+    flight.arc = arc * Math.min(1, flight.fromPos.distanceTo(flyPos) / 6)
+    flight.t = 0
+    flight.duration = seconds
+    flight.active = true
+  }
   const offset = useMemo(() => new THREE.Vector3(), [])
   const spherical = useMemo(() => new THREE.Spherical(), [])
   /** Orbit deltas queued by the input model (right stick, keyboard); drained each frame. */
@@ -91,8 +117,6 @@ function GardenCamera({ sim }: { sim: PhotoSim }) {
   )
 
   useFrame((_, rawDt) => {
-    const dt = Math.min(rawDt, 0.05)
-
     // Wait for OrbitControls to register itself before claiming the framing is
     // set. Flipping this flag on frame one left the orbit target at the world
     // origin, which quietly aimed the camera at the ground below the plant.
@@ -108,13 +132,15 @@ function GardenCamera({ sim }: { sim: PhotoSim }) {
     // Authored flights: a viewpoint request, the equation stage opening or
     // closing, the chloroplast zoom, or a reset. Each sets a destination and a
     // short window; after the window OrbitControls owns the camera again.
+    let requested = false
     if (sim.viewSeq !== lastViewSeq.current) {
       lastViewSeq.current = sim.viewSeq
       const v = VIEW_BY_ID[sim.viewId]
       if (v) {
         flyPos.set(...v.position)
         flyTarget.set(...v.target)
-        transition.current = 1.7
+        startFlight(1.7)
+        requested = true
       }
     }
     if (sim.equationOpen !== lastEquation.current) {
@@ -129,31 +155,36 @@ function GardenCamera({ sim }: { sim: PhotoSim }) {
         flyPos.copy(OVERVIEW_POS)
         flyTarget.copy(OVERVIEW_TARGET)
       }
-      transition.current = 1.8
+      startFlight(1.9, 0.9)
     }
     if (sim.zoomed !== lastZoomed.current) {
       lastZoomed.current = sim.zoomed
-      if (sim.zoomed) {
-        flyPos.copy(ZOOM_POS)
-        flyTarget.copy(ZOOM_TARGET)
-      } else if (!sim.equationOpen) {
-        flyPos.copy(OVERVIEW_POS)
-        flyTarget.copy(OVERVIEW_TARGET)
+      // A viewpoint request in the same frame already chose the destination.
+      if (!requested) {
+        if (sim.zoomed) {
+          flyPos.copy(ZOOM_POS)
+          flyTarget.copy(ZOOM_TARGET)
+        } else if (!sim.equationOpen) {
+          flyPos.copy(OVERVIEW_POS)
+          flyTarget.copy(OVERVIEW_TARGET)
+        }
+        startFlight(1.5, 0.3)
       }
-      transition.current = 1.5
     }
     if (sim.viewReset !== lastReset.current) {
       lastReset.current = sim.viewReset
       flyPos.copy(OVERVIEW_POS)
       flyTarget.copy(OVERVIEW_TARGET)
-      transition.current = 1.2
+      startFlight(1.3, 0.5)
     }
 
-    if (transition.current > 0) {
-      transition.current -= dt
-      const k = 1 - Math.exp(-dt * 3.2)
-      camera.position.lerp(flyPos, k)
-      if (controls) controls.target.lerp(flyTarget, k)
+    if (flight.active) {
+      flight.t = Math.min(1, flight.t + rawDt / flight.duration)
+      const t = easeInOut(flight.t)
+      if (flight.t >= 1) flight.active = false
+      camera.position.lerpVectors(flight.fromPos, flyPos, t)
+      camera.position.y += Math.sin(t * Math.PI) * flight.arc
+      if (controls) controls.target.lerpVectors(flight.fromTarget, flyTarget, t)
     }
 
     // Orbit requests from a controller stick or the keyboard.
@@ -167,7 +198,7 @@ function GardenCamera({ sim }: { sim: PhotoSim }) {
       camera.position.copy(controls.target).add(offset)
       po.dx = 0
       po.dy = 0
-      transition.current = 0
+      flight.active = false
     }
 
     // Dolly requests from the on-screen zoom buttons.
@@ -179,10 +210,12 @@ function GardenCamera({ sim }: { sim: PhotoSim }) {
       camera.position.copy(controls.target).add(offset)
       sim.viewZoom = 0
       // A manual dolly means the learner has taken over.
-      transition.current = 0
+      flight.active = false
     }
 
-    if (controls) {
+    // In stereo the head owns orientation; OrbitControls.update() would re-aim
+    // the camera at its target every frame.
+    if (controls && !stereo.on) {
       controls.autoRotate = sim.autoOrbit
       controls.autoRotateSpeed = 0.9
       controls.update()
@@ -192,6 +225,7 @@ function GardenCamera({ sim }: { sim: PhotoSim }) {
   return (
     <OrbitControls
       makeDefault
+      enabled={!stereo.on}
       enablePan={false}
       enableDamping
       dampingFactor={0.08}
@@ -217,19 +251,35 @@ function GardenCamera({ sim }: { sim: PhotoSim }) {
  */
 function WorldDriver({ sim, world, biome }: { sim: PhotoSim; world: WorldState; biome: BiomePreset }) {
   const dir = useMemo(() => new THREE.Vector3(), [])
+  // The things near the subject that block sky light. Static, so they are
+  // declared once; the apparatus registers itself as it rises.
+  useEffect(() => {
+    setOccluder(OCC_SLOT.mound, 0, -0.32, 0, 1.2, 0.7)
+    setOccluder(OCC_SLOT.stem, 0, 0.45, 0, 0.42, 0.45)
+    setOccluder(OCC_SLOT.canopy, 0, 2.35, 0, 1.1, 0.32)
+  }, [])
   useFrame((_, rawDt) => {
     const dt = Math.min(rawDt, 0.05)
     const k = 1 - Math.exp(-dt * 2.2)
     world.step(WORLD_PRESETS[biome.id], sim.light, k)
     world.sunDirection(dir)
+    SUN_DIR.copy(dir)
     SUN_POS.copy(dir).multiplyScalar(SUN_DISTANCE)
     SUN_TINT.copy(world.sun).lerp(new THREE.Color('#FFE27A'), 0.35 * world.daylight)
     SUN_STATE.daylight = world.daylight
+    syncSunUniforms(sim.light)
   })
   return null
 }
 
-/** A soft dark patch that plants an object on the ground. */
+/**
+ * The patch of ground an object sits on.
+ *
+ * Not a fixed blob: it stretches away from the sun and softens as the sun
+ * drops, so the plant stays planted whichever way the light slider is pushed.
+ * The shadow map handles the crisp shape; this is the ambient darkening
+ * underneath that a shadow map alone never gives you.
+ */
 function ContactShadow({
   position,
   radius,
@@ -238,10 +288,28 @@ function ContactShadow({
   radius: number
 }) {
   const texture = useMemo(() => shadowTexture(), [])
+  const ref = useRef<THREE.Mesh>(null)
+  const matRef = useRef<THREE.MeshBasicMaterial>(null)
+  useFrame(() => {
+    const mesh = ref.current
+    if (!mesh) return
+    // Ground-projected sun direction: the patch leans the opposite way.
+    const azimuth = Math.atan2(SUN_DIR.x, SUN_DIR.z)
+    const elevation = Math.max(0.08, SUN_DIR.y)
+    const stretch = THREE.MathUtils.clamp(1 / (elevation + 0.55), 1, 1.7)
+    mesh.rotation.set(-Math.PI / 2, 0, azimuth)
+    mesh.scale.set(1, stretch, 1)
+    mesh.position.set(
+      position[0] - SUN_DIR.x * radius * (stretch - 1) * 0.45,
+      position[1],
+      position[2] - SUN_DIR.z * radius * (stretch - 1) * 0.45,
+    )
+    if (matRef.current) matRef.current.opacity = 0.22 + SUN_STATE.daylight * 0.3
+  })
   return (
-    <mesh position={position} rotation={[-Math.PI / 2, 0, 0]}>
+    <mesh ref={ref} position={position} rotation={[-Math.PI / 2, 0, 0]}>
       <planeGeometry args={[radius * 2, radius * 2]} />
-      <meshBasicMaterial map={texture} transparent depthWrite={false} fog={false} />
+      <meshBasicMaterial ref={matRef} map={texture} transparent depthWrite={false} fog={false} />
     </mesh>
   )
 }
@@ -315,6 +383,32 @@ function LeafShape({
 
   const roughness = leaf.cuticle > 0.7 ? 0.25 : 0.6
 
+  // The specimen blade is built imperatively rather than in JSX because it
+  // carries a shader patch (translucency), and a patched material has to be
+  // created once rather than reconciled every render.
+  const thickness = useMemo(() => leafThicknessTexture(), [])
+  const bladeMat = useMemo(() => {
+    const m = new THREE.MeshPhysicalMaterial({
+      color: '#FFFFFF',
+      map: leafTexture(leaf.colors.leaf, leaf.colors.accent),
+      roughness,
+      sheen: 0.55,
+      sheenRoughness: 0.6,
+      sheenColor: new THREE.Color('#B9E58A'),
+      side: THREE.DoubleSide,
+      transparent: true,
+    })
+    // A waxy cuticle passes less light than a thin rainforest lamina.
+    applyLeafTranslucency(m, thickness, 'blade', 1.15 - leaf.cuticle * 0.35)
+    return m
+  }, [leaf.colors.leaf, leaf.colors.accent, leaf.cuticle, roughness, thickness])
+  useEffect(() => {
+    matRef.current = bladeMat
+    return () => {
+      bladeMat.dispose()
+    }
+  }, [bladeMat, matRef])
+
   if (leaf.form === 'needle') {
     // A fascicle of needles: almost no surface area, thickly waxed.
     return (
@@ -367,19 +461,7 @@ function LeafShape({
 
   return (
     <group>
-      <mesh geometry={geo} castShadow>
-        <meshPhysicalMaterial
-          ref={matRef}
-          color="#FFFFFF"
-          map={leafTexture(leaf.colors.leaf, leaf.colors.accent)}
-          roughness={roughness}
-          sheen={0.55}
-          sheenRoughness={0.6}
-          sheenColor="#B9E58A"
-          side={THREE.DoubleSide}
-          transparent
-        />
-      </mesh>
+      <mesh geometry={geo} material={bladeMat} castShadow />
       {/* Midrib */}
       <mesh position={[0, length * 0.5, 0.04]}>
         <cylinderGeometry args={[0.032, 0.065, length * 0.92, 8]} />
@@ -400,93 +482,169 @@ function LeafShape({
 /* The plant                                                           */
 /* ------------------------------------------------------------------ */
 
+/** A tube whose radius tapers along the curve — stems and petioles. */
+function taperedTube(curve: THREE.Curve<THREE.Vector3>, segs: number, radial: number, r0: number, r1: number) {
+  const frames = curve.computeFrenetFrames(segs, false)
+  const positions: number[] = []
+  const normals: number[] = []
+  const uvs: number[] = []
+  const index: number[] = []
+  const P = new THREE.Vector3()
+  const N = new THREE.Vector3()
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs
+    curve.getPointAt(t, P)
+    const r = r0 + (r1 - r0) * t
+    for (let j = 0; j <= radial; j++) {
+      const v = (j / radial) * Math.PI * 2
+      const sin = Math.sin(v)
+      const cos = -Math.cos(v)
+      N.set(cos * frames.normals[i].x + sin * frames.binormals[i].x, cos * frames.normals[i].y + sin * frames.binormals[i].y, cos * frames.normals[i].z + sin * frames.binormals[i].z)
+      normals.push(N.x, N.y, N.z)
+      positions.push(P.x + r * N.x, P.y + r * N.y, P.z + r * N.z)
+      uvs.push(j / radial, t)
+    }
+  }
+  for (let i = 0; i < segs; i++) {
+    for (let j = 0; j < radial; j++) {
+      const a = i * (radial + 1) + j
+      const b = a + radial + 1
+      index.push(a, b, a + 1, b, b + 1, a + 1)
+    }
+  }
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3))
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+  geo.setIndex(index)
+  return geo
+}
+
+/** Side leaves in a phyllotactic spiral: height along the stem, azimuth, size, droop. */
+const SIDE_LEAVES = [0.85, 1.25, 1.62, 1.98, 2.28].map((h, i) => ({
+  h,
+  az: (i * 137.5 * Math.PI) / 180 + 0.6,
+  size: 1.05 - i * 0.12,
+  droop: 0.55 + i * 0.05,
+}))
+
+/**
+ * The plant. A tapered stem on a gentle S-curve, a spiral of petiolate side
+ * leaves that shrink toward the top, and the specimen leaf mounted at the tip.
+ * Wilt lowers everything and shrinks the pad; a leaf between the camera and
+ * the sun glows a little from behind, because a real leaf is translucent.
+ */
 function Plant({ sim, leaf }: { sim: PhotoSim; leaf: LeafPreset }) {
   const swayRef = useRef<THREE.Group>(null)
   const leafGroupRef = useRef<THREE.Group>(null)
   const leafMatRef = useRef<THREE.MeshPhysicalMaterial>(null)
+  const leafTex = useMemo(() => leafTexture(leaf.colors.leaf, leaf.colors.accent), [leaf.colors.leaf, leaf.colors.accent])
+  const sideMat = useMemo(() => {
+    const m = new THREE.MeshStandardMaterial({ map: leafTex, roughness: 0.58, side: THREE.DoubleSide, emissiveIntensity: 0 })
+    applyLeafTranslucency(m, leafThicknessTexture(), 'side', 0.95)
+    return m
+  }, [leafTex])
+  const moundMat = useMemo(() => {
+    const m = new THREE.MeshStandardMaterial({ color: '#6E4630', roughness: 1 })
+    applyContactAO(m, 'mound', 0.5)
+    return m
+  }, [])
+  const sideMatRef = useRef<THREE.MeshStandardMaterial>(sideMat)
+  sideMatRef.current = sideMat
   const healthy = useMemo(() => new THREE.Color(leaf.colors.leaf), [leaf.colors.leaf])
   const dried = useMemo(() => new THREE.Color(leaf.colors.leafDry), [leaf.colors.leafDry])
   const scratch = useMemo(() => new THREE.Color(), [])
+  const tint = useMemo(() => new THREE.Color(), [])
+  const tmp = useMemo(() => ({ toCam: new THREE.Vector3(), sun: new THREE.Vector3() }), [])
 
-  const stemGeo = useMemo(() => {
-    const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0, 0.1, 0),
-      new THREE.Vector3(0.16, 0.9, 0.05),
-      new THREE.Vector3(-0.1, 1.7, -0.03),
-      new THREE.Vector3(0, 2.5, 0),
-    ])
-    return new THREE.TubeGeometry(curve, 24, 0.13, 10, false)
+  const stemCurve = useMemo(
+    () =>
+      new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, -0.15, 0),
+        new THREE.Vector3(0.14, 0.7, 0.05),
+        new THREE.Vector3(-0.08, 1.55, -0.03),
+        new THREE.Vector3(0.02, 2.5, 0),
+      ]),
+    [],
+  )
+  const stemGeo = useMemo(() => taperedTube(stemCurve, 40, 12, 0.19, 0.075), [stemCurve])
+  const petiole = useMemo(() => {
+    const c = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.22, 0.06, 0), new THREE.Vector3(0.44, 0.02, 0)])
+    return taperedTube(c, 8, 8, 0.045, 0.028)
   }, [])
-
-  const smallLeafGeo = useMemo(() => makeLeafGeometry(1.6, 1.05), [])
-  // Flat leaves lie back in a plane; needles and succulent pads stand upright
-  // on the stem, so they get a different mounting.
+  const smallLeafGeo = useMemo(() => makeLeafGeometry(1.5, 1.0), [])
   const isFlat = leaf.form === 'broad' || leaf.form === 'blade'
   const restRotation = isFlat ? -Math.PI / 2.4 : 0
   const showSideLeaves = isFlat
 
-  useFrame((_, rawDt) => {
+  useFrame((state, rawDt) => {
     const dt = Math.min(rawDt, 0.05)
     if (!swayRef.current) return
     const t = sim.time
-    // A wilting plant stops moving. Stillness reads as distress.
     const vigour = 0.3 + sim.turgor * 0.7
     swayRef.current.rotation.z = Math.sin(t * 0.7) * 0.035 * vigour
     swayRef.current.rotation.x = Math.sin(t * 0.5 + 1.3) * 0.02 * vigour
 
     const wilt = 1 - sim.turgor
     if (leafGroupRef.current) {
-      // Flat leaves droop; a succulent pad shrivels instead of flopping.
       const droop = restRotation + wilt * (isFlat ? 0.6 : 0.22)
-      leafGroupRef.current.rotation.x +=
-        (droop - leafGroupRef.current.rotation.x) * (1 - Math.exp(-dt * 2.5))
+      leafGroupRef.current.rotation.x += (droop - leafGroupRef.current.rotation.x) * (1 - Math.exp(-dt * 2.5))
       const shrink = 1 - wilt * (isFlat ? 0.06 : 0.22)
-      leafGroupRef.current.scale.setScalar(
-        leafGroupRef.current.scale.x + (shrink - leafGroupRef.current.scale.x) * (1 - Math.exp(-dt * 2)),
-      )
+      leafGroupRef.current.scale.setScalar(leafGroupRef.current.scale.x + (shrink - leafGroupRef.current.scale.x) * (1 - Math.exp(-dt * 2)))
     }
+    // Colour: fresh → dried with wilt; the map supplies the detail, so this tints.
+    scratch.copy(healthy).lerp(dried, Math.min(1, wilt * 1.15))
+    tint.set('#FFFFFF').lerp(scratch, Math.min(1, wilt * 1.15) * 0.75)
+    // Backlight: camera looking through the leaf toward the sun.
+    tmp.toCam.copy(state.camera.position).sub(LEAF_CENTER).normalize()
+    tmp.sun.copy(SUN_POS).normalize()
+    const backlit = Math.max(0, -tmp.toCam.dot(tmp.sun)) * sim.light * SUN_STATE.daylight
+    // The shader now scatters real light through the lamina, so the old
+    // whole-leaf emissive lift is only a floor under it — enough to keep the
+    // needle and pad forms (which have no thickness map) reading translucent.
     if (leafMatRef.current) {
-      scratch.copy(healthy).lerp(dried, Math.min(1, wilt * 1.15))
-      leafMatRef.current.color.lerp(scratch, 1 - Math.exp(-dt * 2))
-      // When zoomed in, the leaf turns ghostly so the chloroplast shows through.
+      const m = leafMatRef.current
+      m.color.lerp(tint, 1 - Math.exp(-dt * 2))
+      m.emissive.copy(healthy).multiplyScalar(0.55)
+      const lift = isFlat ? 0.22 : 0.85
+      m.emissiveIntensity += (backlit * lift - m.emissiveIntensity) * (1 - Math.exp(-dt * 4))
       const targetOpacity = sim.zoomed || sim.equationOpen ? 0.14 : 1
-      leafMatRef.current.opacity +=
-        (targetOpacity - leafMatRef.current.opacity) * (1 - Math.exp(-dt * 4))
+      m.opacity += (targetOpacity - m.opacity) * (1 - Math.exp(-dt * 4))
+    }
+    if (sideMatRef.current) {
+      sideMatRef.current.color.lerp(tint, 1 - Math.exp(-dt * 2))
+      sideMatRef.current.emissive.copy(healthy).multiplyScalar(0.55)
+      sideMatRef.current.emissiveIntensity += (backlit * 0.15 - sideMatRef.current.emissiveIntensity) * (1 - Math.exp(-dt * 4))
     }
   })
 
   return (
     <group>
       {/* Soil mound */}
-      <mesh position={[0, -0.35, 0]} scale={[1.6, 0.55, 1.6]}>
-        <sphereGeometry args={[1.2, 24, 16]} />
-        <meshStandardMaterial color="#8A5A3B" roughness={1} />
+      <mesh position={[0, -0.35, 0]} scale={[1.6, 0.55, 1.6]} material={moundMat} receiveShadow>
+        <sphereGeometry args={[1.2, 28, 18]} />
       </mesh>
       <group ref={swayRef}>
         <mesh geometry={stemGeo} castShadow>
-          <meshStandardMaterial color={leaf.colors.accent} roughness={0.7} />
+          <meshStandardMaterial color={leaf.colors.accent} roughness={0.72} />
         </mesh>
-        <group ref={leafGroupRef} position={[0, 2.5, 0]} rotation={[restRotation, 0, isFlat ? 0.12 : 0]}>
+        <group ref={leafGroupRef} position={[0.02, 2.5, 0]} rotation={[restRotation, 0, isFlat ? 0.12 : 0]}>
           <LeafShape leaf={leaf} matRef={leafMatRef} />
         </group>
-        {showSideLeaves && (
-          <>
-            <mesh
-              geometry={smallLeafGeo}
-              position={[0.12, 1.15, 0.02]}
-              rotation={[-Math.PI / 2.6, 0.5, -0.9]}
-            >
-              <meshStandardMaterial map={leafTexture(leaf.colors.leaf, leaf.colors.accent)} roughness={0.6} side={THREE.DoubleSide} />
-            </mesh>
-            <mesh
-              geometry={smallLeafGeo}
-              position={[-0.1, 1.6, -0.02]}
-              rotation={[-Math.PI / 2.6, -0.4, 0.95]}
-            >
-              <meshStandardMaterial map={leafTexture(leaf.colors.leaf, leaf.colors.accent)} roughness={0.6} side={THREE.DoubleSide} />
-            </mesh>
-          </>
-        )}
+        {showSideLeaves &&
+          SIDE_LEAVES.map((sl, i) => {
+            const p = stemCurve.getPointAt(Math.min(1, (sl.h + 0.15) / 2.65))
+            return (
+              <group key={i} position={[p.x, p.y, p.z]} rotation={[0, sl.az, 0]}>
+                <mesh geometry={petiole} castShadow>
+                  <meshStandardMaterial color={leaf.colors.accent} roughness={0.75} />
+                </mesh>
+                <group position={[0.44, 0.02, 0]} rotation={[0, -Math.PI / 2, -sl.droop]} scale={sl.size}>
+                  <mesh geometry={smallLeafGeo} material={sideMat} castShadow />
+                </group>
+              </group>
+            )
+          })}
       </group>
     </group>
   )
@@ -541,40 +699,6 @@ function Sun({ sim }: { sim: PhotoSim }) {
         <meshBasicMaterial color="#FFE27A" toneMapped={false} />
       </mesh>
     </group>
-  )
-}
-
-/** One very soft cone of light, for atmosphere behind the sparks. */
-function SunHaze({ sim }: { sim: PhotoSim }) {
-  const matRef = useRef<THREE.MeshBasicMaterial>(null)
-  const meshRef = useRef<THREE.Mesh>(null)
-  const tmp = useMemo(() => ({ dir: new THREE.Vector3(), Y: new THREE.Vector3(0, 1, 0) }), [])
-  const length = 12.5
-
-  useFrame(() => {
-    if (matRef.current) matRef.current.opacity = 0.03 + sim.light * 0.09
-    const m = meshRef.current
-    if (!m) return
-    m.position.addVectors(SUN_POS, LEAF_CENTER).multiplyScalar(0.5)
-    tmp.dir.subVectors(LEAF_CENTER, SUN_POS).normalize()
-    m.quaternion.setFromUnitVectors(tmp.Y, tmp.dir)
-    const L = SUN_POS.distanceTo(LEAF_CENTER)
-    m.scale.set(1, L / length, 1)
-  })
-
-  return (
-    <mesh ref={meshRef}>
-      <cylinderGeometry args={[1.5, 0.5, length, 20, 1, true]} />
-      <meshBasicMaterial
-        ref={matRef}
-        color="#FFF0BC"
-        transparent
-        opacity={0.08}
-        depthWrite={false}
-        side={THREE.DoubleSide}
-        toneMapped={false}
-      />
-    </mesh>
   )
 }
 
@@ -672,9 +796,16 @@ function SunSparks({ sim }: { sim: PhotoSim }) {
   )
 }
 
-/** Slow drifting motes, purely to give the air some depth. */
+/**
+ * Slow drifting motes. They are not decoration: dust is how you *see* a beam
+ * of light, so a mote is dim across the light and bright when you look into
+ * it — the same reason a sunbeam appears in a dusty room and nowhere else.
+ */
 function Pollen({ sim }: { sim: PhotoSim }) {
   const meshRef = useRef<THREE.InstancedMesh>(null)
+  const matRef = useRef<THREE.MeshBasicMaterial>(null)
+  const toSun = useMemo(() => new THREE.Vector3(), [])
+  const fwd = useMemo(() => new THREE.Vector3(), [])
   const dummy = useMemo(() => new THREE.Object3D(), [])
   const motes = useMemo(
     () =>
@@ -691,6 +822,12 @@ function Pollen({ sim }: { sim: PhotoSim }) {
     const mesh = meshRef.current
     if (!mesh) return
     const t = sim.time
+    // Backlit dust: bright looking into the sun, nearly invisible away from it.
+    toSun.subVectors(SUN_POS, state.camera.position).normalize()
+    state.camera.getWorldDirection(fwd)
+    const glow = Math.pow(Math.max(0, fwd.dot(toSun)), 2.2) * sim.light * SUN_STATE.daylight
+    if (matRef.current) matRef.current.opacity = 0.16 + glow * 0.7
+    const size = 0.035 + glow * 0.03
     for (let i = 0; i < motes.length; i++) {
       const m = motes[i]
       dummy.position.set(
@@ -699,7 +836,7 @@ function Pollen({ sim }: { sim: PhotoSim }) {
         m.z + Math.cos(t * 0.19 + m.phase) * 0.4,
       )
       dummy.quaternion.copy(state.camera.quaternion)
-      dummy.scale.setScalar(0.035 + Math.sin(t * 1.6 + m.phase) * 0.012)
+      dummy.scale.setScalar(size + Math.sin(t * 1.6 + m.phase) * 0.012)
       dummy.updateMatrix()
       mesh.setMatrixAt(i, dummy.matrix)
     }
@@ -709,7 +846,7 @@ function Pollen({ sim }: { sim: PhotoSim }) {
   return (
     <instancedMesh ref={meshRef} args={[undefined, undefined, 26]} frustumCulled={false}>
       <circleGeometry args={[1, 8]} />
-      <meshBasicMaterial color="#FFF6DA" transparent opacity={0.5} depthWrite={false} toneMapped={false} />
+      <meshBasicMaterial ref={matRef} color="#FFF6DA" transparent opacity={0.5} depthWrite={false} toneMapped={false} />
     </instancedMesh>
   )
 }
@@ -791,6 +928,7 @@ export default function GardenWorld({
   const leaf = LEAF_BY_ID[leafId] ?? LEAF_BY_ID.temperate
   const biome = BIOME_BY_ID[biomeId as BiomeId] ?? BIOME_BY_ID.temperate
   const world = useMemo(() => new WorldState(), [])
+  const stereo = useStereo()
 
   return (
     <group>
@@ -802,11 +940,10 @@ export default function GardenWorld({
       <Stones world={world} />
       <Weather sim={sim} world={world} />
       <ContactShadow position={[0, -0.6, 0]} radius={2.6} />
-      <ContactShadow position={[2.5, -0.6, 0.6]} radius={1.05} />
       <Plant sim={sim} leaf={leaf} />
-      <BubbleTube sim={sim} position={[2.5, 1.7, 0.6]} />
+      <BubbleTube sim={sim} position={[2.5, 0.92, 0.6]} />
       <Sun sim={sim} />
-      <SunHaze sim={sim} />
+      <LightShafts sim={sim} world={world} />
       <SunSparks sim={sim} />
       <Pollen sim={sim} />
       <HeatShimmer sim={sim} />
@@ -818,7 +955,7 @@ export default function GardenWorld({
       </group>
       {zoomed && !equationOpen && <Chloroplast sim={sim} onFact={onChloroplastFact} />}
       {equationOpen && <EquationStage sim={sim} />}
-      <PostFX />
+      {stereo.on ? <StereoRig sim={sim} /> : <PostFX />}
     </group>
   )
 }

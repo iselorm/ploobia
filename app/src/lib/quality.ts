@@ -13,6 +13,7 @@
  */
 
 import { useSyncExternalStore } from 'react'
+import { isSoftwareRenderer } from './perf'
 
 export type QualityTier = 'high' | 'medium' | 'low'
 
@@ -41,8 +42,15 @@ const ORDER: QualityTier[] = ['high', 'medium', 'low']
 /* Store                                                              */
 /* ------------------------------------------------------------------ */
 
-let tier: QualityTier = guessTier()
-let locked = false
+/** `?q=low|medium|high` anywhere in the URL (hash included) pins the tier — for debugging and for slow test renderers. */
+function pinnedTier(): QualityTier | null {
+  if (typeof window === 'undefined') return null
+  const m = /[?&]q=(low|medium|high)\b/.exec(window.location.hash + window.location.search)
+  return m ? (m[1] as QualityTier) : null
+}
+const pinned = pinnedTier()
+let tier: QualityTier = pinned ?? guessTier()
+let locked = pinned !== null
 const listeners = new Set<() => void>()
 
 function notify() {
@@ -86,6 +94,14 @@ export function useQualityCaps(): QualityCaps {
 
 function guessTier(): QualityTier {
   if (typeof navigator === 'undefined') return 'medium'
+
+  // No GPU at all — a blocklisted Android driver, a locked-down school laptop,
+  // a headless runner. Software rendering is one to two orders of magnitude
+  // slower than the weakest real GPU, so starting anywhere but `low` just means
+  // several seconds of a slideshow before adaptive stepping arrives at the same
+  // answer. Cheap to know now; expensive to discover later.
+  if (isSoftwareRenderer()) return 'low'
+
   const nav = navigator as Navigator & { deviceMemory?: number }
   const cores = nav.hardwareConcurrency ?? 4
   const mem = nav.deviceMemory ?? 4
@@ -106,14 +122,36 @@ function guessTier(): QualityTier {
 
 const WINDOW_S = 3
 const SLOW_MS = 38 // sustained ≈ <26 fps
+const DIRE_MS = 70 // ≈ <14 fps — one notch will not save this
+const SETTLE_S = 2.5
 let acc = 0
 let n = 0
 let elapsed = 0
-let settle = 2 // ignore the first seconds (shader compile, warm-up)
+let settle = SETTLE_S // ignore the first seconds (shader compile, warm-up)
+
+/**
+ * Re-arm the sampling window. **Every cabinet must call this as its scene
+ * mounts.**
+ *
+ * Without it the tier ratchets down as a learner walks the arcade: entering a
+ * cabinet costs a burst of shader compiles and texture uploads, and since the
+ * window carried over from the previous room there was no settle period to
+ * absorb it — so the first three seconds of each new cabinet read as sustained
+ * slowness and a perfectly capable tablet ended the visit pinned to `low`.
+ * Downgrades are permanent by design, which made that bug permanent too.
+ */
+export function resetFrameSampling(): void {
+  acc = 0
+  n = 0
+  elapsed = 0
+  settle = SETTLE_S
+}
 
 /**
  * Feed real frame deltas (seconds) from a `useFrame`. When the rolling average
- * over WINDOW_S stays above SLOW_MS the tier steps down one notch.
+ * over WINDOW_S stays above SLOW_MS the tier steps down; if it is catastrophic
+ * it steps two, because a device rendering at 12 fps should not have to endure
+ * two more sampling windows to reach the tier it was always going to need.
  * Cheap enough to call every frame from every cabinet.
  */
 export function reportFrame(dt: number): void {
@@ -131,9 +169,10 @@ export function reportFrame(dt: number): void {
   n = 0
   elapsed = 0
   if (avgMs > SLOW_MS) {
+    const steps = avgMs > DIRE_MS ? 2 : 1
     const i = ORDER.indexOf(tier)
-    tier = ORDER[Math.min(ORDER.length - 1, i + 1)]
-    settle = 2
+    tier = ORDER[Math.min(ORDER.length - 1, i + steps)]
+    settle = SETTLE_S
     notify()
   }
 }

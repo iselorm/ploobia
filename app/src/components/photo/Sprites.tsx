@@ -198,3 +198,124 @@ export function leafTexture(base: string, accent: string): THREE.CanvasTexture {
     ctx.fillRect(0, 0, s, s)
   })
 }
+
+/**
+ * The leaf's *thinness* map: white where light gets through, black where it
+ * does not. Same anatomy as `leafTexture` — midrib, pinnate secondaries,
+ * tertiary hairlines — but drawn as opacity rather than colour, and used by
+ * the translucency shader. Hold a real leaf up to the sun and this is exactly
+ * what you see: a glowing sheet with its plumbing in silhouette.
+ */
+export function leafThicknessTexture(): THREE.CanvasTexture {
+  const texture = makeTexture('leaf-thin', 512, (ctx, s) => {
+    const cx = s / 2
+    // Lamina: thinnest in the middle of each half, thickening toward the base.
+    const g = ctx.createLinearGradient(0, s, 0, 0)
+    g.addColorStop(0, '#9A9A9A')
+    g.addColorStop(0.35, '#DCDCDC')
+    g.addColorStop(1, '#FFFFFF')
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, s, s)
+
+    // Cellular variation, so the glow is never a flat wash.
+    for (let i = 0; i < 700; i++) {
+      const x = Math.random() * s
+      const y = Math.random() * s
+      const r = 5 + Math.random() * 16
+      ctx.fillStyle = `rgba(${Math.random() < 0.5 ? 255 : 90},${Math.random() < 0.5 ? 255 : 90},${Math.random() < 0.5 ? 255 : 90},0.05)`
+      ctx.beginPath()
+      ctx.arc(x, y, r, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    ctx.lineCap = 'round'
+    const n = 11
+    for (let i = 0; i < n; i++) {
+      const t = 0.08 + (i / n) * 0.84
+      const y0 = s * (1 - t)
+      for (const side of [-1, 1]) {
+        const len = s * 0.46 * (1 - Math.abs(t - 0.5) * 1.1)
+        // Secondary vein: a thick pipe, so almost nothing passes.
+        ctx.strokeStyle = 'rgba(20,20,20,0.85)'
+        ctx.lineWidth = 5.5 - t * 2
+        ctx.beginPath()
+        ctx.moveTo(cx, y0)
+        ctx.quadraticCurveTo(cx + side * len * 0.55, y0 - s * 0.06, cx + side * len, y0 - s * 0.16)
+        ctx.stroke()
+        // Tertiary hairlines: thin enough that some light still gets by.
+        ctx.strokeStyle = 'rgba(60,60,60,0.4)'
+        ctx.lineWidth = 1.6
+        for (let k = 1; k <= 3; k++) {
+          const f = k / 4
+          const px = cx + side * len * f * 0.9
+          const py = y0 - s * 0.14 * f
+          ctx.beginPath()
+          ctx.moveTo(px, py)
+          ctx.lineTo(px + side * 12, py - 22)
+          ctx.stroke()
+        }
+      }
+    }
+    // Midrib: the thickest structure on the leaf.
+    ctx.strokeStyle = 'rgba(8,8,8,0.95)'
+    ctx.lineWidth = 14
+    ctx.beginPath()
+    ctx.moveTo(cx, s)
+    ctx.lineTo(cx, s * 0.03)
+    ctx.stroke()
+
+    // The margin is thin and the base is thick.
+    const edge = ctx.createRadialGradient(cx, s * 0.55, s * 0.2, cx, s * 0.5, s * 0.66)
+    edge.addColorStop(0, 'rgba(255,255,255,0)')
+    edge.addColorStop(1, 'rgba(255,255,255,0.45)')
+    ctx.fillStyle = edge
+    ctx.fillRect(0, 0, s, s)
+  })
+  // Data, not colour: no sRGB decode on the way into the shader.
+  if (texture.colorSpace !== THREE.NoColorSpace) {
+    texture.colorSpace = THREE.NoColorSpace
+    texture.needsUpdate = true
+  }
+  return texture
+}
+
+/**
+ * A fan of soft radial spokes, brightest at the centre. Drawn once and used
+ * for the sun shafts: a camera-facing quad centred on the sun's line of sight
+ * puts the fan exactly where the rays should be, with no post-processing pass
+ * and no extra render — so it works on a cheap tablet and in stereo.
+ */
+export function sunFanTexture(): THREE.CanvasTexture {
+  return makeTexture('sun-fan', 512, (ctx, s) => {
+    const c = s / 2
+    ctx.clearRect(0, 0, s, s)
+    ctx.translate(c, c)
+    // Spokes of varying width, sampled from a fixed sequence so it never
+    // flickers between reloads.
+    const widths = [0.075, 0.03, 0.055, 0.018, 0.09, 0.026, 0.045, 0.062, 0.022, 0.038, 0.07, 0.03, 0.05, 0.02]
+    for (let i = 0; i < widths.length; i++) {
+      const a = (i / widths.length) * Math.PI * 2 + (i % 3) * 0.11
+      const w = widths[i]
+      const grd = ctx.createLinearGradient(0, 0, Math.cos(a) * c, Math.sin(a) * c)
+      grd.addColorStop(0, 'rgba(255,247,214,0.55)')
+      grd.addColorStop(0.35, 'rgba(255,240,190,0.22)')
+      grd.addColorStop(1, 'rgba(255,232,160,0)')
+      ctx.fillStyle = grd
+      ctx.beginPath()
+      ctx.moveTo(0, 0)
+      ctx.arc(0, 0, c, a - w, a + w)
+      ctx.closePath()
+      ctx.fill()
+    }
+    // Core bloom so the shafts have something to come out of.
+    const core = ctx.createRadialGradient(0, 0, 0, 0, 0, c * 0.5)
+    core.addColorStop(0, 'rgba(255,250,225,0.75)')
+    core.addColorStop(0.45, 'rgba(255,240,185,0.20)')
+    core.addColorStop(1, 'rgba(255,232,160,0)')
+    ctx.fillStyle = core
+    ctx.beginPath()
+    ctx.arc(0, 0, c * 0.5, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+  })
+}

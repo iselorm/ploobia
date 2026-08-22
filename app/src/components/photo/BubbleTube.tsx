@@ -1,8 +1,10 @@
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
+import { OCC_SLOT, clearOccluder, setOccluder } from '@/lib/occluders'
 import type { PhotoSim } from '@/lib/photo'
 import { glyphTexture } from './Glyphs'
+import { shadowTexture } from './Sprites'
 
 const BUBBLES = 42
 const TUBE_H = 2.6
@@ -16,14 +18,25 @@ const TUBE_R = 0.22
  * grows — so the number in the data table has a visible physical origin
  * instead of appearing out of nowhere.
  */
+/**
+ * The apparatus is only on stage while a measurement is being taken (and for
+ * a moment after, so the reading has somewhere to come from). The rest of the
+ * time the learner looks at a plant in a place, not a plant beside a beaker.
+ */
+const LINGER_SECONDS = 4
+
 export default function BubbleTube({ sim, position }: { sim: PhotoSim; position: [number, number, number] }) {
   const bubblesRef = useRef<THREE.InstancedMesh>(null)
+  const rigRef = useRef<THREE.Group>(null)
+  const presence = useRef(0)
+  const lastTrialAt = useRef(-Infinity)
   const labelRef = useRef<THREE.Mesh>(null)
   const { texture: labelTexture, aspect: labelAspect } = useMemo(
     () => glyphTexture('O₂', '#14567D'),
     [],
   )
   const columnRef = useRef<THREE.Mesh>(null)
+  const shadowTex = useMemo(() => shadowTexture(), [])
   const glassRef = useRef<THREE.MeshStandardMaterial>(null)
   const dummy = useMemo(() => new THREE.Object3D(), [])
   const seeds = useMemo(
@@ -42,6 +55,23 @@ export default function BubbleTube({ sim, position }: { sim: PhotoSim; position:
     const dt = Math.min(rawDt, 0.05)
     const mesh = bubblesRef.current
     if (!mesh) return
+
+    // Presence: rise out of the ground when a trial starts, sink after it ends.
+    if (sim.trialRunning) lastTrialAt.current = sim.time
+    const wanted = sim.trialRunning || sim.time - lastTrialAt.current < LINGER_SECONDS || sim.demoMode ? 1 : 0
+    presence.current += (wanted - presence.current) * (1 - Math.exp(-dt * 3.2))
+    const rig = rigRef.current
+    if (rig) {
+      const p = presence.current
+      rig.visible = p > 0.01
+      // Ease with a little overshoot: it arrives like a prop being set down.
+      const e = p < 1 ? 1 - Math.pow(1 - p, 2.2) : 1
+      rig.scale.set(0.6 + e * 0.4, Math.max(0.001, e), 0.6 + e * 0.4)
+      rig.position.y = (e - 1) * (TUBE_H * 0.5 + 0.3)
+      // Occlude the ground it stands on, and stop occluding as it sinks away.
+      if (p > 0.01) setOccluder(OCC_SLOT.apparatus, position[0], position[1] - TUBE_H * 0.5, position[2], 0.75, e * 0.8)
+      else clearOccluder(OCC_SLOT.apparatus)
+    }
 
     // How many bubbles are in flight tracks the measured rate.
     const active = sim.trialRunning
@@ -84,6 +114,12 @@ export default function BubbleTube({ sim, position }: { sim: PhotoSim; position:
 
   return (
     <group position={position}>
+    <group ref={rigRef} visible={false}>
+      {/* Contact shadow travels with the prop */}
+      <mesh position={[0, -TUBE_H / 2 - 0.235, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[2.1, 2.1]} />
+        <meshBasicMaterial map={shadowTex} transparent depthWrite={false} fog={false} />
+      </mesh>
       {/* Stand */}
       <mesh position={[0, -TUBE_H / 2 - 0.12, 0]}>
         <cylinderGeometry args={[0.42, 0.5, 0.24, 16]} />
@@ -140,6 +176,7 @@ export default function BubbleTube({ sim, position }: { sim: PhotoSim; position:
         <planeGeometry args={[0.42 * labelAspect, 0.42]} />
         <meshBasicMaterial map={labelTexture} transparent depthWrite={false} toneMapped={false} />
       </mesh>
+    </group>
     </group>
   )
 }

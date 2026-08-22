@@ -2,16 +2,22 @@
  * Motion Lab checks. Serve dist/ on :8765 first (python3 -m http.server 8765 in dist).
  * The harness taps the stopwatch "like a human": it reads the sim's exact
  * crossing times from window.__motionSim and taps ~0.2 s after each event.
+ *
+ * Sim time only advances on rendered frames, so those taps are only as accurate
+ * as the frame rate: at 5 fps on a software renderer a tap lands up to a 200 ms
+ * frame late and the reading assertions fail on correct code. The suite
+ * therefore pins the low quality tier (`?q=low`, which exists for exactly this)
+ * and MEASURES the frame rate before trusting any hand-timed check — see
+ * verify-lib.mjs. Those checks report SKIP, never a silent pass, and
+ * VERIFY_STRICT=1 demands them on hardware that can deliver.
  */
 import { chromium, devices } from 'playwright'
+import { measureFps, reporter } from './verify-lib.mjs'
 
-const URL = 'http://localhost:8765/index.html#/motion'
-const results = []
-const check = (n, ok, extra = '') => {
-  const line = `${ok ? 'PASS' : 'FAIL'} ${n}${extra ? ' — ' + extra : ''}`
-  results.push(line)
-  console.log(line)
-}
+const URL = 'http://localhost:8765/index.html#/motion?q=low'
+const { check, checkTimed, tally, results } = reporter()
+// Set once per browser context, right after the scene is up.
+let fps = 0
 const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] })
 
 const simNow = (page) => page.evaluate(() => {
@@ -87,14 +93,16 @@ const missionDone = (page, id) => page.locator(`[data-mission="${id}"][data-done
   try {
     await page.goto(URL)
     await page.waitForTimeout(4500)
+    fps = await measureFps(page)
     check('welcome renders', (await page.getByText('Motion Yard').count()) >= 1)
+    console.log(`   · renderer managing ${fps} fps — hand-timed checks ${fps >= 25 ? 'ENABLED' : 'SKIPPED'}`)
     await page.getByRole('button', { name: /start measuring/i }).click({ force: true })
     await page.waitForSelector('[data-testid="catch-button"]', { timeout: 15000 })
     check('calibration card appears', (await page.locator('[data-testid="catch-button"]').count()) === 1)
     await calibrate(page)
     const reactionText = await page.getByText(/Your reaction:/).first().textContent()
     const reaction = Number(/([\d.]+) s/.exec(reactionText)?.[1])
-    check('reaction time measured and in range', reaction > 0.05 && reaction < 5, reactionText + ' (SwiftShader inflates harness tap latency)')
+    checkTimed(fps, 'reaction time measured and in range', reaction > 0.05 && reaction < 5, reactionText)
 
     // 1. Hand-timed roll
     const r1 = await timedRoll(page, 0.2)
@@ -103,7 +111,7 @@ const missionDone = (page, id) => page.locator(`[data-mission="${id}"][data-done
     check('mission "Time a roll" completes on a recorded reading', await missionDone(page, 'first-time'))
     const readingText = await page.locator('[data-testid="stopwatch-reading"]').textContent()
     const measured = Number(readingText)
-    check('stopwatch reading ≈ true interval (taps both ~0.2 s late)', r1 && Math.abs(measured - r1.trueT) < 0.35, `${measured} vs ${r1?.trueT.toFixed(2)}`)
+    checkTimed(fps, 'stopwatch reading ≈ true interval (taps both ~0.2 s late)', r1 && Math.abs(measured - r1.trueT) < 0.35, `${measured} vs ${r1?.trueT.toFixed(2)}`)
     check('early/late flick shown', /late|early|on it/.test(await page.locator('[data-testid="flick"]').textContent()))
 
     // 2. Two more identical rolls with different "reaction" -> spread, gates unlock
@@ -132,7 +140,8 @@ const missionDone = (page, id) => page.locator(`[data-mission="${id}"][data-done
     await page.getByRole('button', { name: '1.5 m', exact: true }).first().click({ force: true })
     await timedRoll(page, 0.2)
     await page.waitForTimeout(600)
-    check('mission "Speed needs two numbers" completes', await missionDone(page, 'two-numbers'))
+    // Earned by two hand-timed rolls at different distances, so it inherits their timing dependence.
+    checkTimed(fps, 'mission "Speed needs two numbers" completes', await missionDone(page, 'two-numbers'))
     check('equation beat card appears', (await page.getByText('Equation earned').count()) === 1)
     check('learner best-fit handles present (Scientist)', (await page.locator('[data-testid="handle-a"]').count()) === 1)
     await page.keyboard.press('Escape')
@@ -152,7 +161,7 @@ const missionDone = (page, id) => page.locator(`[data-mission="${id}"][data-done
     check('mission "Heavy or light?" completes', await missionDone(page, 'heavy-light'))
     for (const r of [0.2, 0.28, 0.16, 0.24, 0.3]) await timedDrop(page, r)
     await page.waitForTimeout(600)
-    check('mission "Time a fall" completes on five hand timings', await missionDone(page, 'time-a-fall'))
+    checkTimed(fps, 'mission "Time a fall" completes on five hand timings', await missionDone(page, 'time-a-fall'))
     check('pad and sensor unlock', (await simGet(page, 's.padUnlocked')) && (await simGet(page, 's.sensorUnlocked')))
     const earthFall = await simGet(page, 'Math.sqrt(2*s.dropH0/s.g)')
     check('Earth 1 m fall ≈ 0.45 s', Math.abs(earthFall - 0.4515) < 0.01, earthFall.toFixed(3))
@@ -206,7 +215,7 @@ const missionDone = (page, id) => page.locator(`[data-mission="${id}"][data-done
 
     check('no console errors (desktop)', errors.length === 0, errors.slice(0, 3).join(' | '))
   } catch (e) {
-    results.push('FAIL desktop crashed — ' + String(e).split('\n')[0])
+    check('desktop pass did not crash', false, String(e).split('\n')[0])
     await page.screenshot({ path: '/tmp/arcade/shots/verify-crash.png' }).catch(() => {})
   }
   await ctx.close()
@@ -220,7 +229,7 @@ const missionDone = (page, id) => page.locator(`[data-mission="${id}"][data-done
   const errors = []
   page.on('pageerror', (e) => errors.push(String(e)))
   try {
-    await page.goto(URL + '?demo=1')
+    await page.goto(URL + '&demo=1')
     await page.waitForTimeout(5000)
     check('demo starts from ?demo=1', (await page.getByText(/Guided demo ·/).count()) >= 1)
     const t0 = Date.now()
@@ -234,7 +243,7 @@ const missionDone = (page, id) => page.locator(`[data-mission="${id}"][data-done
     check('demo hands over to calibration', (await page.locator('[data-testid="catch-button"]').count()) === 1)
     check('no console errors (demo)', errors.length === 0, errors.slice(0, 3).join(' | '))
   } catch (e) {
-    results.push('FAIL demo crashed — ' + String(e).split('\n')[0])
+    check('demo pass did not crash', false, String(e).split('\n')[0])
   }
   await ctx.close()
 }
@@ -256,7 +265,7 @@ const missionDone = (page, id) => page.locator(`[data-mission="${id}"][data-done
     await page.screenshot({ path: '/tmp/arcade/shots/verify-ipad.png' })
     check('no console errors (tablet)', errors.length === 0, errors.slice(0, 3).join(' | '))
   } catch (e) {
-    results.push('FAIL tablet crashed — ' + String(e).split('\n')[0])
+    check('tablet pass did not crash', false, String(e).split('\n')[0])
   }
   await ctx.close()
 }
@@ -364,14 +373,11 @@ const missionDone = (page, id) => page.locator(`[data-mission="${id}"][data-done
     await page.screenshot({ path: '/tmp/arcade/shots/verify-yard.png' })
     check('no console errors (yard)', errors.length === 0, errors.slice(0, 3).join(' | '))
   } catch (e) {
-    results.push('FAIL yard crashed — ' + String(e).split('\n')[0])
-    console.log(results[results.length - 1])
+    check('yard did not crash', false, String(e).split('\n')[0])
     await page.screenshot({ path: '/tmp/arcade/shots/verify-yard-crash.png' }).catch(() => {})
   }
   await ctx.close()
 }
 
 await browser.close()
-console.log(results.join('\n'))
-const fails = results.filter((r) => r.startsWith('FAIL')).length
-console.log(`\n${results.length - fails}/${results.length} passed`)
+process.exit(tally())
