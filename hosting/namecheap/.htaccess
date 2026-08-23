@@ -1,0 +1,111 @@
+# Ploobia on Apache / cPanel shared hosting (Namecheap).
+#
+# This is the job `_headers` does on Cloudflare Pages, written for Apache. Every
+# directive is wrapped in <IfModule> because shared hosting decides which
+# modules exist, and a missing module must not produce a 500 on the whole site.
+#
+# Upload this to public_html/. cPanel's File Manager hides dotfiles by default:
+# Settings → "Show Hidden Files (dotfiles)".
+
+# ---------------------------------------------------------------------------
+# 1. COMPRESSION — the single most important line here.
+#
+# The arcade is one 2.5 MB HTML file that gzips to about 800 kB. Without this
+# every visitor downloads three times what they need, which on a Ghanaian
+# mobile connection is the difference between a teaser and a bounce.
+# ---------------------------------------------------------------------------
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/css text/xml
+  AddOutputFilterByType DEFLATE application/javascript application/x-javascript
+  AddOutputFilterByType DEFLATE application/json application/xml
+  AddOutputFilterByType DEFLATE image/svg+xml application/rss+xml
+  # Very old proxies mangle gzipped responses; these are the standard guards.
+  BrowserMatch ^Mozilla/4 gzip-only-text/html
+  BrowserMatch ^Mozilla/4\.0[678] no-gzip
+  BrowserMatch \bMSIE\s7 !no-gzip !gzip-only-text/html
+</IfModule>
+
+# Brotli where the host offers it — smaller again, and browsers prefer it.
+<IfModule mod_brotli.c>
+  AddOutputFilterByType BROTLI_COMPRESS text/html text/css text/xml
+  AddOutputFilterByType BROTLI_COMPRESS application/javascript application/json
+  AddOutputFilterByType BROTLI_COMPRESS image/svg+xml
+</IfModule>
+
+# ---------------------------------------------------------------------------
+# 2. CACHING
+#
+# The two HTML files ARE the application, so they must never be served stale:
+# publish a fix, reload, get the fix. Images and fonts can be cached hard.
+# ---------------------------------------------------------------------------
+<IfModule mod_headers.c>
+  <FilesMatch "\.html$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+  <FilesMatch "\.(png|jpg|jpeg|webp|gif|svg|ico|woff2?|glb)$">
+    Header set Cache-Control "public, max-age=604800"
+  </FilesMatch>
+
+  # Modest, uncontroversial hardening. No CSP: the app inlines its own script
+  # and styles, so a strict policy would need hashes and would break on the
+  # next build without telling anyone.
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "geolocation=(), microphone=(), camera=(), interest-cohort=()"
+</IfModule>
+
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType image/png "access plus 7 days"
+  ExpiresByType image/webp "access plus 7 days"
+  ExpiresByType font/woff2 "access plus 30 days"
+  ExpiresByType model/gltf-binary "access plus 30 days"
+</IfModule>
+
+# ---------------------------------------------------------------------------
+# 3. MIME TYPES the default Apache config may not know
+# ---------------------------------------------------------------------------
+<IfModule mod_mime.c>
+  AddType model/gltf-binary .glb
+  AddType image/webp .webp
+  AddType font/woff2 .woff2
+  AddType application/manifest+json .webmanifest
+</IfModule>
+
+# ---------------------------------------------------------------------------
+# 4. ONE canonical address
+#
+# Pick https + apex (ploobia.com). Serving the same page at four addresses
+# splits search results and breaks the OG cache. Namecheap's AutoSSL issues the
+# certificate; give it a few minutes after pointing the domain before turning
+# this on, or the redirect will loop into a certificate warning.
+# ---------------------------------------------------------------------------
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # http → https (HTTP_X_FORWARDED_PROTO covers cPanel behind a proxy)
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !https
+  RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+
+  # www → apex
+  RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
+  RewriteRule ^(.*)$ https://%1/$1 [R=301,L]
+
+  # /app → /app/  (without this the relative asset paths resolve one level up)
+  RewriteRule ^app$ /app/ [R=301,L]
+</IfModule>
+
+# ---------------------------------------------------------------------------
+# 5. Tidiness
+# ---------------------------------------------------------------------------
+Options -Indexes
+DirectoryIndex index.html
+
+# The feedback log lives above public_html and is unreachable over the web,
+# but belt and braces in case anyone ever moves it.
+<FilesMatch "\.(jsonl|log|env)$">
+  Require all denied
+</FilesMatch>
+
+ErrorDocument 404 /404.html

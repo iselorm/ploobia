@@ -11,7 +11,8 @@
     "lint": "npm run lint --prefix app",
     "verify": "node scripts/verify.mjs",
     "serve": "npx --yes http-server dist -p 8080 -s",
-    "build:offline": "node scripts/build-offline.mjs"
+    "build:offline": "node scripts/build-offline.mjs",
+    "build:namecheap": "node scripts/build-namecheap.mjs"
   },
   "devDependencies": {
     "playwright": "^1.49.0"
