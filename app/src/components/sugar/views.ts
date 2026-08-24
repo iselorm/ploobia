@@ -25,8 +25,15 @@ export const VIEWPOINTS: Viewpoint[] = [
     label: 'Overview',
     stage: 'plant',
     hint: 'The whole specimen: leaves, stem and everything underground.',
-    position: [0.72, 1.85, 6.5],
-    target: [0, 1.0, 0],
+    // Deliberately off-centre, with the horizon high.
+    //
+    // A subject dead-centre on a plinth, lit from three-quarters, is the house
+    // style of every 3D component gallery on the internet, and it was the main
+    // reason this cabinet read as somebody else's demo. Orbit controls put the
+    // *target* at the middle of the screen, so offsetting the target sideways
+    // is what puts the plant on a third and opens the field out beside it.
+    position: [1.42, 2.42, 5.95],
+    target: [0.6, 1.18, 0.06],
   },
   {
     id: 'canopy',
@@ -57,8 +64,8 @@ export const VIEWPOINTS: Viewpoint[] = [
     label: 'Backlit',
     stage: 'plant',
     hint: 'Low and against the light, the way a leaf is read in the field.',
-    position: [-2.1, 0.62, 3.5],
-    target: [0.1, 1.6, -0.1],
+    position: [-2.45, 0.58, 3.4],
+    target: [-0.4, 1.62, -0.1],
   },
   {
     id: 'inside',

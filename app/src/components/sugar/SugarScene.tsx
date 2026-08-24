@@ -9,7 +9,9 @@ import { useStereo } from '@/lib/stereo'
 import { registerCamera } from '@/lib/input'
 import { stepSim, type StageId, type SugarSim } from '@/lib/sugarsim'
 import { SPECIMEN_BY_ID } from '@/lib/specimens'
+import { habitatForSpecimen } from '@/lib/sugarworld'
 import { ATLAS, atlasEnvironment, DOT_GRID_FRAG, DOT_GRID_VERT } from './atlas'
+import Habitat from './Habitat'
 import PlantStage from './PlantStage'
 import LeafStage from './LeafStage'
 import StemStage from './StemStage'
@@ -47,7 +49,7 @@ function Ticker({ sim }: { sim: SugarSim }) {
  * on black to graphite on cream and pushed back until it reads as the squared
  * paper a field sketch is drawn on rather than as an effect in its own right.
  */
-function Backdrop() {
+function Backdrop({ tint }: { tint?: string }) {
   const materialRef = useRef<THREE.ShaderMaterial>(null)
   const uniforms = useMemo(
     () => ({
@@ -61,6 +63,15 @@ function Backdrop() {
     [],
   )
 
+  // A microscope view has no scenery, but it should still remember which
+  // habitat it was reached from — a chloroplast lit by desert light is a
+  // truthful continuity cue, where a painted desert behind it would be a lie.
+  const dome = useMemo(() => {
+    const c = new THREE.Color(ATLAS.paper)
+    if (tint) c.lerp(new THREE.Color(tint), 0.3)
+    return c
+  }, [tint])
+
   useFrame((_, rawDt) => {
     uniforms.uTime.value += Math.min(rawDt, 0.05)
   })
@@ -71,7 +82,7 @@ function Backdrop() {
           when the camera swings past the backdrop plane. */}
       <mesh>
         <sphereGeometry args={[80, 24, 16]} />
-        <meshBasicMaterial color={ATLAS.paper} side={THREE.BackSide} fog={false} />
+        <meshBasicMaterial color={dome} side={THREE.BackSide} fog={false} />
       </mesh>
       <mesh position={[0, 2.2, -9]}>
         <planeGeometry args={[34, 22]} />
@@ -106,12 +117,9 @@ function Backdrop() {
  * look depends on the paper being paper-coloured. The accent light is tinted
  * by the stage, which is a cheap way of telling the eye it has moved.
  */
-function Lights({ stage }: { stage: StageId }) {
+function AtlasEnv() {
   const gl = useThree((s) => s.gl)
   const scene = useThree((s) => s.scene)
-  const accentRef = useRef<THREE.PointLight>(null)
-  const quality = getQualityCaps()
-
   useEffect(() => {
     const env = atlasEnvironment(gl)
     scene.environment = env
@@ -121,6 +129,12 @@ function Lights({ stage }: { stage: StageId }) {
       env.dispose()
     }
   }, [gl, scene])
+  return null
+}
+
+function Lights({ stage }: { stage: StageId }) {
+  const accentRef = useRef<THREE.PointLight>(null)
+  const quality = getQualityCaps()
 
   const accent = stage === 'leaf' ? '#8FD07A' : stage === 'stem' ? '#F3C05A' : '#FFE7A8'
 
@@ -328,6 +342,8 @@ interface Props {
   /** React-state mirrors so the scene re-renders when they change. */
   stage: StageId
   specimenId: string
+  /** False puts the specimen back on the plain field-guide plate. */
+  habitat: boolean
   onContextLost: () => void
 }
 
@@ -342,7 +358,7 @@ function Stereo({ sim }: { sim: SugarSim }) {
   )
 }
 
-export default function SugarScene({ sim, stage, specimenId, onContextLost }: Props) {
+export default function SugarScene({ sim, stage, specimenId, habitat, onContextLost }: Props) {
   const quality = useQualityCaps()
   const stereo = useStereo()
   const frame = THREE.MathUtils.clamp(
@@ -350,6 +366,10 @@ export default function SugarScene({ sim, stage, specimenId, onContextLost }: Pr
     0.86,
     1.34,
   )
+  // Scenery belongs to the whole-plant view only. The other two stages are a
+  // chloroplast and a stem section; a landscape behind either would be fiction.
+  const outdoors = habitat && stage === 'plant'
+  const place = useMemo(() => habitatForSpecimen(specimenId), [specimenId])
 
   return (
     <Canvas
@@ -364,6 +384,11 @@ export default function SugarScene({ sim, stage, specimenId, onContextLost }: Pr
         gl.toneMapping = THREE.ACESFilmicToneMapping
         gl.toneMappingExposure = 1.02
         scene.background = new THREE.Color(ATLAS.paper)
+        scene.fog = null
+        // A test handle for the scene graph itself. The suites already reach
+        // the sim and the model this way; being able to measure where things
+        // actually *are* is what turns "the roots look wrong" into a number.
+        ;(window as unknown as Record<string, unknown>).__sugarScene = scene
         gl.domElement.addEventListener('webglcontextlost', (e) => {
           e.preventDefault()
           onContextLost()
@@ -372,10 +397,17 @@ export default function SugarScene({ sim, stage, specimenId, onContextLost }: Pr
     >
       <Ticker sim={sim} />
       <PerfProbe cabinet="photosynthesis" />
-      <Backdrop />
-      <Lights stage={stage} />
+      <AtlasEnv />
+      {outdoors ? (
+        <Habitat sim={sim} specimenId={specimenId} />
+      ) : (
+        <>
+          <Backdrop tint={habitat ? place.sky[3] : undefined} />
+          <Lights stage={stage} />
+        </>
+      )}
       <SugarCamera sim={sim} frame={frame} />
-      {stage === 'plant' && <PlantStage sim={sim} specimenId={specimenId} />}
+      {stage === 'plant' && <PlantStage sim={sim} specimenId={specimenId} outdoors={outdoors} />}
       {stage === 'leaf' && <LeafStage sim={sim} />}
       {stage === 'stem' && <StemStage sim={sim} />}
       {stereo.on && <Stereo sim={sim} />}

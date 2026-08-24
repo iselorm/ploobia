@@ -80,6 +80,15 @@ async function open(width, height, touch = false) {
 }
 
 async function start(page) {
+  // Wait for the welcome to exist before reaching for it. `resilientClick`
+  // has a 90 s budget, but it spends it *waiting for a locator*, so a page
+  // that is merely slow to mount burns the whole budget and then reports a
+  // timeout that reads like a missing button.
+  await page
+    .getByRole('button', { name: 'Start', exact: true })
+    .first()
+    .waitFor({ timeout: 30000 })
+    .catch(() => {})
   await tap(page, 'Start')
   await waitSim(page, 's.started === true')
   await page.waitForTimeout(700)
@@ -283,11 +292,114 @@ async function start(page) {
   }
 
   /* ---- Reaction Vision ---- */
-  await page.locator('[aria-label="Reaction Vision"]').first().click({ force: true })
+  // Through `resilientClick`, not a raw forced click: on a saturated software
+  // renderer a real click can land without the React handler ever running, and
+  // the failure then looks like a broken feature rather than a slow frame.
+  await resilientClick(page.locator('[aria-label="Reaction Vision"]').first(), {
+    label: 'Reaction Vision',
+  })
   check('Reaction Vision turns on', await waitSim(page, 's.vision === true'))
   check('and its wavefront climbs', await waitSim(page, 's.pulse > 0.05', 12000))
-  await page.locator('[aria-label="Reaction Vision"]').first().click({ force: true })
+  await resilientClick(page.locator('[aria-label="Reaction Vision"]').first(), {
+    label: 'Reaction Vision off',
+  })
   await waitSim(page, 's.vision === false')
+
+  /* ---- the habitat, and the way back to the plate ---- */
+  {
+    await tap(page, 'Whole plant')
+    await waitSim(page, "s.stage === 'plant'")
+    check('the specimen starts in its habitat', await sim(page, 's.habitat === true'))
+
+    // The habitat follows the specimen rather than being a dial. Proved by
+    // the scene's own fog, which is built from the biome preset: swap a
+    // temperate crop for a desert one and the air has to change colour.
+    const fogOf = () =>
+      page.evaluate(() => {
+        const f = window.__sugarScene?.fog
+        return f ? f.color.getHexString() : null
+      })
+    await tap(page, 'Specimen: Common bean', { exact: false })
+    await page.waitForTimeout(1500)
+    const beanFog = await fogOf()
+    await tap(page, 'Specimen: Prickly pear', { exact: false })
+    await page.waitForTimeout(1800)
+    const cactusFog = await fogOf()
+    check('the whole-plant stage really is fogged outdoor air', beanFog !== null, String(beanFog))
+    check(
+      'and the air changes when the specimen does — habitat follows the plant',
+      Boolean(beanFog && cactusFog && beanFog !== cactusFog),
+      `${beanFog} → ${cactusFog}`,
+    )
+    await tap(page, 'Specimen: Common bean', { exact: false })
+    await page.waitForTimeout(1500)
+
+    await resilientClick(page.locator('[aria-label="Switch to the plain plate"]').first(), {
+      label: 'plate view',
+    })
+    check('the habitat can be switched off', await waitSim(page, 's.habitat === false'))
+    check(
+      'and the toggle then offers the way back',
+      (await page.locator('[aria-label="Show the habitat"]').count()) === 1,
+    )
+    await resilientClick(page.locator('[aria-label="Show the habitat"]').first(), {
+      label: 'field view',
+    })
+    check('the habitat comes back', await waitSim(page, 's.habitat === true'))
+    // Scenery belongs to the whole-plant view only; a landscape behind a
+    // chloroplast would be fiction, so the toggle must not be offered there.
+    await tap(page, 'Inside a leaf')
+    await waitSim(page, "s.stage === 'leaf'")
+    check(
+      'the habitat toggle is not offered inside a leaf',
+      (await page.locator('[aria-label="Switch to the plain plate"]').count()) === 0,
+    )
+    await tap(page, 'Whole plant')
+    await waitSim(page, "s.stage === 'plant'")
+  }
+
+  /* ---- missions are jobs you can pick up ---- */
+  {
+    await rightPanel(page, 'Missions')
+    await page.waitForTimeout(500)
+    // Deliberately a mission the suite cannot have finished by accident: the
+    // light curve needs five readings across the range, and "Take on: …" is
+    // only the label while a mission is still outstanding.
+    check(
+      'a mission that is not yet done invites you to take it on',
+      (await page.locator('[aria-label="Take on: Find the ceiling"]').count()) === 1,
+    )
+    await resilientClick(page.locator('[aria-label="Take on: Find the ceiling"]').first(), {
+      label: 'take on a mission',
+    })
+    check('taking one on records it on the sim', await waitSim(page, "s.activeMission === 'light-curve'"))
+    // The point of the whole feature: one named control is ringed, and it is
+    // the one the current step actually needs.
+    const aimed = await page.evaluate(() => {
+      const el = document.querySelector('.atlas-aim')
+      if (!el) return null
+      const labelled = el.matches('[aria-label]') ? el : el.querySelector('[aria-label]')
+      return labelled?.getAttribute('aria-label') ?? el.className
+    })
+    check('exactly one control is ringed', (await page.locator('.atlas-aim').count()) === 1, String(aimed))
+    check(
+      'and it is a control the step names',
+      ['Independent variable', 'Light intensity', 'Run measurement'].includes(String(aimed)),
+      String(aimed),
+    )
+    check(
+      'the steps are listed, not just the finish line',
+      // `>= 1`, not `=== 1`: getByText matches every ancestor whose text
+      // contains the string, and a step line sits inside a span inside a tile.
+      (await page.getByText('Take readings right across the light range').count()) >= 1,
+    )
+    // Tapping it again puts it back down.
+    await resilientClick(page.locator('[aria-label="Take on: Find the ceiling"]').first(), {
+      label: 'put the mission down',
+    })
+    check('and it can be put down again', await waitSim(page, 's.activeMission === null'))
+    check('no control is ringed once it is', (await page.locator('.atlas-aim').count()) === 0)
+  }
 
   /* ---- nothing overlaps anything ---- */
   {

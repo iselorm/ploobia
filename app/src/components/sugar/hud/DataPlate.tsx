@@ -34,7 +34,7 @@ const PAD_B = 26
 const PAD_T = 10
 const PAD_R = 8
 
-function Graph({
+export function Graph({
   series,
   xVar,
   measure,
@@ -42,6 +42,7 @@ function Graph({
   currentX,
   showUncertainty,
   showFit,
+  landing = null,
 }: {
   series: SugarReading[]
   xVar: SugarVarId
@@ -50,6 +51,12 @@ function Graph({
   currentX: number
   showUncertainty: boolean
   showFit: boolean
+  /**
+   * The reading that has just arrived, drawn with a halo and joined to the
+   * learner's marker by a dashed gap line. This is the whole point of the
+   * reveal: you see the distance between what you said and what happened.
+   */
+  landing?: SugarReading | null
 }) {
   const meta = SUGAR_VARS[xVar]
   const mm = MEASURES[measure]
@@ -159,6 +166,36 @@ function Graph({
           />
         </g>
       ))}
+
+      {landing && prediction !== null && (
+        <g>
+          {/* The miss, drawn as a length rather than stated as a number. */}
+          <line
+            x1={sx(landing.x)}
+            x2={sx(landing.x)}
+            y1={sy(prediction)}
+            y2={sy(landing.y)}
+            stroke="#2E6DA8"
+            strokeWidth={1.4}
+            strokeDasharray="3 3"
+          />
+        </g>
+      )}
+      {landing && (
+        <g>
+          <circle cx={sx(landing.x)} cy={sy(landing.y)} r={9} fill="rgba(217,155,43,0.22)">
+            <animate attributeName="r" values="5;11;5" dur="1.6s" repeatCount="indefinite" />
+          </circle>
+          <circle
+            cx={sx(landing.x)}
+            cy={sy(landing.y)}
+            r={4.6}
+            fill="#D99B2B"
+            stroke="#8A5A0B"
+            strokeWidth={1.5}
+          />
+        </g>
+      )}
 
       {prediction !== null && (
         <g>

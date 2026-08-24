@@ -18,15 +18,17 @@ import { Tile } from '@/components/ui/tile'
 import { cn } from '@/lib/utils'
 import type { BandCaps } from '@/lib/bands'
 import { SPECIMENS, type Specimen } from '@/lib/specimens'
+import { habitatCaption, habitatForSpecimen } from '@/lib/sugarworld'
 import { MEASURES, MEASURE_ORDER, type MeasureId, type SugarVarId } from '@/lib/sugarline'
 import {
   STAGES,
   SUGAR_VARS,
   SUGAR_VAR_ORDER,
+  type MissionTarget,
   type StageId,
   type SugarSim,
 } from '@/lib/sugarsim'
-import { AtlasButton, Chip, Dial, FactRow, Meter, PillGroup, Plate, Rule } from './AtlasKit'
+import { Aim, AtlasButton, Chip, Dial, FactRow, Meter, PillGroup, Plate, Rule } from './AtlasKit'
 
 /* ------------------------------------------------------------------ */
 /* Specimen library                                                   */
@@ -73,16 +75,20 @@ function SpecimenMark({ id, tint }: { id: string; tint: string }) {
 }
 
 export function SpecimenRail({
+  aim = null,
   current,
   onPick,
   compact = false,
 }: {
+  /** The control the active mission step is pointing at. */
+  aim?: MissionTarget | null
   current: string
   onPick: (id: string) => void
   compact?: boolean
 }) {
   return (
     <Plate eyebrow="Specimen library" icon={<Leaf className="h-3 w-3" />} className={compact ? '' : 'w-full'}>
+      <Aim on={aim === 'specimen'}>
       <div className={cn('flex flex-col gap-0.5', compact && 'max-h-[38vh] overflow-y-auto')}>
         {SPECIMENS.map((s) => {
           const on = s.id === current
@@ -111,6 +117,7 @@ export function SpecimenRail({
           )
         })}
       </div>
+      </Aim>
     </Plate>
   )
 }
@@ -120,10 +127,13 @@ export function SpecimenRail({
 /* ------------------------------------------------------------------ */
 
 export function StageTabs({
+  aim = null,
   stage,
   onStage,
   compact = false,
 }: {
+  /** The control the active mission step is pointing at. */
+  aim?: MissionTarget | null
   stage: StageId
   onStage: (s: StageId) => void
   compact?: boolean
@@ -132,7 +142,11 @@ export function StageTabs({
     <div
       role="group"
       aria-label="View"
-      className={cn('flex gap-2', compact ? 'w-full' : 'w-[min(44rem,calc(100vw-42rem))]')}
+      className={cn(
+        'flex gap-2',
+        compact ? 'w-full' : 'w-[min(44rem,calc(100vw-42rem))]',
+        aim === 'stage' && 'atlas-aim',
+      )}
     >
       {STAGES.map((s) => {
         const on = s.id === stage
@@ -186,6 +200,7 @@ export function ConditionsPlate({
   onGirdle,
   onNight,
   onWater,
+  aim = null,
   embedded = false,
 }: {
   conditions: Conditions
@@ -195,6 +210,8 @@ export function ConditionsPlate({
   onGirdle: (on: boolean) => void
   onNight: (on: boolean) => void
   onWater: () => void
+  /** The control the active mission step is pointing at. */
+  aim?: MissionTarget | null
   embedded?: boolean
 }) {
   const v = SUGAR_VARS
@@ -205,6 +222,7 @@ export function ConditionsPlate({
       className={embedded ? '' : 'w-full'}
       action={
         <div className="flex gap-1">
+          <Aim on={aim === 'night'} inline>
           <Tile
             onClick={() => onNight(!conditions.night)}
             aria-label={conditions.night ? 'Switch to day' : 'Switch to night'}
@@ -219,9 +237,11 @@ export function ConditionsPlate({
             {conditions.night ? <Moon className="h-3 w-3" /> : <Sun className="h-3 w-3" />}
             {conditions.night ? 'Night' : 'Day'}
           </Tile>
+          </Aim>
         </div>
       }
     >
+      <Aim on={aim === 'light'}>
       <Dial
         label={v.light.label}
         value={conditions.night ? 0 : conditions.light * v.light.max}
@@ -236,6 +256,8 @@ export function ConditionsPlate({
         onChange={(real) => onChange({ light: real / v.light.max })}
         note={conditions.night ? 'The sun is off. Anything still moving is running on starch.' : undefined}
       />
+      </Aim>
+      <Aim on={aim === 'co2'}>
       <Dial
         label={v.co2.label}
         value={conditions.co2 * v.co2.max}
@@ -251,6 +273,8 @@ export function ConditionsPlate({
             : undefined
         }
       />
+      </Aim>
+      <Aim on={aim === 'temp'}>
       <Dial
         label={v.temp.label}
         value={conditions.tempC}
@@ -262,6 +286,8 @@ export function ConditionsPlate({
         onChange={(real) => onChange({ tempC: real })}
         note={caps.quantitative ? `Optimum for this specimen: ${specimen.leaf.tOpt} °C` : undefined}
       />
+      </Aim>
+      <Aim on={aim === 'water'}>
       <Dial
         label={v.water.label}
         value={conditions.soilWater * 100}
@@ -272,6 +298,7 @@ export function ConditionsPlate({
         color={v.water.color}
         onChange={(real) => onChange({ soilWater: real / 100 })}
       />
+      </Aim>
 
       <Rule />
       <div className="flex flex-wrap items-center gap-1.5">
@@ -279,6 +306,7 @@ export function ConditionsPlate({
           <Droplets className="h-3.5 w-3.5" />
           Water it
         </AtlasButton>
+        <Aim on={aim === 'girdle'} inline>
         <AtlasButton
           onClick={() => onGirdle(!conditions.girdled)}
           tone={conditions.girdled ? 'danger' : 'quiet'}
@@ -287,6 +315,7 @@ export function ConditionsPlate({
           <Scissors className="h-3.5 w-3.5" />
           {conditions.girdled ? 'Heal the ring' : 'Cut the ring'}
         </AtlasButton>
+        </Aim>
       </div>
       {conditions.girdled && (
         <p className="mt-2 text-[10.5px] leading-snug font-semibold text-[#9A302A]">
@@ -317,6 +346,7 @@ export function InstrumentPlate({
   onMeasure,
   onXVar,
   onPredict,
+  aim = null,
   onRunTrial,
   onTracer,
   onWatch,
@@ -338,6 +368,8 @@ export function InstrumentPlate({
   onMeasure: (m: MeasureId) => void
   onXVar: (v: SugarVarId) => void
   onPredict: (v: number | null) => void
+  /** The control the active mission step is pointing at. */
+  aim?: MissionTarget | null
   onRunTrial: () => void
   onTracer: () => void
   onWatch: () => void
@@ -376,6 +408,7 @@ export function InstrumentPlate({
           <Rule />
           <span className="atlas-eyebrow">Investigating</span>
           <div className="mt-1">
+            <Aim on={aim === 'xvar'}>
             <PillGroup
               ariaLabel="Independent variable"
               size="sm"
@@ -386,9 +419,13 @@ export function InstrumentPlate({
                 label: caps.vocab === 'simple' ? SUGAR_VARS[id].simpleLabel : SUGAR_VARS[id].label,
               }))}
             />
+            </Aim>
           </div>
-          <p className="mt-1 text-[10.5px] leading-snug font-semibold text-[#9A9482]">
-            Everything else is a control. Change one of them mid-trial and the reading is thrown away.
+          <p
+            className="mt-1 text-[10.5px] leading-snug font-semibold text-[#9A9482]"
+            title="Change a control mid-trial and the average would not belong to any one set of conditions, so the reading is discarded."
+          >
+            Everything else is a control — hold them still.
           </p>
         </>
       )}
@@ -398,13 +435,29 @@ export function InstrumentPlate({
           <Rule />
           <div className="flex items-baseline justify-between">
             <span className="atlas-eyebrow">Prediction</span>
-            {prediction !== null && (
+            {prediction !== null ? (
               <Chip tone="good">
                 {prediction.toFixed(meta.decimals)} {meta.unit}
               </Chip>
+            ) : (
+              // The dial *shows* the live reading when nothing is committed,
+              // which looks exactly like an answer already given. Say plainly
+              // that it is not one yet.
+              <Chip tone="warn">not set</Chip>
             )}
           </div>
-          {caps.prediction === 'point' ? (
+          {/*
+            Everyone gets the dial.
+            Committing to a number is the whole habit the measurement loop is
+            built to teach, and the younger band had been handed three buttons
+            instead — which asks for a *direction*, not a prediction, and gives
+            the learner nothing to be right or wrong about on the graph. What
+            the younger band actually needed was not a different question but a
+            way in: the three chips now *set the dial* rather than replace it,
+            so "a bit higher than last time" is one tap that lands somewhere
+            visible and can then be nudged.
+          */}
+          <Aim on={aim === 'predict'}>
             <div className="mt-1">
               <Dial
                 label="Predicted reading"
@@ -417,31 +470,42 @@ export function InstrumentPlate({
                 onChange={(v) => onPredict(v)}
               />
             </div>
-          ) : (
-            <div className="mt-1 flex gap-1">
-              {(
-                [
-                  ['Higher', 1.3],
-                  ['Same', 1],
-                  ['Lower', 0.7],
-                ] as Array<[string, number]>
-              ).map(([label, k]) => (
-                <AtlasButton
-                  key={label}
-                  onClick={() => onPredict((lastY ?? live) * k)}
-                  ariaLabel={`Predict ${label.toLowerCase()}`}
-                  className="flex-1"
-                >
-                  {label}
-                </AtlasButton>
-              ))}
-            </div>
+            {lastY !== null && (
+              <div className="mt-1 flex items-center gap-1">
+                <span className="mr-0.5 text-[10px] font-extrabold tracking-[0.08em] text-[#B3AB97] uppercase">
+                  vs last
+                </span>
+                {(
+                  [
+                    ['Higher', 1.3],
+                    ['Same', 1],
+                    ['Lower', 0.7],
+                  ] as Array<[string, number]>
+                ).map(([label, k]) => (
+                  <AtlasButton
+                    key={label}
+                    onClick={() => onPredict(Math.min(predictMax, Math.max(0, lastY * k)))}
+                    ariaLabel={`Predict ${label.toLowerCase()}`}
+                    className="flex-1"
+                  >
+                    {label}
+                  </AtlasButton>
+                ))}
+              </div>
+            )}
+          </Aim>
+          {prediction === null && lastY === null && (
+            <p className="mt-1 text-[10.5px] leading-snug font-semibold text-[#9A9482]">
+              Move the slider to where you think the needle will land. You will see how close you got the
+              moment the trial ends.
+            </p>
           )}
         </>
       )}
 
       <Rule />
       <div className="flex flex-wrap items-center gap-1.5">
+        <Aim on={aim === 'run'} inline>
         <AtlasButton
           onClick={onRunTrial}
           tone="primary"
@@ -453,6 +517,7 @@ export function InstrumentPlate({
           <Play className="h-3.5 w-3.5" />
           {trialRunning ? `Measuring… ${Math.round(trialProgress * 100)}%` : 'Run measurement'}
         </AtlasButton>
+        </Aim>
         <AtlasButton onClick={onDemo} ariaLabel="Watch the guided demo">
           <Eye className="h-3.5 w-3.5" />
           Watch
@@ -469,15 +534,19 @@ export function InstrumentPlate({
         <span className="atlas-eyebrow">Tracer run</span>
         <Chip tone="sugar">{(sim.tracerMarkB - sim.tracerMarkA).toFixed(2)} m between marks</Chip>
       </div>
-      <p className="mt-1 text-[10.5px] leading-snug font-semibold text-[#9A9482]">
-        Release a labelled parcel and time it from the green mark to the red one. The stopwatch counts
-        plant seconds, so speed is just distance ÷ time.
+      <p
+        className="mt-1 text-[10.5px] leading-snug font-semibold text-[#9A9482]"
+        title="Release a labelled parcel and time it from the green mark to the red one. The stopwatch counts plant seconds, so speed is just distance ÷ time — no hidden conversion."
+      >
+        Time a labelled parcel between the two marks. The watch counts plant seconds.
       </p>
       <div className="mt-1.5 flex items-center gap-1.5">
+        <Aim on={aim === 'tracer'} inline>
         <AtlasButton onClick={onTracer} disabled={tracerActive} ariaLabel="Release the tracer" className="flex-1">
           <CircleDot className="h-3.5 w-3.5" />
           {tracerActive ? 'Running…' : 'Release tracer'}
         </AtlasButton>
+        </Aim>
         <AtlasButton
           onClick={onWatch}
           tone={tracerWatch === 1 ? 'danger' : 'quiet'}
@@ -595,6 +664,15 @@ export function SpecimenPlate({
         {specimen.name}
       </h2>
       <p className="atlas-serif text-[13px] leading-tight text-[#8B8471] italic">{specimen.binomial}</p>
+      {/*
+        The collection stamp.
+        A herbarium sheet always says where the specimen was found, and now that
+        the plant is standing in a real habitat rather than on a white disc, the
+        plate ought to name it — it turns the scenery from decoration into a
+        fact about the organism, and it is the line that explains why the
+        prickly pear's numbers look nothing like the bean's.
+      */}
+      <p className="atlas-collected mt-1.5">{habitatCaption(habitatForSpecimen(specimen.id))}</p>
       <p className="mt-2 text-[11.5px] leading-relaxed font-semibold text-[#5F5A4E]">
         {caps.vocab === 'simple' ? specimen.headline : specimen.blurb}
       </p>
@@ -630,10 +708,13 @@ export function SpecimenPlate({
 export function ToolRail({
   vision,
   autoOrbit,
+  habitat,
+  showHabitat,
   views,
   viewId,
   onVision,
   onOrbit,
+  onHabitat,
   onZoomIn,
   onZoomOut,
   onReset,
@@ -643,10 +724,14 @@ export function ToolRail({
 }: {
   vision: boolean
   autoOrbit: boolean
+  habitat: boolean
+  /** The habitat toggle only means anything on the whole-plant stage. */
+  showHabitat: boolean
   views: Array<{ id: string; label: string; hint: string }>
   viewId: string
   onVision: () => void
   onOrbit: () => void
+  onHabitat: () => void
   onZoomIn: () => void
   onZoomOut: () => void
   onReset: () => void
@@ -656,6 +741,19 @@ export function ToolRail({
 }) {
   const tools: Array<{ label: string; icon: string; on?: boolean; go: () => void; aria: string }> = [
     { label: 'Vision', icon: '◎', on: vision, go: onVision, aria: 'Reaction Vision' },
+    // The escape hatch from the scenery, always one press away and never
+    // buried in a settings panel: some learners want the plant and nothing else.
+    ...(showHabitat
+      ? [
+          {
+            label: habitat ? 'Field' : 'Plate',
+            icon: habitat ? '⛰' : '▭',
+            on: habitat,
+            go: onHabitat,
+            aria: habitat ? 'Switch to the plain plate' : 'Show the habitat',
+          },
+        ]
+      : []),
     ...(minimal
       ? []
       : [

@@ -225,6 +225,18 @@ export interface SugarSim {
   solve: SugarSolve | null
 
   /* ---- view ---- */
+  /**
+   * Draw the specimen's native habitat around it. Off puts it back on the
+   * plain field-guide plate — one press, for anyone who finds the scenery
+   * distracting or is working on a slow tablet.
+   */
+  habitat: boolean
+  /**
+   * The mission the learner has tapped. It drives the coach chip, the glow
+   * ring on whichever control the mission needs next, and where the camera
+   * flies — a mission you can only read is a to-do list, not a task.
+   */
+  activeMission: string | null
   stage: StageId
   /** Reaction Vision: the survey pulse that annotates the chemistry as it passes. */
   vision: boolean
@@ -292,6 +304,8 @@ export function createSugarSim(): SugarSim {
     carbon: createCarbonState(specimen),
     solve: null,
 
+    habitat: true,
+    activeMission: null,
     stage: 'plant',
     vision: false,
     pulse: 0,
@@ -493,6 +507,38 @@ export function makeReading(
 
 export type SkillId = 'measuring' | 'predicting' | 'controlling' | 'interpreting' | 'explaining'
 
+/**
+ * The control a mission step is pointing at.
+ *
+ * These are names for things already on screen, not new machinery: the HUD
+ * matches the string against the control it renders and puts a ring round it.
+ * Keeping the vocabulary this small is deliberate — if a step cannot name the
+ * one control it needs, the step is too vague to give a learner.
+ */
+export type MissionTarget =
+  | 'light'
+  | 'co2'
+  | 'temp'
+  | 'water'
+  | 'night'
+  | 'girdle'
+  | 'measure'
+  | 'xvar'
+  | 'predict'
+  | 'run'
+  | 'tracer'
+  | 'specimen'
+  | 'stage'
+
+export interface MissionStep {
+  /** The imperative, short enough for the coach chip. One action only. */
+  say: string
+  /** Which control to ring while this step is the current one. */
+  target: MissionTarget
+  /** True once the learner has done it. */
+  done: (sim: SugarSim, readings: SugarReading[]) => boolean
+}
+
 export interface SugarMission {
   id: string
   title: string
@@ -502,7 +548,21 @@ export interface SugarMission {
   minBand: Band
   skill: SkillId
   check: (readings: SugarReading[]) => boolean
+  /**
+   * How to actually do it.
+   *
+   * A mission that only states its finish line is a to-do list; the learner
+   * reads "show the curve levelling off" and has no idea which of eleven
+   * controls to touch first. Tapping a mission makes it the active one, and
+   * the first step whose `done` is still false becomes the coach chip's line
+   * and rings its own control.
+   */
+  steps: MissionStep[]
 }
+
+/** µmol from the 0–1 light dial, matching what a reading records. */
+const umol = (sim: SugarSim) => sim.light * PAR_FULL_SUN
+const anyExport = (rs: SugarReading[]) => rs.some((r) => r.measure === 'export')
 
 const BAND_RANK: Record<Band, number> = { explorer: 0, scientist: 1, analyst: 2 }
 
@@ -516,6 +576,19 @@ export const SUGAR_MISSIONS: SugarMission[] = [
     minBand: 'explorer',
     skill: 'measuring',
     check: (rs) => rs.some((r) => r.measure === 'export' && r.y > 8),
+    steps: [
+      {
+        say: 'Turn the light up past half way — the leaf needs something to work with.',
+        target: 'light',
+        done: (sim) => sim.light > 0.5,
+      },
+      {
+        say: 'Say what you think the reading will be. Guessing is allowed; not guessing is not.',
+        target: 'predict',
+        done: (_sim, rs) => rs.some((r) => r.predicted !== null),
+      },
+      { say: 'Press Run measurement and let the trial finish.', target: 'run', done: (_s, rs) => anyExport(rs) },
+    ],
   },
   {
     id: 'dark-line',
@@ -527,6 +600,14 @@ export const SUGAR_MISSIONS: SugarMission[] = [
     minBand: 'explorer',
     skill: 'measuring',
     check: (rs) => rs.some((r) => r.measure === 'export' && r.controls.light < 1 && r.y > 0.5),
+    steps: [
+      { say: 'Switch the plant to night.', target: 'night', done: (sim) => sim.night },
+      {
+        say: 'Run a measurement in the dark. Watch whether the gold keeps moving.',
+        target: 'run',
+        done: (_s, rs) => rs.some((r) => r.measure === 'export' && r.controls.light < 1),
+      },
+    ],
   },
   {
     id: 'cut-the-ring',
@@ -538,6 +619,14 @@ export const SUGAR_MISSIONS: SugarMission[] = [
     minBand: 'explorer',
     skill: 'controlling',
     check: (rs) => rs.some((r) => r.girdled && r.measure === 'export' && r.y < 0.6),
+    steps: [
+      { say: 'Cut the phloem ring — you are girdling the stem.', target: 'girdle', done: (sim) => sim.girdled },
+      {
+        say: 'Now measure the export below the cut.',
+        target: 'run',
+        done: (_s, rs) => rs.some((r) => r.girdled && r.measure === 'export'),
+      },
+    ],
   },
   {
     id: 'light-curve',
@@ -555,6 +644,20 @@ export const SUGAR_MISSIONS: SugarMission[] = [
       const high = s.filter((r) => r.x > 1100)
       return peak > 6 && high.length >= 2 && high.every((r) => r.y >= peak * 0.78)
     },
+    steps: [
+      { say: 'Set light as the thing you are investigating.', target: 'xvar', done: (sim) => sim.xVar === 'light' },
+      {
+        say: 'Take readings right across the light range — low, middle, then two up at the top.',
+        target: 'light',
+        done: (_s, rs) => rs.filter((r) => r.xVar === 'light' && r.measure === 'export').length >= 5,
+      },
+      {
+        say: 'Two readings above 1100 µmol are what show the curve flattening.',
+        target: 'run',
+        done: (_s, rs) =>
+          rs.filter((r) => r.xVar === 'light' && r.measure === 'export' && r.x > 1100).length >= 2,
+      },
+    ],
   },
   {
     id: 'timed-tracer',
@@ -570,6 +673,22 @@ export const SUGAR_MISSIONS: SugarMission[] = [
       if (s.length < 2) return false
       return Math.max(...s.map((r) => r.controls.temp)) - Math.min(...s.map((r) => r.controls.temp)) >= 8
     },
+    steps: [
+      { say: 'Switch the instrument to translocation speed.', target: 'measure', done: (sim) => sim.measure === 'velocity' },
+      {
+        say: 'Release the tracer, then start and stop the watch on the two marks.',
+        target: 'tracer',
+        done: (_s, rs) => rs.some((r) => r.measure === 'velocity'),
+      },
+      {
+        say: 'Change the temperature by at least 8 °C and time a second run.',
+        target: 'temp',
+        done: (_s, rs) => {
+          const v = rs.filter((r) => r.measure === 'velocity')
+          return v.length >= 2 && Math.max(...v.map((r) => r.controls.temp)) - Math.min(...v.map((r) => r.controls.temp)) >= 8
+        },
+      },
+    ],
   },
   {
     id: 'drought-line',
@@ -586,6 +705,19 @@ export const SUGAR_MISSIONS: SugarMission[] = [
       if (!dry.length || !wet.length) return false
       return wet.some((w) => dry.some((d) => Math.abs(w.controls.light - d.controls.light) < 220 && w.y > d.y))
     },
+    steps: [
+      {
+        say: 'First take a well-watered reading — you need something to compare against.',
+        target: 'run',
+        done: (_s, rs) => rs.some((r) => r.measure === 'export' && r.controls.water > 55),
+      },
+      { say: 'Now drop the soil water below 20%.', target: 'water', done: (sim) => sim.soilWater < 0.2 },
+      {
+        say: 'Measure again at the same light. Only the water may change.',
+        target: 'run',
+        done: (_s, rs) => rs.some((r) => r.measure === 'export' && r.controls.water < 20),
+      },
+    ],
   },
   {
     id: 'balance-the-books',
@@ -601,6 +733,19 @@ export const SUGAR_MISSIONS: SugarMission[] = [
         const out = r.audit.burnt + r.audit.exported
         return r.audit.fixed > 4 && Math.abs(r.audit.fixed - out) <= Math.max(0.8, r.audit.fixed * 0.22)
       }),
+    steps: [
+      { say: 'Switch the instrument to net carbon gain.', target: 'measure', done: (sim) => sim.measure === 'gain' },
+      {
+        say: 'Give the leaf plenty of light so there is real carbon to account for.',
+        target: 'light',
+        done: (sim) => umol(sim) > 700,
+      },
+      {
+        say: 'Run it, then read the audit in the Sugar tab: fixed = burnt + exported + kept.',
+        target: 'run',
+        done: (_s, rs) => rs.some((r) => r.audit.fixed > 4),
+      },
+    ],
   },
   {
     id: 'sink-limited',
@@ -612,6 +757,18 @@ export const SUGAR_MISSIONS: SugarMission[] = [
     minBand: 'analyst',
     skill: 'interpreting',
     check: (rs) => rs.some((r) => r.measure === 'export' && r.audit.fixed > r.audit.exported * 2.2 && r.audit.fixed > 6),
+    steps: [
+      {
+        say: 'Run the plant bright and warm so the stores actually fill.',
+        target: 'light',
+        done: (sim) => umol(sim) > 900 && sim.tempC > 20,
+      },
+      {
+        say: 'Watch a store on the plant swell past nine tenths, then measure the export.',
+        target: 'run',
+        done: (_s, rs) => rs.some((r) => r.measure === 'export' && r.audit.fixed > r.audit.exported * 1.8),
+      },
+    ],
   },
   {
     id: 'two-specimens',
@@ -636,11 +793,74 @@ export const SUGAR_MISSIONS: SugarMission[] = [
       }
       return false
     },
+    steps: [
+      { say: 'Measure the export rate of the specimen you are on.', target: 'run', done: (_s, rs) => anyExport(rs) },
+      {
+        say: 'Pick a different specimen from the library.',
+        target: 'specimen',
+        done: (_s, rs) => new Set(rs.filter((r) => r.measure === 'export').map((r) => r.specimenId)).size >= 2 ||
+          rs.some((r) => r.measure === 'export' && r.specimenId !== rs[rs.length - 1]?.specimenId),
+      },
+      {
+        say: 'Match the light to within 200 µmol and the temperature to within 3 °C, then measure.',
+        target: 'run',
+        done: (_s, rs) => {
+          const e = rs.filter((r) => r.measure === 'export')
+          for (let i = 0; i < e.length; i++)
+            for (let j = i + 1; j < e.length; j++)
+              if (
+                e[i].specimenId !== e[j].specimenId &&
+                Math.abs(e[i].controls.light - e[j].controls.light) < 200 &&
+                Math.abs(e[i].controls.temp - e[j].controls.temp) < 3
+              )
+                return true
+          return false
+        },
+      },
+    ],
   },
 ]
 
 export function missionsForBand(band: Band): SugarMission[] {
   return SUGAR_MISSIONS.filter((m) => BAND_RANK[m.minBand] <= BAND_RANK[band])
+}
+
+export interface MissionProgress {
+  mission: SugarMission
+  /** How many steps are already satisfied. */
+  index: number
+  /** The one thing to do next. Null once every step is done. */
+  step: MissionStep | null
+  /** The mission's own evidence test — the thing that actually completes it. */
+  complete: boolean
+}
+
+/**
+ * Where the learner is inside a mission they have tapped.
+ *
+ * Steps are checked in order and the first unmet one is the current step,
+ * rather than "the furthest one reached". That matters: change the light back
+ * down and the light-curve mission honestly walks its instruction back too,
+ * instead of leaving a learner staring at step three of a job that is now
+ * unfinished at step one.
+ */
+export function missionProgress(
+  sim: SugarSim,
+  readings: SugarReading[],
+  id: string | null,
+): MissionProgress | null {
+  if (!id) return null
+  const mission = SUGAR_MISSIONS.find((m) => m.id === id)
+  if (!mission) return null
+  const complete = mission.check(readings)
+  if (complete) return { mission, index: mission.steps.length, step: null, complete }
+  const index = mission.steps.findIndex((s) => !s.done(sim, readings))
+  return {
+    mission,
+    index: index === -1 ? mission.steps.length : index,
+    step: index === -1 ? null : mission.steps[index],
+    complete,
+  }
 }
 
 /* ------------------------------------------------------------------ */

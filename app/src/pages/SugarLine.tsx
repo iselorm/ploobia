@@ -9,6 +9,7 @@ import ProgressChip from '@/components/hud/ProgressChip'
 import ProgressToasts from '@/components/hud/ProgressToasts'
 import StereoOverlay from '@/components/hud/StereoOverlay'
 import { Tile } from '@/components/ui/tile'
+import { cn } from '@/lib/utils'
 import { BAND_CAPS, getBand, useBand } from '@/lib/bands'
 import { logEvent } from '@/lib/events'
 import { useBackHandler, useInputAction } from '@/lib/input'
@@ -28,6 +29,7 @@ import {
   createSugarSim,
   loadSpecimen,
   makeReading,
+  missionProgress,
   missionsForBand,
   simEnv,
   simSolve,
@@ -54,6 +56,7 @@ import DataPlate from '@/components/sugar/hud/DataPlate'
 import MissionPlate from '@/components/sugar/hud/MissionPlate'
 import Welcome from '@/components/sugar/hud/Welcome'
 import DemoOverlay from '@/components/sugar/hud/DemoOverlay'
+import Reveal from '@/components/sugar/hud/Reveal'
 import { defaultViewFor, VIEW_BY_ID, viewsForStage } from '@/components/sugar/views'
 
 const SugarScene = lazy(() => import('@/components/sugar/SugarScene'))
@@ -157,6 +160,10 @@ export default function SugarLine() {
   const [autoOrbit, setAutoOrbit] = useState(false)
   const [viewId, setViewId] = useState('overview')
   const [tipOpen, setTipOpen] = useState(true)
+  const [habitat, setHabitat] = useState(sim.habitat)
+  const [activeMission, setActiveMission] = useState<string | null>(null)
+  /** The reading whose result card is currently up. */
+  const [reveal, setReveal] = useState<SugarReading | null>(null)
   const [rightTab, setRightTab] = useState<'atlas' | 'data' | 'ledger' | 'missions'>('atlas')
   const [plantHours, setPlantHours] = useState(sim.plantHours)
   const [clockRate, setClockRate] = useState(CLOCK_LIVE_MULTIPLIER)
@@ -210,6 +217,10 @@ export default function SugarLine() {
           const reading = makeReading(nextId.current++, sim, snap, caps, predictionRef.current)
           setReadings((prev) => [...prev, reading])
           setPrediction(null)
+          // The one moment the graph is worth interrupting for. Suppressed
+          // during the demo, which drives the real handlers and would
+          // otherwise pop a card on every one of its fourteen steps.
+          if (!sim.demoMode) setReveal(reading)
           if (!sim.demoMode) {
             logEvent('photosynthesis', band, 'reading.recorded', {
               variable: reading.xVar,
@@ -412,6 +423,31 @@ export default function SugarLine() {
     setAutoOrbit(sim.autoOrbit)
   }, [sim])
 
+  // Not logged: the learning-event log is the sole source of XP and rank, and
+  // a view preference is not evidence of anything.
+  /**
+   * Take a mission on, or put it back down.
+   *
+   * Picking one also opens the panel it needs and flies to the stage the work
+   * happens on, because "clickable" has to mean something happened.
+   */
+  const handleMission = useCallback(
+    (id: string | null) => {
+      sim.activeMission = id
+      setActiveMission(id)
+      if (!id) return
+      if (compact) setRightTab('missions')
+      if (sim.stage !== 'plant') handleStage('plant')
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sim, compact],
+  )
+
+  const handleHabitat = useCallback(() => {
+    sim.habitat = !sim.habitat
+    setHabitat(sim.habitat)
+  }, [sim])
+
   const handleReset = useCallback(() => {
     sim.viewReset += 1
     sim.autoOrbit = false
@@ -596,10 +632,36 @@ export default function SugarLine() {
     [specimen, sim, conditions],
   )
 
+  /**
+   * The mission the learner has picked up, and the one step of it that is
+   * still outstanding. Recomputed from live state every render — the tiles,
+   * the coach chip and the glow ring all read the same object, so they can
+   * never disagree about what to do next.
+   */
+  const active = useMemo(
+    () => missionProgress(sim, readings, activeMission),
+    // `conditions` is the React mirror of the sim fields the steps read; it is
+    // what actually changes when a slider moves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sim, readings, activeMission, conditions, measure, xVar, specimenId],
+  )
+  /** The control the active step is pointing at, or null. */
+  const highlight = active?.step?.target ?? null
+
   /** One line naming the single next action. */
   const coach = useMemo(() => {
     if (!started) return null
     if (demoStep >= 0) return null
+    // A mission the learner has taken on outranks everything except surgery
+    // and a running stopwatch, both of which are time-critical.
+    if (active && !conditions.girdled && !tracerActive) {
+      if (active.step) return { text: active.step.say, hint: `${active.mission.title} · step ${active.index + 1} of ${active.mission.steps.length}` }
+      if (!active.complete)
+        return {
+          text: 'Every step is done — take the reading that proves it.',
+          hint: active.mission.brief,
+        }
+    }
     if (conditions.girdled)
       return {
         text: 'The ring is cut. Record the export rate now, then heal it.',
@@ -620,7 +682,7 @@ export default function SugarLine() {
     const next = missions.find((m) => !m.check(readings))
     if (next) return { text: next.title, hint: next.brief }
     return { text: 'Every mission is done. Try another specimen.', hint: undefined }
-  }, [started, demoStep, conditions.girdled, tracerActive, tracerWatch, predictionPending, readings, band])
+  }, [started, demoStep, active, conditions.girdled, tracerActive, tracerWatch, predictionPending, readings, band])
 
   const stageMeta = STAGE_BY_ID[stage]
   const missionList = missionsForBand(band)
@@ -649,19 +711,18 @@ export default function SugarLine() {
     })
   }, [missionList, readings, band])
 
-  // A new reading is worth looking at: swing the right column to the data.
-  const lastCount = useRef(0)
-  useEffect(() => {
-    if (readings.length > lastCount.current && readings.length > 0) setRightTab('data')
-    lastCount.current = readings.length
-  }, [readings.length])
+  // A new reading no longer swings the right column to the Data tab. The
+  // result card brings the graph to the learner and offers "See the data" if
+  // they want the table, so yanking the column away — out of the mission steps
+  // they were in the middle of following — is pure disruption.
 
   /* ---- panels shared by both layouts ---------------------------------- */
 
   const controlsPanel = (
     <div className="flex flex-col gap-2">
-      <SpecimenRail current={specimenId} onPick={handleSpecimen} compact={compact} />
+      <SpecimenRail aim={highlight} current={specimenId} onPick={handleSpecimen} compact={compact} />
       <ConditionsPlate
+        aim={highlight}
         conditions={conditions}
         caps={caps}
         specimen={specimen}
@@ -672,6 +733,7 @@ export default function SugarLine() {
         embedded={compact}
       />
       <InstrumentPlate
+        aim={highlight}
         sim={sim}
         caps={caps}
         measure={measure}
@@ -711,7 +773,16 @@ export default function SugarLine() {
     />
   )
 
-  const missionPanel = <MissionPlate readings={readings} band={band} embedded={compact} />
+  const missionPanel = (
+    <MissionPlate
+      sim={sim}
+      readings={readings}
+      band={band}
+      activeId={activeMission}
+      onPick={handleMission}
+      embedded={compact}
+    />
+  )
 
   const views = viewsForStage(stage).map((v) => ({ id: v.id, label: v.label, hint: v.hint }))
 
@@ -719,10 +790,13 @@ export default function SugarLine() {
     <ToolRail
       vision={vision}
       autoOrbit={autoOrbit}
+      habitat={habitat}
+      showHabitat={stage === 'plant'}
       views={views}
       viewId={viewId}
       onVision={handleVision}
       onOrbit={handleOrbit}
+      onHabitat={handleHabitat}
       onZoomIn={() => {
         sim.viewZoom -= 0.22
       }}
@@ -746,6 +820,7 @@ export default function SugarLine() {
             sim={sim}
             stage={stage}
             specimenId={specimenId}
+            habitat={habitat}
             onContextLost={() => setContextLost(true)}
           />
         </Suspense>
@@ -785,7 +860,7 @@ export default function SugarLine() {
           </div>
 
           <div className="absolute top-[4.4rem] right-3 left-3 flex flex-col items-stretch gap-2">
-            <StageTabs stage={stage} onStage={handleStage} compact />
+            <StageTabs aim={highlight} stage={stage} onStage={handleStage} compact />
             <div className="flex justify-end">{rail}</div>
           </div>
 
@@ -829,7 +904,7 @@ export default function SugarLine() {
             ]}
           />
 
-          {coach && (
+          {coach && !reveal && (
             <div className="pointer-events-none absolute inset-x-0 bottom-[4.2rem] flex justify-center px-3">
               <Coach text={coach.text} hint={coach.hint} />
             </div>
@@ -855,8 +930,9 @@ export default function SugarLine() {
             </div>
             <div className="pointer-events-auto min-h-0 flex-1 overflow-y-auto pr-1">
               <div className="flex flex-col gap-2">
-                <SpecimenRail current={specimenId} onPick={handleSpecimen} />
+                <SpecimenRail aim={highlight} current={specimenId} onPick={handleSpecimen} />
                 <ConditionsPlate
+                  aim={highlight}
                   conditions={conditions}
                   caps={caps}
                   specimen={specimen}
@@ -872,7 +948,7 @@ export default function SugarLine() {
           {/* Top centre: the three stages, then the tool rail. */}
           <div className="pointer-events-none absolute top-4 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2">
             <div className="pointer-events-auto">
-              <StageTabs stage={stage} onStage={handleStage} />
+              <StageTabs aim={highlight} stage={stage} onStage={handleStage} />
             </div>
             <div className="pointer-events-auto">{rail}</div>
             <p className="atlas-serif max-w-[26rem] text-center text-[11.5px] leading-snug text-[#8B8471] italic">
@@ -886,8 +962,13 @@ export default function SugarLine() {
               tall and pushed "Run measurement" — the one control the whole
               cabinet is built around — below the fold on a 900 px screen. */}
           <div className="pointer-events-auto absolute top-4 right-4 bottom-4 flex w-[19.5rem] flex-col gap-2 pl-1">
-            <div className="shrink-0">
+            {/* The instruments are pinned, but capped: they grow as bands and
+                readings add rows, and an uncapped pinned block pushes the tab
+                below it clean off the screen — which is exactly how "Run
+                measurement" ended up at y≈934 on a 900px display once already. */}
+            <div className="max-h-[58%] shrink-0 overflow-y-auto pr-0.5">
               <InstrumentPlate
+                aim={highlight}
                 sim={sim}
                 caps={caps}
                 measure={measure}
@@ -944,11 +1025,34 @@ export default function SugarLine() {
             <ScaleBar label={stageMeta.scale.label} />
           </div>
 
-          {coach && (
+          {coach && !reveal && (
             <div className="pointer-events-none absolute inset-x-0 bottom-5 flex justify-center px-4">
               <Coach text={coach.text} hint={coach.hint} />
             </div>
           )}
+        </div>
+      )}
+
+      {/* The prediction result. Bottom-centre, in the coach chip's strip
+          (which stands down while this is up), because that is where a learner
+          is already looking for "what now". */}
+      {!stereo.on && reveal && (
+        <div
+          className={cn(
+            'pointer-events-none fixed z-30 flex justify-center',
+            compact ? 'inset-x-2 bottom-[4.4rem]' : 'inset-x-0 bottom-5',
+          )}
+        >
+          <Reveal
+            reading={reveal}
+            readings={readings}
+            compact={compact}
+            onClose={() => setReveal(null)}
+            onSeeData={() => {
+              setReveal(null)
+              setRightTab('data')
+            }}
+          />
         </div>
       )}
 

@@ -497,3 +497,131 @@ export function atlasEnvironment(renderer: THREE.WebGLRenderer): THREE.Texture {
   source.dispose()
   return env
 }
+
+/* ------------------------------------------------------------------ */
+/* Habitat                                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The silhouette standing on the horizon, as a white alpha mask to be tinted
+ * per instance.
+ *
+ * A distant skyline is the cheapest possible way to say *where you are*: five
+ * quads' worth of shape does more for "this is a desert" than any amount of
+ * ground shader. Drawn as flat masks rather than modelled, because at forty
+ * units away nobody can tell and one instanced draw call is the whole cost.
+ */
+export function skylineTexture(kind: string): THREE.CanvasTexture {
+  return make(
+    `skyline:${kind}`,
+    128,
+    128,
+    (ctx, w, h) => {
+      ctx.fillStyle = '#FFFFFF'
+      const base = h * 0.98
+      const cx = w / 2
+
+      const trunk = (topY: number, halfWidth: number) => {
+        ctx.beginPath()
+        ctx.moveTo(cx - halfWidth, base)
+        ctx.lineTo(cx - halfWidth * 0.55, topY)
+        ctx.lineTo(cx + halfWidth * 0.55, topY)
+        ctx.lineTo(cx + halfWidth, base)
+        ctx.closePath()
+        ctx.fill()
+      }
+      const blob = (x: number, y: number, rx: number, ry: number) => {
+        ctx.beginPath()
+        ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2)
+        ctx.fill()
+      }
+
+      if (kind === 'conifer') {
+        trunk(h * 0.72, w * 0.035)
+        // Three stacked skirts, each narrower than the one below.
+        for (let i = 0; i < 4; i++) {
+          const t = i / 3
+          const y0 = h * (0.82 - t * 0.24)
+          const y1 = y0 - h * 0.24
+          const halfWidth = w * (0.3 - t * 0.19)
+          ctx.beginPath()
+          ctx.moveTo(cx - halfWidth, y0)
+          ctx.lineTo(cx, y1)
+          ctx.lineTo(cx + halfWidth, y0)
+          ctx.closePath()
+          ctx.fill()
+        }
+      } else if (kind === 'acacia') {
+        // The flat-topped umbrella that says savanna at any distance.
+        trunk(h * 0.5, w * 0.045)
+        ctx.beginPath()
+        ctx.moveTo(cx - w * 0.44, h * 0.42)
+        ctx.quadraticCurveTo(cx - w * 0.3, h * 0.24, cx, h * 0.25)
+        ctx.quadraticCurveTo(cx + w * 0.3, h * 0.24, cx + w * 0.44, h * 0.42)
+        ctx.quadraticCurveTo(cx, h * 0.36, cx - w * 0.44, h * 0.42)
+        ctx.closePath()
+        ctx.fill()
+        // A second, thinner branch line under the canopy.
+        ctx.lineWidth = w * 0.02
+        ctx.strokeStyle = '#FFFFFF'
+        ctx.beginPath()
+        ctx.moveTo(cx, h * 0.62)
+        ctx.lineTo(cx - w * 0.24, h * 0.4)
+        ctx.moveTo(cx, h * 0.62)
+        ctx.lineTo(cx + w * 0.26, h * 0.41)
+        ctx.stroke()
+      } else if (kind === 'butte') {
+        // Flat-topped mesa with a talus skirt, plus one saguaro to the side.
+        ctx.beginPath()
+        ctx.moveTo(cx - w * 0.46, base)
+        ctx.lineTo(cx - w * 0.34, h * 0.46)
+        ctx.lineTo(cx - w * 0.3, h * 0.36)
+        ctx.lineTo(cx + w * 0.22, h * 0.36)
+        ctx.lineTo(cx + w * 0.28, h * 0.5)
+        ctx.lineTo(cx + w * 0.42, base)
+        ctx.closePath()
+        ctx.fill()
+        const sx = cx + w * 0.4
+        ctx.fillRect(sx - w * 0.03, h * 0.6, w * 0.06, base - h * 0.6)
+        ctx.fillRect(sx - w * 0.13, h * 0.68, w * 0.035, h * 0.12)
+        ctx.fillRect(sx - w * 0.13, h * 0.68, w * 0.1, h * 0.035)
+      } else if (kind === 'canopy') {
+        // Rainforest: a tall emergent with a wide crown, buttressed at the foot.
+        trunk(h * 0.4, w * 0.05)
+        blob(cx, h * 0.3, w * 0.34, h * 0.16)
+        blob(cx - w * 0.24, h * 0.38, w * 0.2, h * 0.11)
+        blob(cx + w * 0.25, h * 0.36, w * 0.21, h * 0.12)
+        blob(cx, h * 0.5, w * 0.3, h * 0.1)
+        ctx.beginPath()
+        ctx.moveTo(cx - w * 0.16, base)
+        ctx.lineTo(cx - w * 0.05, h * 0.74)
+        ctx.lineTo(cx + w * 0.05, h * 0.74)
+        ctx.lineTo(cx + w * 0.16, base)
+        ctx.closePath()
+        ctx.fill()
+      } else {
+        // broadleaf: the hedgerow oak.
+        trunk(h * 0.56, w * 0.05)
+        blob(cx, h * 0.42, w * 0.32, h * 0.2)
+        blob(cx - w * 0.22, h * 0.5, w * 0.19, h * 0.14)
+        blob(cx + w * 0.22, h * 0.49, w * 0.2, h * 0.14)
+      }
+    },
+    (t) => {
+      t.wrapS = THREE.ClampToEdgeWrapping
+      t.wrapT = THREE.ClampToEdgeWrapping
+    },
+  )
+}
+
+/** A soft round mote — pollen, dust, spores, snow. One sprite, tinted per habitat. */
+export function moteSprite(): THREE.CanvasTexture {
+  return make('habitat-mote', 64, 64, (ctx, w, h) => {
+    const g = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2)
+    g.addColorStop(0, 'rgba(255,255,255,1)')
+    g.addColorStop(0.35, 'rgba(255,255,255,0.7)')
+    g.addColorStop(1, 'rgba(255,255,255,0)')
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, w, h)
+  })
+}

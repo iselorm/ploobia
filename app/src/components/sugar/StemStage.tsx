@@ -304,7 +304,19 @@ function SapFlow({ sim }: { sim: SugarSim }) {
       const inGap = sim.girdled && p.y < CUT_TOP && p.y > CUT_BOTTOM
       dummy.position.copy(scratch)
       dummy.rotation.set(sim.time * 0.8 + p.wobble, p.y * 2, 0.3)
-      dummy.scale.setScalar(inGap ? 0 : 0.062)
+      // Squash through the sieve plates.
+      //
+      // The plates are the resistance the whole Münch model turns on, and up
+      // to now they were scenery a parcel slid through as if they were not
+      // there. Pinching each parcel as it crosses one is the cheapest possible
+      // way to *show* that this pipe has doors in it — and it is the beat that
+      // makes a twelve-year-old keep watching a stem section, which is not
+      // nothing.
+      const toPlate = ((p.y - (TOP - 0.55)) % 0.7 + 0.7) % 0.7
+      const near = Math.min(toPlate, 0.7 - toPlate)
+      const pinch = Math.max(0, 1 - near / 0.075)
+      const base = inGap ? 0 : 0.062
+      dummy.scale.set(base * (1 - pinch * 0.45), base * (1 + pinch * 0.5), base * (1 - pinch * 0.45))
       dummy.updateMatrix()
       mesh.setMatrixAt(i, dummy.matrix)
 

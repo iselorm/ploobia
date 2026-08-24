@@ -48,14 +48,18 @@ const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable
     // Run one real trial: commit a prediction, start the trial, wait for the
     // reading. The Sugar Line commits a point prediction on its own dial
     // rather than by clicking the graph.
-    const predict = page.locator('[aria-label="Predicted reading"] [data-slot="slider-track"]').first()
-    const pbox = await predict.boundingBox()
-    await page.mouse.click(pbox.x + pbox.width * 0.45, pbox.y + pbox.height / 2)
-    await page.waitForTimeout(800)
-    if (!(await page.evaluate(() => JSON.parse(localStorage.getItem('ploobia.events.v1') || '[]').some((e) => e.type === 'prediction.committed')))) {
-      await page.mouse.click(pbox.x + pbox.width * 0.6, pbox.y + pbox.height / 2)
-      await page.waitForTimeout(800)
+    // Drive the dial by its *thumb* and the keyboard, which is the house rule
+    // for Radix sliders. Clicking the track works, but it depends on the plate
+    // having finished re-laying out after the demo tore its readings down —
+    // and a click that lands mid-layout looks exactly like a broken control.
+    const thumb = page.locator('[aria-label="Predicted reading"] [data-slot="slider-thumb"]').first()
+    await thumb.waitFor({ state: 'visible', timeout: 20000 }).catch(() => {})
+    await resilientClick(thumb, { label: 'prediction thumb' })
+    for (let i = 0; i < 4; i++) {
+      await page.keyboard.press('ArrowRight')
+      await page.waitForTimeout(120)
     }
+    await page.waitForTimeout(600)
     const evAfterPredict = await page.evaluate(() => JSON.parse(localStorage.getItem('ploobia.events.v1') || '[]').map((e) => e.type))
     check('prediction.committed logged', evAfterPredict.includes('prediction.committed'), evAfterPredict.join(','))
     await resilientClick(page.getByRole('button', { name: /run measurement/i }).first(), {

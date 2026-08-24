@@ -18,31 +18,32 @@ import { buildRig, METRES_PER_UNIT, type SugarRig } from './rig'
  */
 
 /* ------------------------------------------------------------------ */
-/* Podium                                                             */
+/* Ground line                                                        */
 /* ------------------------------------------------------------------ */
 
 /**
- * The plinth the whole specimen stands on, set *below* the soil block so it
- * never hides what is underground. It says "this is a specimen on a plate", it
- * gives the eye a ground plane in a scene with no horizon, and the soft patch
- * on top stops the root ball reading as if it were floating.
+ * The plate view's ground, which is a *line* rather than a plinth.
+ *
+ * The plinth this replaces was the single most derivative thing in the scene —
+ * subject centred on a disc, lit from three-quarters, the house style of every
+ * 3D component gallery on the internet. A botanical plate does not put its
+ * specimen on furniture; it draws the soil line it was growing at and lets the
+ * roots hang below it. That is cheaper, it is older than any of the references,
+ * and it stops the cabinet looking like somebody else's demo.
  */
-function Podium({ radius, top }: { radius: number; top: number }) {
+function GroundLine({ radius }: { radius: number }) {
   const shadow = useMemo(() => podiumShadow(), [])
   return (
-    <group position={[0, top, 0]}>
-      <mesh position={[0, -0.06, 0]} receiveShadow>
-        <cylinderGeometry args={[radius, radius * 0.955, 0.12, 64]} />
-        <meshStandardMaterial color="#EFE9DA" roughness={0.94} metalness={0} />
+    <group position={[0, -0.035, 0]}>
+      {/* The soil line itself: a hairline that stops short of a full circle,
+          the way a hand-drawn ground line always trails off. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[radius * 0.995, radius * 1.02, 64, 1, 0.35, Math.PI * 2 - 0.7]} />
+        <meshBasicMaterial color="#B9AF95" transparent opacity={0.85} />
       </mesh>
-      {/* A hairline rim, the way a plate is edged in the reference. */}
-      <mesh position={[0, 0.001, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[radius * 0.985, radius, 64]} />
-        <meshBasicMaterial color="#D9D0BB" transparent opacity={0.9} />
-      </mesh>
-      <mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[radius * 2.1, radius * 2.1]} />
-        <meshBasicMaterial map={shadow} transparent depthWrite={false} opacity={0.8} />
+      <mesh position={[0, 0.004, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[radius * 2.6, radius * 2.6]} />
+        <meshBasicMaterial map={shadow} transparent depthWrite={false} opacity={0.55} />
       </mesh>
     </group>
   )
@@ -65,31 +66,36 @@ function Podium({ radius, top }: { radius: number; top: number }) {
  * ground was", and the root system hanging below it in open air, lit and
  * legible, exactly as a specimen looks when it has just been lifted.
  */
-function SoilMound({ radius }: { radius: number }) {
+function SoilMound({ radius, outdoors }: { radius: number; outdoors: boolean }) {
   const texture = useMemo(() => soilTexture(), [])
+  // Outdoors the plant is *planted*, so the mound flattens to a collar of
+  // turned earth at ground level. Left at its plate height it read as a muffin
+  // with a stem in it — the chocolate-drum failure in miniature, and for the
+  // same reason: a curved brown volume is the loudest thing in any frame.
+  const rise = outdoors ? 0.055 : 0.26
   const dome = useMemo(() => {
     const g = new THREE.SphereGeometry(1, 34, 16, 0, Math.PI * 2, 0, Math.PI / 2)
-    g.scale(radius, 0.26, radius)
+    g.scale(radius * (outdoors ? 0.9 : 1), rise, radius * (outdoors ? 0.9 : 1))
     g.computeVertexNormals()
     return g
-  }, [radius])
+  }, [radius, rise, outdoors])
   useEffect(() => () => dome.dispose(), [dome])
   const patch = useMemo(() => podiumShadow(), [])
 
   return (
     <group>
       <mesh geometry={dome} position={[0, -0.03, 0]} receiveShadow castShadow>
-        <meshStandardMaterial map={texture} color="#D0AC85" roughness={1} metalness={0} />
+        <meshStandardMaterial map={texture} color={outdoors ? '#C7AE92' : '#D0AC85'} roughness={1} metalness={0} />
       </mesh>
       {/* The underside, so the mound is not an open shell from below. */}
       <mesh position={[0, -0.032, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[radius, 34]} />
+        <circleGeometry args={[radius * (outdoors ? 0.9 : 1), 34]} />
         <meshStandardMaterial color="#8A6749" roughness={1} side={THREE.DoubleSide} />
       </mesh>
       {/* A soft stain on the ground plane under the root ball. */}
       <mesh position={[0, -0.045, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[radius * 3.4, radius * 3.4]} />
-        <meshBasicMaterial map={patch} transparent depthWrite={false} opacity={0.35} />
+        <meshBasicMaterial map={patch} transparent depthWrite={false} opacity={outdoors ? 0.22 : 0.35} />
       </mesh>
     </group>
   )
@@ -979,7 +985,16 @@ function SurveyPulse({ sim, rig }: { sim: SugarSim; rig: SugarRig }) {
 /* Composed stage                                                     */
 /* ------------------------------------------------------------------ */
 
-export default function PlantStage({ sim, specimenId }: { sim: SugarSim; specimenId: string }) {
+export default function PlantStage({
+  sim,
+  specimenId,
+  outdoors = false,
+}: {
+  sim: SugarSim
+  specimenId: string
+  /** True when the habitat ring is drawn: the ground line is then real ground. */
+  outdoors?: boolean
+}) {
   const specimen = useMemo(
     () => SPECIMEN_BY_ID[specimenId] ?? SPECIMEN_BY_ID[DEFAULT_SPECIMEN],
     [specimenId],
@@ -988,12 +1003,11 @@ export default function PlantStage({ sim, specimenId }: { sim: SugarSim; specime
   useEffect(() => () => rig.dispose(), [rig])
   const quality = getQualityCaps()
   const soilRadius = Math.max(0.42, specimen.build.rootSpread * 0.6)
-  const rootReach = specimen.build.rootDepth + 0.22
 
   return (
     <group>
-      <Podium radius={Math.max(1.0, specimen.build.rootSpread * 1.45)} top={-rootReach} />
-      <SoilMound radius={soilRadius} />
+      {!outdoors && <GroundLine radius={Math.max(0.9, specimen.build.rootSpread * 1.3)} />}
+      <SoilMound radius={soilRadius} outdoors={outdoors} />
       <PlantBody sim={sim} specimen={specimen} rig={rig} />
       <Girdle sim={sim} specimen={specimen} rig={rig} />
       <Sinks sim={sim} specimen={specimen} rig={rig} />

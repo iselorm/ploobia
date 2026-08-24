@@ -317,3 +317,28 @@ export function Coach({ text, hint }: { text: string; hint?: string }) {
     </div>
   )
 }
+
+/* ------------------------------------------------------------------ */
+/* The mission ring                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Puts an amber ring round whatever control the active mission step needs.
+ *
+ * A wrapper rather than a prop on every control, because the set of things a
+ * step can point at is open-ended (a dial, a pill group, a button, the whole
+ * specimen rail) and threading an `aim` flag through all of them would be
+ * eleven edits and eleven chances to miss one.
+ */
+export function Aim({
+  on,
+  inline = false,
+  children,
+}: {
+  on: boolean
+  inline?: boolean
+  children: ReactNode
+}) {
+  if (!on) return <>{children}</>
+  return <span className={inline ? 'atlas-aim inline-flex' : 'atlas-aim block'}>{children}</span>
+}
