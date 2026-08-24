@@ -36,13 +36,13 @@ const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable
     const drawer = page.getByRole('button', { name: 'Controls', exact: true })
     check('drawer tab bar present on phone', (await drawer.count()) === 1)
     // Side panel must not be present in compact layout
-    const sideOpen = await page.locator('.hud >> text=Leaf in the apparatus').count()
+    const sideOpen = await page.locator('.hud >> text=Specimen library').count()
     check('controls hidden until drawer opens', sideOpen === 0)
     await drawer.tap()
     await page.waitForTimeout(500)
     await page.screenshot({ path: out('p2-03-phone-controls') })
-    const visible = await page.getByText('Leaf in the apparatus', { exact: false }).first().isVisible()
-    check('controls tab shows the Rate Lab panel', visible)
+    const visible = await page.getByText('Specimen library', { exact: false }).first().isVisible()
+    check('controls tab shows the specimen panel', visible)
     // Drawer content scrolls, sheet is capped in height
     const sheetH = await page.evaluate(() => {
       const el = document.querySelector('.hud .overflow-y-auto.overscroll-contain')
@@ -73,7 +73,11 @@ const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable
       await page.locator('[role="group"][aria-label="Limitations"] button').nth(0).tap()
       await page.locator('[role="group"][aria-label="Limitations"] button').nth(2).tap()
       const text = await page.getByTestId('conclusion').textContent()
-      check('conclusion assembles from tiles', /levelled off|rose/.test(text) && /Limitations:/.test(text), text.slice(0, 80))
+      check(
+        'conclusion assembles from tiles',
+        /increased|levelled off|reduced/.test(text) && /Limitations:/.test(text),
+        text.slice(0, 80),
+      )
       await page.screenshot({ path: out('p2-05-phone-writeup') })
     } else {
       check('write-up tab available', false)

@@ -274,3 +274,118 @@ html[data-input='tv'] [data-slot='slider-thumb']:focus {
 @media (prefers-reduced-motion: reduce) {
   .ploob-animated .ploob-body, .ploob-animated .ploob-eyes, .ploob-bob { animation: none; }
 }
+
+/* ---- The Sugar Line: atlas chrome -------------------------------------
+   A field-guide plate rather than a control panel. Cream ground, white
+   cards with hairline rules, a display serif for names and letterspaced
+   uppercase eyebrows for section labels. Following Seed Atlas, but keeping
+   Nunito for anything a learner has to read at length — a whole page of
+   Playfair is handsome and slow, and this audience is ten. */
+
+.atlas-serif {
+  font-family: 'Fraunces', 'Iowan Old Style', Georgia, 'Times New Roman', serif;
+  font-optical-sizing: auto;
+}
+
+.atlas-eyebrow {
+  font-family: 'Fraunces', 'Iowan Old Style', Georgia, 'Times New Roman', serif;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: #8B8471;
+}
+
+/* One plate. The hairline does the work; the shadow only lifts it off the
+   paper by a millimetre. */
+.atlas-plate {
+  background: #FCFAF4;
+  border: 1px solid #E4DCC9;
+  border-radius: 16px;
+  box-shadow:
+    0 1px 2px rgba(74, 62, 40, 0.05),
+    0 8px 22px -12px rgba(74, 62, 40, 0.22);
+}
+
+.atlas-plate-quiet {
+  background: rgba(252, 250, 244, 0.86);
+  border: 1px solid #E9E2D1;
+  border-radius: 14px;
+  backdrop-filter: blur(8px);
+}
+
+.atlas-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid #E4DCC9;
+  background: #F6F2E8;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #7C8177;
+  white-space: nowrap;
+}
+
+.atlas-rule {
+  height: 1px;
+  background: #E4DCC9;
+}
+
+/* The tool rail down the side of the plate: icon over a tiny caption. */
+.atlas-rail-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 7px 6px;
+  border-radius: 11px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #7C8177;
+  transition:
+    background 150ms ease,
+    color 150ms ease,
+    transform 150ms ease;
+}
+
+.atlas-rail-item[data-on='true'] {
+  background: #E4EFDF;
+  color: #2F6134;
+}
+
+.atlas-rail-item:hover {
+  transform: translateY(-1px);
+}
+
+/* An interactive thing has to advertise itself — the standing house rule. */
+@keyframes atlas-invite {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(62, 124, 67, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(62, 124, 67, 0.14);
+  }
+}
+
+.atlas-invite {
+  animation: atlas-invite 2.1s ease-in-out infinite;
+}
+
+@keyframes atlas-arrive {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.atlas-arrive {
+  animation: atlas-arrive 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}

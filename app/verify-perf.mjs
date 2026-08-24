@@ -34,7 +34,9 @@ const { check, skip, tally } = reporter()
  * them as the cabinets get cheaper, never loosen them to make a build pass.
  */
 const BUDGETS = {
-  photosynthesis: { calls: 150, triangles: 700_000 },
+  // The Sugar Line replaced the Rate Lab: many more small instanced meshes,
+  // an order of magnitude fewer triangles. Measured at 85 calls / 18k tris.
+  photosynthesis: { calls: 120, triangles: 120_000 },
   blood: { calls: 200, triangles: 1_200_000 },
   motion: { calls: 250, triangles: 600_000 },
   atoms: { calls: 300, triangles: 200_000 },

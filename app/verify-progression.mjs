@@ -22,7 +22,7 @@ const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable
     await page.goto(`${BASE}#/`)
     await page.waitForTimeout(1200)
     await page.screenshot({ path: out('p3-01-hall') })
-    check('hall shows four cabinets', (await page.getByText(/Rate Lab|Blood Voyage|River|Circuit/).count()) >= 4)
+    check('hall shows four cabinets', (await page.getByText(/Sugar Line|Blood Voyage|Motion Yard|River|Atom Foundry|Circuit/).count()) >= 4)
     // The hall grows: assert that *some* cabinet is still under the mist, not an exact count.
     check('locked cabinets marked coming soon', (await page.getByText('Coming soon').count()) >= 1)
     check('sponsor plaques present', (await page.getByText(/Sponsor this cabinet/).count()) >= 2)
@@ -39,28 +39,28 @@ const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable
     await skip.waitFor({ state: 'visible', timeout: 20000 }).catch(() => {})
     check('demo link starts the guided demo', (await skip.count()) >= 1)
     await page.screenshot({ path: out('p3-03-demo-autostart') })
-    // The Rate Lab is the heaviest cabinet since the Cinematic Lab IV light
-    // pass; under SwiftShader it renders at ~1 fps and a plain click cannot
-    // complete inside any sane timeout, though the button is perfectly fine.
+    // The biology cabinet renders at about a frame a second under SwiftShader
+    // and a plain click cannot complete inside any sane timeout, though the
+    // button is perfectly fine.
     await resilientClick(skip, { label: 'demo skip' })
     await page.waitForTimeout(1500)
 
-    // Run one real trial: commit a point prediction on the graph, start trial, wait
-    const graph = page.locator('svg[aria-label^="Net oxygen"]').first()
-    if (!(await graph.count())) {
-      await page.getByRole('button', { name: /data lab/i }).first().click()
-      await page.waitForTimeout(400)
-    }
-    const gbox = await page.locator('svg[aria-label^="Net oxygen"]').first().boundingBox()
-    await page.mouse.click(gbox.x + gbox.width * 0.6, gbox.y + gbox.height * 0.5)
+    // Run one real trial: commit a prediction, start the trial, wait for the
+    // reading. The Sugar Line commits a point prediction on its own dial
+    // rather than by clicking the graph.
+    const predict = page.locator('[aria-label="Predicted reading"] [data-slot="slider-track"]').first()
+    const pbox = await predict.boundingBox()
+    await page.mouse.click(pbox.x + pbox.width * 0.45, pbox.y + pbox.height / 2)
     await page.waitForTimeout(800)
     if (!(await page.evaluate(() => JSON.parse(localStorage.getItem('ploobia.events.v1') || '[]').some((e) => e.type === 'prediction.committed')))) {
-      await page.mouse.click(gbox.x + gbox.width * 0.55, gbox.y + gbox.height * 0.45)
+      await page.mouse.click(pbox.x + pbox.width * 0.6, pbox.y + pbox.height / 2)
       await page.waitForTimeout(800)
     }
     const evAfterPredict = await page.evaluate(() => JSON.parse(localStorage.getItem('ploobia.events.v1') || '[]').map((e) => e.type))
     check('prediction.committed logged', evAfterPredict.includes('prediction.committed'), evAfterPredict.join(','))
-    await page.getByRole('button', { name: /run a \d+s trial|measure the bubbles/i }).first().click()
+    await resilientClick(page.getByRole('button', { name: /run measurement/i }).first(), {
+      label: 'run measurement',
+    })
     // wait for the trial to finish (6 s on hardware; SwiftShader can take far longer) — poll up to 120 s
     for (let i = 0; i < 60; i++) {
       await page.waitForTimeout(2000)

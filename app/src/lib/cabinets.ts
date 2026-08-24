@@ -25,15 +25,22 @@ export const CABINETS: CabinetMeta[] = [
   {
     id: 'photosynthesis',
     route: '/photosynthesis',
-    title: 'Photosynthesis Rate Lab',
+    title: 'The Sugar Line',
     subject: 'Biology',
-    tagline: 'Mount a leaf, pick a climate, measure the oxygen. Find the plateau and the compensation point.',
-    cta: 'Enter the lab',
+    tagline:
+      'A leaf makes sugar out of air, water and light — then it has to get it somewhere. Run the line from chloroplast to tuber, and cut the pipe to prove what stalls it.',
+    cta: 'Run the line',
     tint: '#3E7C43',
     tintSoft: '#DDEBD9',
     status: 'live',
     hasDemo: true,
-    topics: ['Limiting factors', 'Rate of reaction', 'Diffusion & osmosis', 'Fieldwork skills'],
+    topics: [
+      'Photosynthesis',
+      'Limiting factors',
+      'Transport in plants',
+      'Translocation & phloem',
+      'Practical skills',
+    ],
   },
   {
     id: 'blood',

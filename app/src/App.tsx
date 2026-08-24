@@ -1,7 +1,7 @@
 import { Routes, Route } from 'react-router'
 import Menu from './pages/Menu'
 import BloodVoyage from './pages/BloodVoyage'
-import Photosynthesis from './pages/Photosynthesis'
+import SugarLine from './pages/SugarLine'
 import Home from './pages/Home'
 import MotionLab from './pages/MotionLab'
 import AtomFoundry from './pages/AtomFoundry'
@@ -15,7 +15,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Menu />} />
         <Route path="/blood" element={<BloodVoyage />} />
-        <Route path="/photosynthesis" element={<Photosynthesis />} />
+        <Route path="/photosynthesis" element={<SugarLine />} />
         <Route path="/motion" element={<MotionLab />} />
         <Route path="/atoms" element={<AtomFoundry />} />
         <Route path="/rivers" element={<RiverBasin />} />

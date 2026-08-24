@@ -99,7 +99,7 @@ function watch(page, sink) {
 
 /* ---------------- 2. Every cabinet opens ---------------- */
 const CABS = [
-  ['photosynthesis', /Photosynthesis/i],
+  ['photosynthesis', /The Sugar Line/i],
   ['blood', /Blood Voyage/i],
   ['motion', /Motion Yard/i],
   ['atoms', /Atom Foundry|Foundry/i],
