@@ -1,0 +1,10 @@
+cd C:\Users\iselo\ploobia_online
+@'
+{
+  "name": "ploobia",
+  "compatibility_date": "2026-08-20",
+  "assets": {
+    "directory": "dist"
+  }
+}
+'@ | Set-Content -Path wrangler.jsonc -Encoding utf8
