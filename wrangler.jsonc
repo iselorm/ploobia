@@ -1,1 +1,1 @@
-{ "name": "ploobia", "compatibility_date": "2026-08-20", "pages_build_output_dir": "dist" }
+{ "name": "ploobia", "compatibility_date": "2026-08-20", "pages_build_output_dir": "dist", "kv_namespaces": [ { "binding": "REPORTS", "id": "d4be09ec8b214268b2b27b8e0821e3c3" } ] }
