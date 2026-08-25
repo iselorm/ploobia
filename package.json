@@ -2,7 +2,7 @@
   "name": "ploobia",
   "private": true,
   "type": "module",
-  "description": "Ploobia \u2014 the school arcade. The public site and the cabinet app, built into one hostable bundle.",
+  "description": "Ploobia — the school arcade. The public site and the cabinet app, built into one hostable bundle.",
   "scripts": {
     "install:all": "npm install --prefix app && npm install --prefix site",
     "dev": "npm run dev --prefix app",
@@ -12,7 +12,8 @@
     "verify": "node scripts/verify.mjs",
     "serve": "npx --yes http-server dist -p 8080 -s",
     "build:offline": "node scripts/build-offline.mjs",
-    "build:namecheap": "node scripts/build-namecheap.mjs"
+    "build:namecheap": "node scripts/build-namecheap.mjs",
+    "prebuild": "npm run install:all"
   },
   "devDependencies": {
     "playwright": "^1.49.0"
