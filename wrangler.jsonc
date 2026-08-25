@@ -1,1 +1,1 @@
-{ "name": "ploobia", "compatibility_date": "2026-08-20", "assets": { "directory": "dist" } }
+{ "name": "ploobia", "compatibility_date": "2026-08-20", "pages_build_output_dir": "dist" }
