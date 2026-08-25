@@ -37,6 +37,9 @@ execFileSync(npm, ['run', 'build'], {
     // The report tab still works offline: it falls back to clipboard + mailto.
     VITE_PILOT: process.env.VITE_PILOT ?? '1',
   },
+  // See the note in build-deploy.mjs: Node >= 20.12 will not exec a .cmd
+  // without a shell, so on Windows this is `spawnSync npm.cmd EINVAL` otherwise.
+  shell: process.platform === 'win32',
 })
 
 const file = join(out, 'Ploobia-offline.html')

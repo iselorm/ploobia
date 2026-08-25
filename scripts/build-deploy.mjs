@@ -27,11 +27,26 @@ import { fileURLToPath } from 'node:url'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const dist = join(root, 'dist')
 
+/**
+ * Node 20.12 / 21.7 / 22 refuse to `execFileSync` a `.cmd` or `.bat` without a
+ * shell — the fix for CVE-2024-27980 ("BatBadBut"), which made argument
+ * injection through cmd.exe possible. On Windows that turns this call into
+ * `spawnSync npm.cmd EINVAL`, which reads like a broken install and is not.
+ *
+ * `shell` is therefore on for win32 only. It is safe here because every
+ * argument is a hard-coded literal — never interpolate user input into an
+ * argv that runs through a shell.
+ */
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 
 function run(cwd, args, env = {}) {
   console.log(`\n▸ ${args.join(' ')}  (${cwd.replace(root, '.')})`)
-  execFileSync(npm, args, { cwd, stdio: 'inherit', env: { ...process.env, ...env } })
+  execFileSync(npm, args, {
+    cwd,
+    stdio: 'inherit',
+    env: { ...process.env, ...env },
+    shell: process.platform === 'win32',
+  })
 }
 
 function kb(path) {
