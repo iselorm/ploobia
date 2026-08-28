@@ -344,7 +344,123 @@ interface Props {
   specimenId: string
   /** False puts the specimen back on the plain field-guide plate. */
   habitat: boolean
+  /** Pixels of viewport bottom hidden behind a panel — see `SceneLift`. */
+  obstructBottom?: number
   onContextLost: () => void
+}
+
+/**
+ * Keeps the subject out from behind the bottom sheet.
+ *
+ * On a phone the controls sheet covers the lower half of the screen, which is
+ * exactly where the plant was — so a learner dragging the light slider could
+ * not see the thing the slider was changing. Moving the camera or the orbit
+ * target to compensate would fight OrbitControls and quietly relocate "home"
+ * for the rest of the session.
+ *
+ * `setViewOffset` is the right tool: it shifts the *projection* by rendering
+ * the frustum as a window offset within a larger notional frame. Position,
+ * target and orbit are all untouched, so the learner's own framing survives —
+ * the picture simply slides up while the panel is open, and slides back when
+ * it closes.
+ *
+ * **How far is not half the obstruction.** Half re-centres the subject in the
+ * strip that is left, which is only right if the subject fits in that strip —
+ * and it does not. Measured on a 390×844 phone, the plant spans 691 px of an
+ * 844 px screen, so with a 62% sheet no shift can show all of it. Shifting by
+ * half (262 px) put the canopy 118 px off the top of the screen: the learner
+ * dragging the light slider then saw roots, which is the one part of the plant
+ * light does nothing to.
+ *
+ * So the shift is clamped to the **headroom** — the gap between the top of the
+ * screen and the top of the subject, measured by projecting the subject's own
+ * bounding box. The picture rises until the specimen's crown is just inside
+ * the frame and no further. What is lost is the bottom of the plant, which is
+ * the correct thing to lose while a control panel is open.
+ */
+const TOP_MARGIN = 10
+
+/** Re-measure this often while a panel is open. */
+const REMEASURE_S = 0.4
+/** Ignore changes smaller than this, so the picture does not jitter. */
+const SETTLE_PX = 3
+
+function SceneLift({ px }: { px: number }) {
+  const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera
+  const scene = useThree((s) => s.scene)
+  const size = useThree((s) => s.size)
+  const shift = useRef(0)
+  const since = useRef(REMEASURE_S)
+  const box = useMemo(() => new THREE.Box3(), [])
+  const corner = useMemo(() => new THREE.Vector3(), [])
+
+  const apply = (next: number) => {
+    shift.current = next
+    if (next <= 0) {
+      // `clearViewOffset` is a no-op when none is set, so this is safe on mount.
+      camera.clearViewOffset()
+    } else {
+      camera.setViewOffset(size.width, size.height, 0, next, size.width, size.height)
+    }
+    camera.updateProjectionMatrix()
+  }
+
+  useEffect(() => {
+    if (px <= 0) apply(0)
+    // Force a measurement on the next frame rather than measuring here: the
+    // panel usually opens while the camera is still flying to a viewpoint, and
+    // a single measurement taken mid-flight is simply wrong and then sticks.
+    // That is exactly how the lift once reported "not lifted" on a phone while
+    // every other check passed.
+    since.current = REMEASURE_S
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [px, size.width, size.height])
+
+  useEffect(
+    () => () => {
+      camera.clearViewOffset()
+      camera.updateProjectionMatrix()
+    },
+    [camera],
+  )
+
+  useFrame((_, dt) => {
+    if (px <= 0) {
+      if (shift.current !== 0) apply(0)
+      return
+    }
+    since.current += dt
+    if (since.current < REMEASURE_S) return
+    since.current = 0
+
+    const subject = scene.getObjectByName('subject')
+    let headroom = Infinity
+    if (subject) {
+      box.setFromObject(subject)
+      if (!box.isEmpty()) {
+        // Project all eight corners: the topmost on screen is not always the
+        // one with the largest world y once the camera is tilted.
+        //
+        // Measured through the *current* projection, offset included, then the
+        // current shift is added back — that recovers where the subject would
+        // sit at rest without clearing and rebuilding the projection matrix
+        // twice a second just to ask a question about it.
+        let top = Infinity
+        for (const x of [box.min.x, box.max.x])
+          for (const y of [box.min.y, box.max.y])
+            for (const z of [box.min.z, box.max.z]) {
+              corner.set(x, y, z).project(camera)
+              top = Math.min(top, ((1 - corner.y) / 2) * size.height)
+            }
+        if (Number.isFinite(top)) headroom = top + shift.current - TOP_MARGIN
+      }
+    }
+
+    const want = Math.round(Math.max(0, Math.min(px / 2, headroom)))
+    if (Math.abs(want - shift.current) > SETTLE_PX) apply(want)
+  })
+
+  return null
 }
 
 /** Renders the two eyes when Cardboard is on. Nothing at all when it is off. */
@@ -358,7 +474,14 @@ function Stereo({ sim }: { sim: SugarSim }) {
   )
 }
 
-export default function SugarScene({ sim, stage, specimenId, habitat, onContextLost }: Props) {
+export default function SugarScene({
+  sim,
+  stage,
+  specimenId,
+  habitat,
+  obstructBottom = 0,
+  onContextLost,
+}: Props) {
   const quality = useQualityCaps()
   const stereo = useStereo()
   const frame = THREE.MathUtils.clamp(
@@ -378,7 +501,7 @@ export default function SugarScene({ sim, stage, specimenId, habitat, onContextL
       gl={{ antialias: getQualityCaps().antialias, powerPreference: 'high-performance' }}
       shadows={quality.shadows ? { type: THREE.PCFSoftShadowMap } : false}
       style={{ position: 'fixed', inset: 0 }}
-      onCreated={({ gl, scene }) => {
+      onCreated={({ gl, scene, camera }) => {
         // Renderer pipeline first, materials second.
         gl.outputColorSpace = THREE.SRGBColorSpace
         gl.toneMapping = THREE.ACESFilmicToneMapping
@@ -389,6 +512,10 @@ export default function SugarScene({ sim, stage, specimenId, habitat, onContextL
         // the sim and the model this way; being able to measure where things
         // actually *are* is what turns "the roots look wrong" into a number.
         ;(window as unknown as Record<string, unknown>).__sugarScene = scene
+        // The camera is not in the scene graph, and the projection offset that
+        // lifts the subject above the controls sheet lives on it. Without this
+        // handle "is the plant visible?" is only answerable by eye.
+        ;(window as unknown as Record<string, unknown>).__sugarCam = camera
         gl.domElement.addEventListener('webglcontextlost', (e) => {
           e.preventDefault()
           onContextLost()
@@ -407,6 +534,9 @@ export default function SugarScene({ sim, stage, specimenId, habitat, onContextL
         </>
       )}
       <SugarCamera sim={sim} frame={frame} />
+      {/* Stereo owns the projection matrices per eye; a view offset on the
+          shared camera would be applied twice and skew the pair. */}
+      {!stereo.on && <SceneLift px={obstructBottom} />}
       {stage === 'plant' && <PlantStage sim={sim} specimenId={specimenId} outdoors={outdoors} />}
       {stage === 'leaf' && <LeafStage sim={sim} />}
       {stage === 'stem' && <StemStage sim={sim} />}

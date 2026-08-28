@@ -614,6 +614,40 @@ export function skylineTexture(kind: string): THREE.CanvasTexture {
   )
 }
 
+/**
+ * One shaft of sunlight, drawn as a strip.
+ *
+ * Soft down both long edges so the beam has no hard sides, and fading out at
+ * both ends: the top so it emerges from nowhere in particular rather than
+ * starting at a visible line, the bottom so it dissolves into the leaf it
+ * lands on instead of stopping dead against it.
+ */
+export function beamTexture(): THREE.CanvasTexture {
+  return make('sun-beam', 64, 256, (ctx, w, h) => {
+    // Across: bright core, soft shoulders.
+    const across = ctx.createLinearGradient(0, 0, w, 0)
+    across.addColorStop(0, 'rgba(255,255,255,0)')
+    across.addColorStop(0.34, 'rgba(255,246,214,0.55)')
+    across.addColorStop(0.5, 'rgba(255,252,236,0.95)')
+    across.addColorStop(0.66, 'rgba(255,246,214,0.55)')
+    across.addColorStop(1, 'rgba(255,255,255,0)')
+    ctx.fillStyle = across
+    ctx.fillRect(0, 0, w, h)
+
+    // Along: fade both ends. `destination-in` keeps the shape and multiplies
+    // the alpha, which is what makes the two gradients compose.
+    ctx.globalCompositeOperation = 'destination-in'
+    const along = ctx.createLinearGradient(0, 0, 0, h)
+    along.addColorStop(0, 'rgba(0,0,0,0)')
+    along.addColorStop(0.22, 'rgba(0,0,0,0.85)')
+    along.addColorStop(0.78, 'rgba(0,0,0,1)')
+    along.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.fillStyle = along
+    ctx.fillRect(0, 0, w, h)
+    ctx.globalCompositeOperation = 'source-over'
+  })
+}
+
 /** A soft round mote — pollen, dust, spores, snow. One sprite, tinted per habitat. */
 export function moteSprite(): THREE.CanvasTexture {
   return make('habitat-mote', 64, 64, (ctx, w, h) => {

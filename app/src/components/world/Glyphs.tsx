@@ -83,6 +83,15 @@ interface Props {
   style?: GlyphStyle
   /** Draw order, so labels sit above the things they name. */
   renderOrder?: number
+  /**
+   * Scene-graph name, so a suite can find this sheet by identity.
+   *
+   * Worth having: the alternative is guessing from instance count and material
+   * shape, which found one of two identical sheets and reported the other as
+   * missing. A label that is not there is a real failure and a test that
+   * cannot tell is worse than no test.
+   */
+  name?: string
 }
 
 /**
@@ -90,7 +99,7 @@ interface Props {
  * matrices in its own frame loop, right alongside the atoms they belong to.
  */
 const GlyphInstances = forwardRef<THREE.InstancedMesh, Props>(function GlyphInstances(
-  { text, color, count, size = 0.26, style, renderOrder = 2 },
+  { text, color, count, size = 0.26, style, renderOrder = 2, name },
   ref,
 ) {
   const { texture, aspect } = useMemo(() => glyphTexture(text, color, style), [text, color, style])
@@ -98,6 +107,7 @@ const GlyphInstances = forwardRef<THREE.InstancedMesh, Props>(function GlyphInst
   return (
     <instancedMesh
       ref={ref}
+      name={name}
       args={[undefined, undefined, count]}
       frustumCulled={false}
       renderOrder={renderOrder}

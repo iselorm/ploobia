@@ -130,7 +130,15 @@ const tap = (page, name, exact = true) =>
   /* ---- reset does bring it home, on request ---- */
   {
     const before = await sim(page, 's.viewReset')
-    await page.locator('[aria-label="Reset view"]').first().click({ force: true })
+    // Not a raw forced click. On a saturated software renderer a forced click
+    // lands without React's handler ever running, and the button then reads as
+    // broken when it is fine — the standing rule is that every click on a
+    // heavy scene goes through `resilientClick`. This was the last raw one
+    // left in the suite, and it started failing the moment the scene grew a
+    // couple of draw calls.
+    await resilientClick(page.locator('[aria-label="Reset view"]').first(), {
+      label: 'reset view',
+    })
     check('reset is an explicit request', await waitSim(page, `s.viewReset > ${before}`))
   }
 

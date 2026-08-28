@@ -4,6 +4,7 @@ import { ArrowLeft, Clock, LineChart, RotateCcw, SlidersHorizontal, Sprout, Trop
 import SceneErrorBoundary from '@/components/SceneErrorBoundary'
 import BandSwitch from '@/components/hud/BandSwitch'
 import HudDrawer from '@/components/hud/HudDrawer'
+import RotateHint from '@/components/hud/RotateHint'
 import InputHints from '@/components/hud/InputHints'
 import ProgressChip from '@/components/hud/ProgressChip'
 import ProgressToasts from '@/components/hud/ProgressToasts'
@@ -135,6 +136,12 @@ export default function SugarLine() {
 
   const [started, setStarted] = useState(false)
   const [contextLost, setContextLost] = useState(false)
+  /**
+   * How much of the screen bottom the compact sheet is covering. The scene
+   * shifts its projection up by half of it, so the specimen stays visible
+   * while a control that changes it is open. 0 on desktop and when closed.
+   */
+  const [sheetPx, setSheetPx] = useState(0)
   const [stage, setStage] = useState<StageId>('plant')
   const [specimenId, setSpecimenId] = useState(sim.specimenId)
   const [conditions, setConditions] = useState<Conditions>({
@@ -718,10 +725,12 @@ export default function SugarLine() {
 
   /* ---- panels shared by both layouts ---------------------------------- */
 
-  const controlsPanel = (
-    <div className="flex flex-col gap-2">
-      <SpecimenRail aim={highlight} current={specimenId} onPick={handleSpecimen} compact={compact} />
-      <ConditionsPlate
+  const specimenRail = (
+    <SpecimenRail aim={highlight} current={specimenId} onPick={handleSpecimen} compact={compact} />
+  )
+
+  const conditionsPlate = (
+    <ConditionsPlate
         aim={highlight}
         conditions={conditions}
         caps={caps}
@@ -729,10 +738,13 @@ export default function SugarLine() {
         onChange={patchConditions}
         onGirdle={(on) => patchConditions({ girdled: on })}
         onNight={(on) => patchConditions({ night: on })}
-        onWater={handleWater}
-        embedded={compact}
-      />
-      <InstrumentPlate
+      onWater={handleWater}
+      embedded={compact}
+    />
+  )
+
+  const instrumentPlate = (
+    <InstrumentPlate
         aim={highlight}
         sim={sim}
         caps={caps}
@@ -752,9 +764,37 @@ export default function SugarLine() {
         onRunTrial={handleRunTrial}
         onTracer={handleTracer}
         onWatch={handleWatch}
-        onDemo={startDemo}
-        embedded={compact}
-      />
+      onDemo={startDemo}
+      embedded={compact}
+    />
+  )
+
+  /**
+   * On a phone the Controls tab opens onto the **conditions**, not the specimen
+   * library.
+   *
+   * The library is five tall rows and a rarely-repeated choice; the conditions
+   * are why anyone opens this tab at all. With the library first, the light
+   * dial's track sat at y = 861 on an 844 px screen — off the bottom, reachable
+   * only by scrolling a panel that had just appeared. A desktop column has the
+   * height to show all three at once and keeps the reading order it was
+   * designed with.
+   */
+  const controlsPanel = (
+    <div className="flex flex-col gap-2">
+      {compact ? (
+        <>
+          {conditionsPlate}
+          {instrumentPlate}
+          {specimenRail}
+        </>
+      ) : (
+        <>
+          {specimenRail}
+          {conditionsPlate}
+          {instrumentPlate}
+        </>
+      )}
     </div>
   )
 
@@ -821,6 +861,7 @@ export default function SugarLine() {
             stage={stage}
             specimenId={specimenId}
             habitat={habitat}
+            obstructBottom={sheetPx}
             onContextLost={() => setContextLost(true)}
           />
         </Suspense>
@@ -864,12 +905,24 @@ export default function SugarLine() {
             <div className="flex justify-end">{rail}</div>
           </div>
 
-          <div className="absolute right-3 bottom-[9.5rem]">
+          {/* A hint, not a rotate button — see RotateHint for why one cannot be
+              built honestly. Only once, only on a phone, only in portrait. */}
+          {started && demoStep < 0 && <RotateHint />}
+
+          {/* The scale bar and the coach chip live in the strip the sheet
+              covers when it opens, so they ride up on top of it. Without this
+              the mission's current instruction disappears at exactly the
+              moment the learner opens the panel it is telling them to use. */}
+          <div
+            className="absolute right-3 transition-[bottom] duration-200"
+            style={{ bottom: `calc(9.5rem + ${sheetPx}px)` }}
+          >
             <ScaleBar label={stageMeta.scale.label} />
           </div>
 
           <HudDrawer
             muted={demoStep >= 0}
+            onObstructHeight={setSheetPx}
             tabs={[
               {
                 id: 'controls',
@@ -905,7 +958,10 @@ export default function SugarLine() {
           />
 
           {coach && !reveal && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-[4.2rem] flex justify-center px-3">
+            <div
+              className="pointer-events-none absolute inset-x-0 flex justify-center px-3 transition-[bottom] duration-200"
+              style={{ bottom: `calc(4.2rem + ${sheetPx}px)` }}
+            >
               <Coach text={coach.text} hint={coach.hint} />
             </div>
           )}
@@ -1039,9 +1095,10 @@ export default function SugarLine() {
       {!stereo.on && reveal && (
         <div
           className={cn(
-            'pointer-events-none fixed z-30 flex justify-center',
-            compact ? 'inset-x-2 bottom-[4.4rem]' : 'inset-x-0 bottom-5',
+            'pointer-events-none fixed z-30 flex justify-center transition-[bottom] duration-200',
+            compact ? 'inset-x-2' : 'inset-x-0 bottom-5',
           )}
+          style={compact ? { bottom: `calc(4.4rem + ${sheetPx}px)` } : undefined}
         >
           <Reveal
             reading={reveal}

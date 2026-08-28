@@ -815,7 +815,7 @@ function StageTags() {
 export default function LeafStage({ sim }: { sim: SugarSim }) {
   const quality = getQualityCaps()
   return (
-    <group position={[0, 1.5, 0]}>
+    <group name="subject" position={[0, 1.5, 0]}>
       <Envelope />
       <Lamellae />
       <Grana sim={sim} />

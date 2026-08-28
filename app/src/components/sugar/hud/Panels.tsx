@@ -143,7 +143,15 @@ export function StageTabs({
       role="group"
       aria-label="View"
       className={cn(
-        'flex gap-2',
+        // `pointer-events-auto` lives HERE, not on the caller's wrapper. The
+        // HUD root is `pointer-events-none` so the scene stays draggable
+        // between controls, which means every interactive island has to opt
+        // back in. The desktop branch wrapped these tabs in an opting-in div
+        // and the compact branch did not, so stage navigation was dead on
+        // every phone while the tool rail beside it worked — the rail sets the
+        // class on itself. Owning it here makes the control correct wherever
+        // it is mounted.
+        'pointer-events-auto flex gap-2',
         compact ? 'w-full' : 'w-[min(44rem,calc(100vw-42rem))]',
         aim === 'stage' && 'atlas-aim',
       )}

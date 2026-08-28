@@ -5,8 +5,18 @@ import GlyphInstances, { hideGlyph, writeGlyph } from '@/components/world/Glyphs
 import { getQualityCaps } from '@/lib/quality'
 import type { SugarSim } from '@/lib/sugarsim'
 import { DEFAULT_SPECIMEN, SPECIMEN_BY_ID, type Specimen } from '@/lib/specimens'
-import { ATLAS, glowSprite, laminaTexture, podiumShadow, ringSprite, soilTexture, stemTexture } from './atlas'
+import {
+  ATLAS,
+  beamTexture,
+  glowSprite,
+  laminaTexture,
+  podiumShadow,
+  ringSprite,
+  soilTexture,
+  stemTexture,
+} from './atlas'
 import { buildRig, METRES_PER_UNIT, type SugarRig } from './rig'
+import { habitatForSpecimen } from '@/lib/sugarworld'
 
 /**
  * The whole-plant plate.
@@ -759,17 +769,37 @@ function WaterFlow({ sim, specimen, rig }: { sim: SugarSim; specimen: Specimen; 
 const GAS_COUNT = 18
 
 /**
+ * How many molecules in each stream carry their own name.
+ *
+ * Not all of them. The platform rule is that a learner should never have to
+ * match a floating caption to a moving blob, so the label rides the molecule —
+ * but eighteen of each around a canopy is a word cloud, and the house rule
+ * against visual noise is just as binding. Labelling the leading few of each
+ * stream makes the association unmistakable at a glance and leaves the rest of
+ * the field reading as gas.
+ */
+const GAS_LABELS = 5
+
+/**
  * CO₂ drifting in and O₂ drifting out, in one instanced field with two
  * materials' worth of colour baked per instance.
  *
  * The drift pattern is ThreeUI's Structure Flow dome (MIT) re-lit: a masked
  * shell of particles that eases across the canopy rather than swarming it.
  * Orderly motion — the house rule that a busy scene reads as noise.
+ *
+ * Both streams are named in the scene. Two colours of dot around a plant is a
+ * puzzle, not a diagram: without the labels the learner has to be *told* which
+ * way the carbon is going, and being told is the thing this cabinet exists to
+ * avoid.
  */
 function GasField({ sim, rig }: { sim: SugarSim; rig: SugarRig }) {
   const inRef = useRef<THREE.InstancedMesh>(null)
   const outRef = useRef<THREE.InstancedMesh>(null)
+  const inLabel = useRef<THREE.InstancedMesh>(null)
+  const outLabel = useRef<THREE.InstancedMesh>(null)
   const dummy = useMemo(() => new THREE.Object3D(), [])
+  const scratch = useMemo(() => new THREE.Vector3(), [])
   const half = GAS_COUNT
   const seeds = useMemo(
     () =>
@@ -784,10 +814,12 @@ function GasField({ sim, rig }: { sim: SugarSim; rig: SugarRig }) {
   )
   const canopyY = rig.height * 0.72
 
-  useFrame((_, rawDt) => {
+  useFrame((state, rawDt) => {
     const inMesh = inRef.current
     const outMesh = outRef.current
     if (!inMesh || !outMesh) return
+    const inText = inLabel.current
+    const outText = outLabel.current
     const dt = Math.min(rawDt, 0.05)
     const solve = sim.solve
     const moving = sim.started && !sim.paused
@@ -806,9 +838,21 @@ function GasField({ sim, rig }: { sim: SugarSim; rig: SugarRig }) {
       dummy.position.set(Math.cos(s.theta + s.phase * 0.5) * r, y, Math.sin(s.theta + s.phase * 0.5) * r)
       dummy.rotation.set(0, 0, 0)
       const fade = Math.min(1, s.phase * 6) * Math.min(1, (1 - s.phase) * 4)
-      dummy.scale.setScalar(i < inCount ? 0.032 * fade : 0)
+      const inShown = i < inCount
+      dummy.scale.setScalar(inShown ? 0.032 * fade : 0)
       dummy.updateMatrix()
       inMesh.setMatrixAt(i, dummy.matrix)
+
+      // The label rides the molecule. `lift` pushes it toward the camera so it
+      // is not swallowed by the sphere's own front face.
+      if (inText && i < GAS_LABELS) {
+        if (inShown && fade > 0.35) {
+          scratch.copy(dummy.position)
+          writeGlyph(inText, i, dummy, state.camera, scratch, fade, 0.07)
+        } else {
+          hideGlyph(inText, i, dummy)
+        }
+      }
 
       // Outbound: the reverse, leaving the canopy and dispersing upward.
       const t = seeds[half + i]
@@ -820,12 +864,24 @@ function GasField({ sim, rig }: { sim: SugarSim; rig: SugarRig }) {
         Math.sin(t.theta - t.phase * 0.4) * r2,
       )
       const fade2 = Math.min(1, t.phase * 5) * Math.min(1, (1 - t.phase) * 3)
-      dummy.scale.setScalar(i < outCount ? 0.03 * fade2 : 0)
+      const outShown = i < outCount
+      dummy.scale.setScalar(outShown ? 0.03 * fade2 : 0)
       dummy.updateMatrix()
       outMesh.setMatrixAt(i, dummy.matrix)
+
+      if (outText && i < GAS_LABELS) {
+        if (outShown && fade2 > 0.35) {
+          scratch.copy(dummy.position)
+          writeGlyph(outText, i, dummy, state.camera, scratch, fade2, 0.07)
+        } else {
+          hideGlyph(outText, i, dummy)
+        }
+      }
     }
     inMesh.instanceMatrix.needsUpdate = true
     outMesh.instanceMatrix.needsUpdate = true
+    if (inText) inText.instanceMatrix.needsUpdate = true
+    if (outText) outText.instanceMatrix.needsUpdate = true
   })
 
   return (
@@ -846,6 +902,30 @@ function GasField({ sim, rig }: { sim: SugarSim; rig: SugarRig }) {
           emissiveIntensity={0.2}
         />
       </instancedMesh>
+      {/* Dark ink on a cream halo, not the particle's own colour: `oxygen` is
+          a pale sky blue that vanishes against the sky it is drawn against,
+          and `co2` is a mid grey that does the same against the ground. The
+          dot carries the colour; the label carries the name. */}
+      <GlyphInstances
+        ref={inLabel}
+        text="CO₂"
+        name="gas-label-co2"
+        color={ATLAS.ink}
+        count={GAS_LABELS}
+        size={0.125}
+        style={{ strokeWidth: 7, strokeColor: 'rgba(252,250,244,0.95)' }}
+        renderOrder={3}
+      />
+      <GlyphInstances
+        ref={outLabel}
+        text="O₂"
+        name="gas-label-o2"
+        color={ATLAS.waterDeep}
+        count={GAS_LABELS}
+        size={0.125}
+        style={{ strokeWidth: 7, strokeColor: 'rgba(252,250,244,0.95)' }}
+        renderOrder={3}
+      />
     </group>
   )
 }
@@ -982,6 +1062,228 @@ function SurveyPulse({ sim, rig }: { sim: SugarSim; rig: SugarRig }) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Sunlight arriving                                                  */
+/* ------------------------------------------------------------------ */
+
+const MAX_LANES = 7
+const MOTES_PER_LANE = 4
+
+/**
+ * Sunlight, drawn as lanes that land on individual leaves.
+ *
+ * The whole-plant view had a light *dial* and no light. You could take the
+ * slider to zero and the only thing that changed was a number, which quietly
+ * teaches that light is a setting rather than something arriving from
+ * somewhere and hitting something.
+ *
+ * This is the leaf stage's photon lanes moved outdoors, and deliberately so:
+ * inside the chloroplast, light arrives in tidy lanes each aimed at one
+ * granum, and at plant scale it arrives in tidy lanes each aimed at one leaf.
+ * The same picture at two magnifications is what makes them feel like the same
+ * process, which is the whole argument of the cabinet.
+ *
+ * **Brighter light lights more lanes, it does not make the existing ones
+ * frantic.** That is the standing rule against a busy scene reading as noise,
+ * and it is also true: more light is more photons, not faster ones.
+ *
+ * Not a god-ray pass. Shafts here are geometry — one instanced strip and one
+ * instanced mote per lane, two draw calls total — because a post chain is real
+ * money on a mid-range tablet and steps aside entirely in Cardboard stereo.
+ */
+function SunRays({
+  sim,
+  rig,
+  elevation,
+  azimuth,
+}: {
+  sim: SugarSim
+  rig: SugarRig
+  elevation: number
+  azimuth: number
+}) {
+  const beamRef = useRef<THREE.InstancedMesh>(null)
+  const moteRef = useRef<THREE.InstancedMesh>(null)
+  const beam = useMemo(() => beamTexture(), [])
+  const mote = useMemo(
+    () => glowSprite('rgba(255,247,206,0.98)', 'rgba(255,216,118,0.4)', 'sunray'),
+    [],
+  )
+  const dummy = useMemo(() => new THREE.Object3D(), [])
+  const progress = useRef(0)
+
+  const tmp = useMemo(
+    () => ({
+      dir: new THREE.Vector3(),
+      from: new THREE.Vector3(),
+      to: new THREE.Vector3(),
+      mid: new THREE.Vector3(),
+      at: new THREE.Vector3(),
+      toCam: new THREE.Vector3(),
+      right: new THREE.Vector3(),
+      fwd: new THREE.Vector3(),
+      basis: new THREE.Matrix4(),
+      quat: new THREE.Quaternion(),
+    }),
+    [],
+  )
+
+  /**
+   * One lane per leaf, upper leaves first — the canopy is what intercepts the
+   * light, and a ray landing on a shaded lower leaf is a lie about how a plant
+   * is lit. Sorted by height and capped, so a maize with twenty leaves is not
+   * twenty shafts.
+   */
+  const lanes = useMemo(() => {
+    const sorted = [...rig.leaves].sort((a, b) => b.source.y - a.source.y)
+    return sorted.slice(0, MAX_LANES).map((leaf, i) => ({
+      target: leaf.source.clone(),
+      // A little spread so lanes do not strobe in and out together.
+      phase: ((i * 37) % 100) / 100,
+      width: 0.075 + ((i * 53) % 100) / 100 * 0.04,
+    }))
+  }, [rig])
+
+  // The direction light travels: down along the sun's own elevation/azimuth.
+  const travel = useMemo(() => {
+    const v = new THREE.Vector3(
+      Math.cos(elevation) * Math.sin(azimuth),
+      Math.sin(elevation),
+      Math.cos(elevation) * Math.cos(azimuth),
+    )
+    return v.normalize().multiplyScalar(-1)
+  }, [elevation, azimuth])
+
+  /**
+   * Only render as many instances as there are lanes.
+   *
+   * An InstancedMesh draws every instance it was allocated, and an instance
+   * whose matrix has never been written is the *identity* — a full-size copy
+   * sitting at the world origin. A bean has five leaves and `MAX_LANES` is
+   * seven, so two unwritten shafts stood at the base of the plant, at full
+   * brightness, in the dark, forever. Writing zero scale in the loop would fix
+   * it too; capping `count` is cheaper and says what is meant.
+   */
+  useEffect(() => {
+    if (beamRef.current) beamRef.current.count = lanes.length
+    if (moteRef.current) moteRef.current.count = lanes.length * MOTES_PER_LANE
+  }, [lanes.length])
+
+  useFrame((state, rawDt) => {
+    const beams = beamRef.current
+    const motes = moteRef.current
+    if (!beams || !motes) return
+    const dt = Math.min(rawDt, 0.05)
+
+    // Night is night. The dial is the amount arriving, and `daylight` on the
+    // habitat has already dimmed the sun itself.
+    const lit = sim.night ? 0 : THREE.MathUtils.clamp(sim.light, 0, 1)
+    if (sim.started && !sim.paused) progress.current += dt * (0.16 + lit * 0.34)
+    const active = Math.round(lanes.length * lit)
+
+    for (let i = 0; i < lanes.length; i++) {
+      const lane = lanes[i]
+      const on = i < active
+
+      if (!on) {
+        dummy.scale.setScalar(0)
+        dummy.updateMatrix()
+        beams.setMatrixAt(i, dummy.matrix)
+        for (let k = 0; k < MOTES_PER_LANE; k++) {
+          motes.setMatrixAt(i * MOTES_PER_LANE + k, dummy.matrix)
+        }
+        continue
+      }
+
+      tmp.to.copy(lane.target)
+      // Start well above the canopy so the beam is cut by whatever it passes
+      // through on the way down — that occlusion is most of what sells it.
+      tmp.from.copy(tmp.to).addScaledVector(travel, -(rig.height * 1.5 + 1.2))
+      tmp.dir.copy(tmp.to).sub(tmp.from)
+      const length = tmp.dir.length()
+      tmp.dir.divideScalar(length)
+      tmp.mid.addVectors(tmp.from, tmp.to).multiplyScalar(0.5)
+
+      /* -- the shaft --
+         A cylindrical billboard: the strip stays aligned to the ray but spins
+         about it to face the camera, so it reads as a shaft from every angle
+         instead of vanishing to a line when viewed edge-on. */
+      tmp.toCam.copy(state.camera.position).sub(tmp.mid).normalize()
+      tmp.right.crossVectors(tmp.dir, tmp.toCam)
+      const edgeOn = tmp.right.length()
+      if (edgeOn > 1e-3) {
+        tmp.right.divideScalar(edgeOn)
+        tmp.fwd.crossVectors(tmp.right, tmp.dir)
+        tmp.basis.makeBasis(tmp.right, tmp.dir, tmp.fwd)
+        tmp.quat.setFromRotationMatrix(tmp.basis)
+        dummy.position.copy(tmp.mid)
+        dummy.quaternion.copy(tmp.quat)
+        dummy.scale.set(lane.width, length, 1)
+      } else {
+        dummy.scale.setScalar(0)
+      }
+      dummy.updateMatrix()
+      beams.setMatrixAt(i, dummy.matrix)
+
+      /* -- motes travelling down the lane -- */
+      for (let k = 0; k < MOTES_PER_LANE; k++) {
+        const t = (progress.current + lane.phase + k / MOTES_PER_LANE) % 1
+        tmp.at.lerpVectors(tmp.from, tmp.to, 0.35 + t * 0.65)
+        dummy.position.copy(tmp.at)
+        dummy.quaternion.copy(state.camera.quaternion)
+        const fade = Math.min(1, t * 4) * Math.min(1, (1 - t) * 6)
+        dummy.scale.setScalar(0.09 * fade)
+        dummy.updateMatrix()
+        motes.setMatrixAt(i * MOTES_PER_LANE + k, dummy.matrix)
+      }
+    }
+
+    beams.instanceMatrix.needsUpdate = true
+    motes.instanceMatrix.needsUpdate = true
+    const material = beams.material as THREE.MeshBasicMaterial
+    material.opacity = 0.2 * lit
+  })
+
+  return (
+    <group>
+      <instancedMesh
+        ref={beamRef}
+        name="sun-beams"
+        args={[undefined, undefined, MAX_LANES]}
+        frustumCulled={false}
+        renderOrder={4}
+      >
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial
+          map={beam}
+          transparent
+          opacity={0.2}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+          side={THREE.DoubleSide}
+        />
+      </instancedMesh>
+      <instancedMesh
+        ref={moteRef}
+        name="sun-motes"
+        args={[undefined, undefined, MAX_LANES * MOTES_PER_LANE]}
+        frustumCulled={false}
+        renderOrder={5}
+      >
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial
+          map={mote}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </instancedMesh>
+    </group>
+  )
+}
+
+/* ------------------------------------------------------------------ */
 /* Composed stage                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -1003,19 +1305,44 @@ export default function PlantStage({
   useEffect(() => () => rig.dispose(), [rig])
   const quality = getQualityCaps()
   const soilRadius = Math.max(0.42, specimen.build.rootSpread * 0.6)
+  // Where the sun is. Outdoors that is the habitat's own sun, so a shaft in
+  // the desert comes in high and hard and a rainforest one comes in low and
+  // slant. On the plain plate there is no habitat to ask, so light arrives
+  // from the upper left — the direction every botanical plate is lit from.
+  const place = useMemo(() => habitatForSpecimen(specimenId), [specimenId])
+  const sun = outdoors
+    ? { elevation: place.sunElevation, azimuth: place.sunAzimuth }
+    : { elevation: 1.02, azimuth: -0.62 }
 
   return (
+    // Named so the camera can find the specimen without the habitat. `subject`
+    // is what the lift measures and what the suites project to screen space;
+    // a Box3 over the whole scene would be 60 units of ground and sky.
     <group>
-      {!outdoors && <GroundLine radius={Math.max(0.9, specimen.build.rootSpread * 1.3)} />}
-      <SoilMound radius={soilRadius} outdoors={outdoors} />
-      <PlantBody sim={sim} specimen={specimen} rig={rig} />
-      <Girdle sim={sim} specimen={specimen} rig={rig} />
-      <Sinks sim={sim} specimen={specimen} rig={rig} />
-      <WaterFlow sim={sim} specimen={specimen} rig={rig} />
-      <SugarFlow sim={sim} specimen={specimen} rig={rig} />
+      {/* `subject` is the SPECIMEN, and nothing else.
+          The camera measures this group's bounding box to decide how far it
+          can lift the picture above an open control panel, so anything in here
+          that is not the plant makes the plant look bigger than it is. The sun
+          shafts begin well above the canopy and the gas dome extends past it;
+          both were briefly inside this group, and the box they produced had no
+          headroom at all, so the lift silently did nothing. Keep atmosphere
+          outside. */}
+      <group name="subject">
+        {!outdoors && <GroundLine radius={Math.max(0.9, specimen.build.rootSpread * 1.3)} />}
+        <SoilMound radius={soilRadius} outdoors={outdoors} />
+        <PlantBody sim={sim} specimen={specimen} rig={rig} />
+        <Girdle sim={sim} specimen={specimen} rig={rig} />
+        <Sinks sim={sim} specimen={specimen} rig={rig} />
+        <WaterFlow sim={sim} specimen={specimen} rig={rig} />
+        <SugarFlow sim={sim} specimen={specimen} rig={rig} />
+        <Tracer sim={sim} specimen={specimen} rig={rig} />
+        <SurveyPulse sim={sim} rig={rig} />
+      </group>
       {quality.particleScale > 0.5 && <GasField sim={sim} rig={rig} />}
-      <Tracer sim={sim} specimen={specimen} rig={rig} />
-      <SurveyPulse sim={sim} rig={rig} />
+      {/* Two draw calls, and the one thing on this stage that showed the light
+          dial doing anything. Kept at every tier for that reason — the motes
+          thin out with `particleScale`, the shafts do not. */}
+      <SunRays sim={sim} rig={rig} elevation={sun.elevation} azimuth={sun.azimuth} />
     </group>
   )
 }

@@ -113,7 +113,16 @@ const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable
     check('hall impact line survives reload (persistence)', impact === 1)
     check('no console errors (desktop e2e)', errors.length === 0, errors.slice(0, 3).join(' | '))
   } catch (e) {
-    results.push('FAIL desktop section crashed — ' + String(e).split('\n')[0])
+    // Keep the call log. The first line of a Playwright timeout says only
+    // "locator.dispatchEvent timed out" — which locator is in the lines under
+    // it, and without them a crash here is undiagnosable and gets waved away
+    // as flakiness. It was not flakiness the last two times it was checked.
+    const detail = String(e)
+      .split('\n')
+      .filter((l) => l.trim() && !l.startsWith('    at '))
+      .slice(0, 4)
+      .join(' ⏎ ')
+    results.push('FAIL desktop section crashed — ' + detail)
     await page.screenshot({ path: out('p3-crash') }).catch(() => {})
   }
   await ctx.close()

@@ -63,7 +63,7 @@ const tap = (page, name, opts = {}) =>
     { label: name },
   )
 
-async function open(width, height, touch = false) {
+async function open(width, height, touch = false, quality = 'low') {
   // A touch context matters for more than gestures: the input store mirrors
   // the mode onto <html data-input>, and that is what sets --hit. Auditing hit
   // targets in a pointer context measures the 36 px desktop size and then
@@ -74,7 +74,7 @@ async function open(width, height, touch = false) {
     isMobile: touch,
   })
   watch(page)
-  await page.goto(URL, { waitUntil: 'load' })
+  await page.goto(`${BASE}#/photosynthesis?q=${quality}`, { waitUntil: 'load' })
   await page.waitForTimeout(1800)
   return page
 }
@@ -358,6 +358,57 @@ async function start(page) {
     await waitSim(page, "s.stage === 'plant'")
   }
 
+  /* ---- sunlight actually arrives ----
+     The light dial used to move a number and nothing else on this stage, which
+     teaches that light is a setting rather than something arriving from
+     somewhere and landing on a leaf. Asserted as the house rule it follows:
+     more light lights MORE lanes, it does not make the same ones brighter or
+     faster. And night is dark. */
+  const rays = () =>
+    page.evaluate(() => {
+      const m = window.__sugarScene?.getObjectByName('sun-beams')
+      if (!m) return null
+      const a = m.instanceMatrix.array
+      let visible = 0
+      for (let i = 0; i < m.count; i++) {
+        const o = i * 16
+        if (Math.hypot(a[o], a[o + 1], a[o + 2]) > 1e-4) visible++
+      }
+      return { count: m.count, visible, opacity: m.material.opacity }
+    })
+
+  const setLight = async (v, night = false) => {
+    await page.evaluate(
+      ([x, n]) => {
+        window.__sugarSim.light = x
+        window.__sugarSim.night = n
+      },
+      [v, night],
+    )
+    await page.waitForTimeout(500)
+  }
+
+  await setLight(1)
+  const bright = await rays()
+  check('sunlight is drawn arriving on the leaves', bright && bright.visible > 0, JSON.stringify(bright))
+  check(
+    'and there is one lane per leaf, not one per allocated instance',
+    bright && bright.count > 0 && bright.count <= 7,
+    `count ${bright?.count}`,
+  )
+  await setLight(0.4)
+  const dim = await rays()
+  check(
+    'turning the light down lights fewer lanes',
+    bright && dim && dim.visible < bright.visible,
+    `${bright?.visible} → ${dim?.visible}`,
+  )
+  await setLight(0.4, true)
+  const dark = await rays()
+  check('and at night no light arrives at all', dark && dark.visible === 0, JSON.stringify(dark))
+  await setLight(1)
+
+
   /* ---- missions are jobs you can pick up ---- */
   {
     await rightPanel(page, 'Missions')
@@ -575,6 +626,67 @@ async function start(page) {
 }
 
 /* ================================================================== */
+/* The gases say what they are                                        */
+/* ================================================================== */
+/**
+ * On its own page at the medium tier, because the gas field is a particle
+ * budget: `particleScale` at the low tier is 0.45 and the field is gated above
+ * 0.5, so at `?q=low` there are no molecules to label and asserting on them
+ * fails perfectly correct code. That is the same trap `verify-bundle` hits
+ * when it is run against a non-pilot build.
+ */
+{
+  const page = await open(1280, 800, false, 'medium')
+  await start(page)
+  await page.evaluate(() => {
+    window.__sugarSim.light = 1
+    window.__sugarSim.night = false
+    window.__sugarSim.co2 = 0.9
+  })
+  await page.waitForTimeout(1500)
+
+  const gas = await page.evaluate(() => {
+    const read = (name) => {
+      const m = window.__sugarScene?.getObjectByName(name)
+      if (!m) return null
+      const a = m.instanceMatrix.array
+      let visible = 0
+      let scale = 0
+      for (let i = 0; i < m.count; i++) {
+        const o = i * 16
+        const s = Math.hypot(a[o], a[o + 1], a[o + 2])
+        if (s > 1e-4) visible++
+        scale = Math.max(scale, s)
+      }
+      return {
+        visible,
+        // The rendered height is the geometry's height times the instance
+        // scale. Checking it catches the failure these labels actually had:
+        // present in the graph, correct in every other respect, and drawn at
+        // 0.0085 world units because the per-instance scale had been confused
+        // with the `size` prop.
+        worldHeight: +(scale * (m.geometry.parameters?.height ?? 0)).toFixed(3),
+      }
+    }
+    return { co2: read('gas-label-co2'), o2: read('gas-label-o2') }
+  })
+
+  check('the inbound gas is labelled CO₂', !!gas.co2, JSON.stringify(gas.co2))
+  check('the outbound gas is labelled O₂', !!gas.o2, JSON.stringify(gas.o2))
+  check(
+    'at least one CO₂ label is actually drawn',
+    (gas.co2?.visible ?? 0) > 0,
+    `${gas.co2?.visible} of them`,
+  )
+  check(
+    'and the labels are a readable size, not a sub-millimetre one',
+    (gas.co2?.worldHeight ?? 0) > 0.05,
+    `${gas.co2?.worldHeight} world units`,
+  )
+  await page.close()
+}
+
+/* ================================================================== */
 /* Compact                                                            */
 /* ================================================================== */
 {
@@ -646,6 +758,143 @@ async function start(page) {
     `every visible control is thumb-sized (${audit.total} controls)`,
     audit.small.length === 0,
     audit.small.slice(0, 6).join(', '),
+  )
+
+  /* ---- and every control can actually be touched ----
+     The check above, and the two overlap checks before it, all passed while
+     stage navigation was completely dead on every phone: the tabs were the
+     right size, in the right place, overlapping nothing — and had no pointer
+     events, because the HUD root is `pointer-events-none` and the compact
+     branch forgot to opt them back in. Geometry cannot catch that. Hit-testing
+     can: whatever is at a control's own centre must be that control. */
+  const unreachable = await page.evaluate(() => {
+    const out = []
+    for (const el of document.querySelectorAll('.hud button, .hud a')) {
+      const r = el.getBoundingClientRect()
+      if (r.width < 2 || r.height < 2) continue
+      const cx = r.x + r.width / 2
+      const cy = r.y + r.height / 2
+      if (cx < 0 || cy < 0 || cx > window.innerWidth || cy > window.innerHeight) continue
+      const hit = document.elementFromPoint(cx, cy)
+      if (!hit || !(el.contains(hit) || hit.contains(el)))
+        out.push((el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 24))
+    }
+    return out
+  })
+  check(
+    'every control on a phone is hit-testable, not just well placed',
+    unreachable.length === 0,
+    unreachable.slice(0, 6).join(', '),
+  )
+
+  /* ---- the stages are reachable on a phone ----
+     Stated as the behaviour rather than the mechanism: tapping the tab must
+     change the stage. This is the check that would have caught the bug. */
+  for (const [label, want] of [
+    ['Inside a leaf', 'leaf'],
+    ['The stem, cut', 'stem'],
+    ['Whole plant', 'plant'],
+  ]) {
+    await tap(page, label)
+    await page.waitForTimeout(700)
+    check(`on a phone, "${label}" switches the stage`, await sim(page, `s.stage === '${want}'`))
+  }
+
+  /* ---- the controls sheet leaves the specimen visible ---- */
+  await tap(page, 'Controls')
+  await page.waitForTimeout(800)
+  const sheet = await page.evaluate(() => {
+    const cam = window.__sugarCam
+    const closer = document.querySelector('[aria-label="Close panel"]')
+    const panel = closer?.closest('div[class*="rounded-t-"]')
+    const box = panel?.getBoundingClientRect()
+    // Project the specimen's own bounding box, so "visible" is measured rather
+    // than assumed.
+    let top = null
+    const subject = window.__sugarScene?.getObjectByName('subject')
+    if (subject && cam) {
+      const pts = []
+      const b = { min: subject.position.clone(), max: subject.position.clone() }
+      subject.traverse((o) => {
+        if (!o.geometry) return
+        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox()
+        const bb = o.geometry.boundingBox
+        if (!bb) return
+        for (const x of [bb.min.x, bb.max.x])
+          for (const y of [bb.min.y, bb.max.y])
+            for (const z of [bb.min.z, bb.max.z]) {
+              const v = bb.min.clone().set(x, y, z)
+              o.localToWorld(v)
+              pts.push(v)
+            }
+      })
+      void b
+      let best = Infinity
+      for (const v of pts) {
+        const p = v.clone().project(cam)
+        best = Math.min(best, ((1 - p.y) / 2) * window.innerHeight)
+      }
+      top = pts.length ? Math.round(best) : null
+    }
+    return {
+      hasCloseButton: !!closer,
+      hasGrabHandle: !!document.querySelector('.cursor-grab'),
+      sheetTop: box ? Math.round(box.top) : null,
+      viewportH: window.innerHeight,
+      lifted: cam?.view?.enabled === true,
+      subjectTop: top,
+    }
+  })
+  /* ---- the tab opens on what you opened it for ----
+     The controls sheet used to lead with the five-row specimen library, which
+     put the light dial's track at y = 861 on an 844 px screen: present,
+     correctly sized, and reachable only by scrolling a panel that had just
+     appeared. A panel whose primary control is off screen on open is the same
+     failure as the desktop column that pushed "Run measurement" to y ≈ 934. */
+  const firstControl = await page.evaluate(() => {
+    const track = document.querySelector('[data-slot="slider-track"]')
+    if (!track) return null
+    const b = track.getBoundingClientRect()
+    const cx = b.x + b.width * 0.85
+    const cy = b.y + b.height / 2
+    const hit = document.elementFromPoint(cx, cy)
+    return {
+      y: Math.round(b.y),
+      viewportH: window.innerHeight,
+      reachable: !!hit && (track.contains(hit) || hit.contains(track)),
+      label: track.closest('[aria-label]')?.getAttribute('aria-label') ?? null,
+    }
+  })
+  check(
+    'the controls sheet opens with a condition dial already on screen',
+    firstControl && firstControl.y > 0 && firstControl.y < firstControl.viewportH,
+    JSON.stringify(firstControl),
+  )
+  check(
+    'and that dial can be touched where it is drawn',
+    firstControl?.reachable === true,
+    `${firstControl?.label} at y ${firstControl?.y}`,
+  )
+
+  check('the controls sheet offers an explicit close', sheet.hasCloseButton)
+  check('and a grab handle to swipe it away', sheet.hasGrabHandle)
+  check(
+    'the sheet leaves at least a third of the screen to the scene',
+    sheet.sheetTop !== null && sheet.sheetTop > sheet.viewportH * 0.33,
+    `top ${sheet.sheetTop} of ${sheet.viewportH}`,
+  )
+  check('opening the sheet lifts the scene', sheet.lifted)
+  check(
+    'and the specimen is still on screen with the sheet open',
+    sheet.subjectTop !== null && sheet.subjectTop >= 0 && sheet.subjectTop < sheet.sheetTop,
+    `subject top ${sheet.subjectTop}, sheet top ${sheet.sheetTop}`,
+  )
+
+  await tap(page, 'Close panel')
+  await page.waitForTimeout(600)
+  check(
+    'closing it puts the scene back',
+    (await page.evaluate(() => window.__sugarCam?.view?.enabled)) !== true,
   )
 
   await page.close()

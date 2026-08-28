@@ -525,7 +525,7 @@ export default function StemStage({ sim }: { sim: SugarSim }) {
   // Keep a reference to the specimen so a swap re-renders this stage's colour.
   useEffect(() => undefined, [specimen.id])
   return (
-    <group position={[0, 2.02, 0]}>
+    <group name="subject" position={[0, 2.02, 0]}>
       <Cortex />
       <Pipes sim={sim} />
       <Cut sim={sim} />
