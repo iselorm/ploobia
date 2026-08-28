@@ -206,7 +206,20 @@ async function start(page) {
     )
     await tap(page, 'Run measurement', { exact: false })
     check('a trial starts', await waitSim(page, 's.trialRunning === true', 8000))
-    check('the trial finishes', await waitSim(page, 's.trialRunning === false', 25000))
+    // 25 s was not a tolerance, it was arithmetic that stopped being true.
+    //
+    // A trial runs for `caps.trialSeconds` of SIM time, and sim time only
+    // advances on rendered frames with `dt` clamped to 0.25 s. So a 6 s trial
+    // needs at least 24 rendered frames — which at the ~1 fps a saturated
+    // software renderer manages is 24 s of wall clock, against a 25 s budget.
+    // On a slower host it simply cannot finish in time and the suite reports a
+    // working measurement loop as broken.
+    //
+    // Raising this is not loosening an assertion: the claim is "the trial ends
+    // and records a reading", which is not itself time-sensitive. Only the
+    // waiting is. (Contrast the Motion Yard's hand-timing checks, where the
+    // *timing* is the claim — those must honest-skip instead, never stretch.)
+    check('the trial finishes', await waitSim(page, 's.trialRunning === false', 90000))
     await page.waitForTimeout(900)
     check('a reading lands in the table', (await page.getByText('1 recorded').count()) === 1)
   }

@@ -320,6 +320,22 @@ const bean = M.SPECIMEN_BY_ID.bean
   // The opening names this plant and where its sugar goes.
   const open = M.narrateOpening(bean)
   check('the opening names the specimen', /bean/i.test(open), open.slice(0, 70))
+
+  /* The voice and the atlas card must give the SAME answer.
+     The first version said "down the stem to roots" for a bean while the card
+     beside it read "Main sink: Pods" — two answers to one question, from the
+     voice whose whole job is to explain the cabinet. A green suite did not
+     catch it because nothing compared the two. Now it does, for every
+     specimen. */
+  for (const sp of M.SPECIMENS) {
+    const mainSink = sp.keyFacts.find(([k]) => k === 'Main sink')?.[1]
+    const line = M.narrateOpening(sp)
+    check(
+      `${sp.id}: the spoken destination matches the atlas card`,
+      !mainSink || line.toLowerCase().includes(mainSink.toLowerCase()),
+      `card "${mainSink}" vs "${line.slice(-70)}"`,
+    )
+  }
 }
 
 /* ------------------------------------------------------------------ */

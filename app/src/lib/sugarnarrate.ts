@@ -54,11 +54,18 @@ export interface NarrationContext {
  * general.
  */
 export function narrateOpening(specimen: Specimen): string {
-  const sink = specimen.sinks.find((s) => s.kind === 'store') ?? specimen.sinks[0]
-  const destination = sink ? sink.label.toLowerCase() : 'the roots'
+  // Read the destination off the SAME key fact the atlas card shows.
+  //
+  // The first version picked `sinks.find(kind === 'store')`, which for a bean
+  // is the roots — while the card beside it said "Main sink: Pods". Two
+  // different answers to one question, from the voice that exists to explain
+  // the cabinet. That is the exact drift this module claims to prevent, and it
+  // survived a green suite because nothing compared the two.
+  const main = specimen.keyFacts.find(([k]) => k === 'Main sink')?.[1]
+  const destination = (main ?? specimen.sinks[0]?.label ?? 'roots').toLowerCase()
   return (
     `This is ${specimen.name.toLowerCase()}. Its leaves make sugar out of air, water and light — ` +
-    `and then it has to get somewhere, down the stem to ${destination}. ` +
+    `and then it has to get somewhere, down the stem to the ${destination}. ` +
     `Change one thing at a time and find out what stalls the line.`
   )
 }

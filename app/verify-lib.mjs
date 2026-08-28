@@ -35,11 +35,53 @@
  * failing a correct build. The fallback is reported, so a suite that quietly
  * starts needing it everywhere is visible rather than silent.
  */
-export async function resilientClick(locator, { timeout = 8000, label = 'element' } = {}) {
+/**
+ * The real click's budget.
+ *
+ * 8 s was tuned on a fast host and is the wrong number, because the cost of
+ * being too low is not "a slower test" — it is a **double click**. Playwright
+ * throws when its own round trip overruns, not when the click fails, so a
+ * successful-but-slow click falls into the fallback and gets dispatched a
+ * second time. On anything that toggles, that turns the feature on and
+ * immediately off again, and the suite then reports a working control as
+ * broken. It did exactly that to "take on a mission" on a rehosted container,
+ * where a successful click measured 8.6 s against this 8 s budget.
+ *
+ * So the budget is generous. A genuinely stuck element still reaches the
+ * fallback, just later; a slow healthy one no longer gets clicked twice.
+ */
+const CLICK_BUDGET_MS = 25000
+
+export async function resilientClick(locator, { timeout = CLICK_BUDGET_MS, label = 'element' } = {}) {
   try {
     await locator.click({ timeout })
     return 'click'
   } catch {
+    // FIRST: did the click actually land?
+    //
+    // `click()` throws when *Playwright's* round trip overruns the budget —
+    // which is not the same as the click failing. On a slow host the event is
+    // dispatched, React unmounts the thing that was clicked, and only then does
+    // the timeout fire. We arrive here with the work already done and the
+    // element gone, and the fallback below then waits the full 90 s for a
+    // button that no longer exists. That is not a slow test, it is a hang, and
+    // it took down `verify-sugar` at its very first click on a rehosted
+    // container while the identical build had passed 115/115 an hour earlier.
+    //
+    // An element that has vanished is the evidence that the click worked.
+    if ((await locator.count()) === 0) {
+      console.log(`   · ${label}: click landed, but Playwright's own round trip overran the budget`)
+      return 'click'
+    }
+
+    // Otherwise the element is still there and the click really did not take.
+    // Let the main thread breathe before trying again: dispatching immediately
+    // queues behind the same saturated thread that just refused the click.
+    // Measured on a slow host — back-to-back the fallback hung, with a
+    // two-second pause the identical dispatch landed in 1.6 s. It costs nothing
+    // on a fast machine, because a fast machine never gets here.
+    await locator.page().waitForTimeout(2000)
+
     // The fallback needs a *longer* budget than the real click, not the same
     // one: it is used precisely when the main thread is saturated, and the
     // Motion Yard has gone over 30 s at its welcome card.
