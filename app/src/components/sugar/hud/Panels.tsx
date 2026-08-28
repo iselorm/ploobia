@@ -728,6 +728,9 @@ export function ToolRail({
   onReset,
   onCardboard,
   onView,
+  narrating,
+  canNarrate,
+  onNarrate,
   minimal = false,
 }: {
   vision: boolean
@@ -745,6 +748,11 @@ export function ToolRail({
   onReset: () => void
   onCardboard: () => void
   onView: (id: string) => void
+  /** Whether the narrator is speaking this session. */
+  narrating: boolean
+  /** False on a device with no speech synthesis — the button hides rather than lying. */
+  canNarrate: boolean
+  onNarrate: () => void
   minimal?: boolean
 }) {
   const tools: Array<{ label: string; icon: string; on?: boolean; go: () => void; aria: string }> = [
@@ -769,6 +777,22 @@ export function ToolRail({
           { label: 'In', icon: '+', go: onZoomIn, aria: 'Zoom in' },
           { label: 'Out', icon: '−', go: onZoomOut, aria: 'Zoom out' },
         ]),
+    // Offered only where the device can actually speak. A toggle that does
+    // nothing is worse than no toggle — it reads as a broken cabinet.
+    ...(canNarrate
+      ? [
+          {
+            label: 'Voice',
+            // One monochrome glyph in both states, coloured by `on` like every
+            // other tool here. A colour emoji next to ◎ ⛰ ⤾ ◫ reads as a
+            // different toolbar bolted on.
+            icon: '♪',
+            on: narrating,
+            go: onNarrate,
+            aria: narrating ? 'Turn the narrator off' : 'Turn the narrator on',
+          },
+        ]
+      : []),
     { label: 'Reset', icon: '⤾', go: onReset, aria: 'Reset view' },
     { label: 'VR', icon: '◫', go: onCardboard, aria: 'Cardboard view' },
   ]

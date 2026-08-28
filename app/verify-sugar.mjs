@@ -358,6 +358,39 @@ async function start(page) {
     await waitSim(page, "s.stage === 'plant'")
   }
 
+  /* ---- the narrator ----
+     Headless Chromium exposes `speechSynthesis` with no voices, so this checks
+     the control and the wiring, not the audio. The words themselves are
+     checked in `verify-sugar-model.mjs`, which is the only place a claim like
+     "the explanation names the actual constraint" can be tested. */
+  {
+    const voiceOn = page.locator('[aria-label="Turn the narrator on"]')
+    const available = (await voiceOn.count()) + (await page.locator('[aria-label="Turn the narrator off"]').count())
+    if (available === 0) {
+      skip('the narrator can be switched on', 'this browser reports no speech synthesis at all')
+    } else {
+      check('the narrator is off until a person turns it on', (await voiceOn.count()) === 1)
+      await resilientClick(voiceOn.first(), { label: 'narrator on' })
+      await page.waitForTimeout(400)
+      check(
+        'turning it on flips the control',
+        (await page.locator('[aria-label="Turn the narrator off"]').count()) === 1,
+      )
+      check(
+        'and the choice is remembered',
+        (await page.evaluate(() => localStorage.getItem('ploobia.voice.v1'))) === 'on',
+      )
+      await resilientClick(page.locator('[aria-label="Turn the narrator off"]').first(), {
+        label: 'narrator off',
+      })
+      await page.waitForTimeout(400)
+      check(
+        'and it can be turned back off',
+        (await page.evaluate(() => localStorage.getItem('ploobia.voice.v1'))) === 'off',
+      )
+    }
+  }
+
   /* ---- sunlight actually arrives ----
      The light dial used to move a number and nothing else on this stage, which
      teaches that light is a setting rather than something arriving from

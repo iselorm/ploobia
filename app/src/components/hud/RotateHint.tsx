@@ -45,7 +45,13 @@ export default function RotateHint() {
   if (!show) return null
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-[8.6rem] z-30 flex justify-center px-3">
+    // Below the tool rail, not on top of it.
+    //
+    // `top-[8.6rem]` put this straight over the rail and the bottom of the
+    // stage tabs — measured at 412×915 the hint spanned y 138–200 and the rail
+    // y 148–210. A hint that hides two controls to say the screen is narrow is
+    // making the problem it is describing.
+    <div className="pointer-events-none absolute inset-x-0 top-[14rem] z-30 flex justify-center px-3">
       <div className="atlas-plate pointer-events-auto flex items-center gap-2 rounded-full py-1.5 pr-1.5 pl-3">
         <RotateCw className="h-3.5 w-3.5 shrink-0 text-[#3E7C43]" />
         <p className="text-[11.5px] leading-tight font-bold text-[#5A4A32]">

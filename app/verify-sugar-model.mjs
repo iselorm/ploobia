@@ -21,6 +21,7 @@ fs.writeFileSync(
   `export * from '${path.resolve('src/lib/sugarline')}'
 export * from '${path.resolve('src/lib/specimens')}'
 export * from '${path.resolve('src/lib/ratelab')}'
+export * from '${path.resolve('src/lib/sugarnarrate')}'
 `,
 )
 execSync(
@@ -253,6 +254,72 @@ const bean = M.SPECIMEN_BY_ID.bean
   const beanState = M.createCarbonState(bean)
   const b = M.solveSugarLine(bean, env(), beanState, { girdled: false })
   check('the cactus runs far slower than the bean', s.exportRate < b.exportRate * 0.6, `${s.exportRate.toFixed(1)} vs ${b.exportRate.toFixed(1)}`)
+}
+
+/* ------------------------------------------------------------------ */
+/* The narration                                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The narrator's whole claim is that it explains the result rather than
+ * decorating it. That is only checkable here: through the HUD you can see that
+ * *a* sentence was spoken, not that it named the constraint that was actually
+ * limiting the line.
+ */
+{
+  const st = M.createCarbonState(bean)
+
+  // Deep shade: light must be the named constraint, and the suggestion must be
+  // about light. A narrator that says "raise the CO2" to a plant in the dark
+  // is worse than silence.
+  const dark = env({ light: 0.05 })
+  const shadeSolve = M.solveSugarLine(bean, dark, st, { girdled: false })
+  const shadeNeck = M.findBottleneck(bean, dark, st, { girdled: false })
+  const ctx = {
+    specimen: bean,
+    solve: shadeSolve,
+    bottleneck: shadeNeck,
+    measure: 'export',
+    xVar: 'light',
+    reading: { id: 1, xVar: 'light', x: 55, y: shadeSolve.exportRate, predicted: null },
+    readings: [],
+    prediction: null,
+    night: false,
+    girdled: false,
+  }
+  check('in deep shade the constraint named is light', shadeNeck.id === 'light', shadeNeck.id)
+  const why = M.narrateResult(ctx)
+  check('the result line quotes the measured number', why.includes(shadeSolve.exportRate.toFixed(1)), why.slice(0, 60))
+  check('and gives the reason, not just the number', why.includes(shadeNeck.because), why.slice(-60))
+  const next = M.narrateNext(ctx)
+  check('the suggestion names light when light is the limit', /light/i.test(next), next.slice(0, 70))
+
+  // Girdled: the explanation must say the ring is cut, and the suggestion must
+  // be to heal it — the comparison that proves what the phloem was doing.
+  const cut = { ...ctx, girdled: true, bottleneck: M.findBottleneck(bean, env(), st, { girdled: true }) }
+  check('a girdled plant is explained by the cut ring', /ring is cut|severed/i.test(M.narrateResult(cut)))
+  check('and the suggestion is to heal it', /heal/i.test(M.narrateNext(cut)))
+
+  // Four points on one variable: finish the curve rather than open a new question.
+  const four = {
+    ...ctx,
+    readings: [1, 2, 3, 4].map((i) => ({ id: i, xVar: 'light', x: i * 200, y: i, predicted: null })),
+  }
+  check('with four points it asks for the fifth', /one more|curve/i.test(M.narrateNext(four)), M.narrateNext(four).slice(0, 60))
+
+  // Every line short enough to listen to.
+  const lines = [
+    M.narrateOpening(bean),
+    M.narrateTrialStart({ measure: 'export', prediction: 9 }),
+    why,
+    next,
+  ]
+  check('every spoken line stays under 300 characters', lines.every((l) => l.length <= 300), String(Math.max(...lines.map((l) => l.length))))
+  check('and none is empty', lines.every((l) => l.trim().length > 20))
+
+  // The opening names this plant and where its sugar goes.
+  const open = M.narrateOpening(bean)
+  check('the opening names the specimen', /bean/i.test(open), open.slice(0, 70))
 }
 
 /* ------------------------------------------------------------------ */

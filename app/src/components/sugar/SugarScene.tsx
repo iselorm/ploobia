@@ -195,6 +195,7 @@ function SugarCamera({ sim, frame }: { sim: SugarSim; frame: number }) {
   const stereo = useStereo()
   const controls = useThree((s) => s.controls) as OrbitLike | null
   const camera = useThree((s) => s.camera)
+  const size = useThree((s) => s.size)
   const mounted = useRef(false)
   const lastViewSeq = useRef(sim.viewSeq)
   const lastReset = useRef(sim.viewReset)
@@ -222,11 +223,23 @@ function SugarCamera({ sim, frame }: { sim: SugarSim; frame: number }) {
    * a third taller than a bean and was losing its top leaves off the top of
    * the plate at the bean's framing; the other two stages are drawn at a fixed
    * scale, so they are left alone.
+   *
+   * **The off-centre composition is a landscape idea, and it is centred on a
+   * phone.** Putting the subject on a third and opening the field out beside
+   * it is what stopped this cabinet reading as every other 3D gallery on the
+   * internet — but that argument assumes there is room beside the subject. On
+   * a 412 px portrait screen there is none: measured, the plant's box ran from
+   * x = −330 to x = 409, i.e. a third of it off the left edge, with the "open
+   * field" it was making room for entirely off-screen. So the sideways offset
+   * fades out as the frame gets narrower and is gone by the time it is a
+   * phone. Wide screens keep the composed shot.
    */
   const applyFrame = (v: { position: [number, number, number]; target: [number, number, number]; stage: string }) => {
     const k = v.stage === 'plant' ? frame : 1
-    flyPos.set(v.position[0], v.position[1] * k, v.position[2] * k)
-    flyTarget.set(v.target[0], v.target[1] * k, v.target[2])
+    // 1 on a landscape frame, 0 at 3:4 and narrower.
+    const wide = THREE.MathUtils.clamp((size.width / size.height - 0.75) / 0.55, 0, 1)
+    flyPos.set(v.position[0] * wide, v.position[1] * k, v.position[2] * k)
+    flyTarget.set(v.target[0] * wide, v.target[1] * k, v.target[2])
   }
 
   const startFlight = (seconds: number, arc = 0.55) => {

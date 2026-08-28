@@ -15,6 +15,20 @@ import { BAND_CAPS, getBand, useBand } from '@/lib/bands'
 import { logEvent } from '@/lib/events'
 import { useBackHandler, useInputAction } from '@/lib/input'
 import { useLayoutMode } from '@/hooks/use-layout'
+import {
+  narrationAvailable,
+  narrationOn,
+  setNarration,
+  speak,
+  startNarration,
+  stopNarration,
+} from '@/lib/narrator'
+import {
+  narrateNext,
+  narrateOpening,
+  narrateResult,
+  narrateTrialStart,
+} from '@/lib/sugarnarrate'
 import { enterStereo, useStereo } from '@/lib/stereo'
 import { SPECIMEN_BY_ID } from '@/lib/specimens'
 import {
@@ -167,6 +181,7 @@ export default function SugarLine() {
   const [autoOrbit, setAutoOrbit] = useState(false)
   const [viewId, setViewId] = useState('overview')
   const [tipOpen, setTipOpen] = useState(true)
+  const [narrating, setNarrating] = useState(() => narrationOn())
   const [habitat, setHabitat] = useState(sim.habitat)
   const [activeMission, setActiveMission] = useState<string | null>(null)
   /** The reading whose result card is currently up. */
@@ -184,12 +199,22 @@ export default function SugarLine() {
   const lastTracer = useRef(0)
   const predictionRef = useRef<number | null>(null)
   predictionRef.current = prediction
+  // Same reason as `predictionRef`: the frame-sync effect below is keyed on
+  // [sim, caps, band], so anything else read inside it is a stale closure. The
+  // narration needs the live reading list, and it must name the specimen that
+  // is actually on the plate — not the one that was there when the effect was
+  // created.
+  const readingsRef = useRef<SugarReading[]>([])
+  readingsRef.current = readings
   const demoFirstReadingId = useRef(1)
 
   const specimen = SPECIMEN_BY_ID[specimenId]
 
   useEffect(() => {
     logEvent('photosynthesis', getBand(), 'session.started', {})
+    // A voice that carries on after the learner has left the cabinet is the
+    // worst possible failure of this feature.
+    return () => stopNarration()
   }, [])
 
   // Test handles. The suite drives the real controls and then reads the model
@@ -228,6 +253,28 @@ export default function SugarLine() {
           // during the demo, which drives the real handlers and would
           // otherwise pop a card on every one of its fourteen steps.
           if (!sim.demoMode) setReveal(reading)
+          // The result and the reason, then one concrete thing to try. Two
+          // utterances rather than one, because the suggestion has to survive
+          // the learner reading the reveal card over the top of it.
+          if (!sim.demoMode && narrationOn()) {
+            const live = SPECIMEN_BY_ID[sim.specimenId] ?? specimen
+            const ctx = {
+              specimen: live,
+              solve: simSolve(sim),
+              bottleneck: findBottleneck(live, simEnv(sim), sim.carbon, {
+                girdled: sim.girdled,
+              }),
+              measure: sim.measure,
+              xVar: sim.xVar,
+              reading,
+              readings: [...readingsRef.current, reading],
+              prediction: reading.predicted,
+              night: sim.night,
+              girdled: sim.girdled,
+            }
+            speak(narrateResult(ctx), { interrupt: true })
+            speak(narrateNext(ctx), { queue: true })
+          }
           if (!sim.demoMode) {
             logEvent('photosynthesis', band, 'reading.recorded', {
               variable: reading.xVar,
@@ -384,6 +431,12 @@ export default function SugarLine() {
     sim.trialSnapshot = snapshotTrial(sim)
     sim.trialRunning = true
     setTrialRunning(true)
+    if (narrationOn()) {
+      speak(
+        narrateTrialStart({ measure: sim.measure, prediction: predictionRef.current }),
+        { interrupt: true },
+      )
+    }
   }, [sim, caps])
 
   const handleTracer = useCallback(() => {
@@ -500,10 +553,31 @@ export default function SugarLine() {
     [xVar],
   )
 
+  /**
+   * The voice toggle.
+   *
+   * Turning it ON speaks the opening line immediately — partly so the learner
+   * hears that it worked, and partly because the press itself is the user
+   * gesture browsers require before any speech is allowed at all.
+   */
+  const handleNarrate = useCallback(() => {
+    const next = !narrationOn()
+    setNarration(next)
+    setNarrating(next)
+    if (next) {
+      startNarration()
+      speak(narrateOpening(specimen), { interrupt: true })
+    }
+  }, [specimen])
+
   const handleStart = useCallback(() => {
     sim.started = true
     setStarted(true)
-  }, [sim])
+    // The first real tap. Browsers (iOS especially) discard any `speak()` made
+    // before a gesture, so this is the only place the narrator can be armed.
+    startNarration()
+    if (narrationOn()) speak(narrateOpening(specimen), { interrupt: true })
+  }, [sim, specimen])
 
   /* ---- guided demo ---------------------------------------------------- */
 
@@ -846,6 +920,9 @@ export default function SugarLine() {
       onReset={handleReset}
       onCardboard={startCardboard}
       onView={handleView}
+      narrating={narrating}
+      canNarrate={narrationAvailable()}
+      onNarrate={handleNarrate}
       minimal={compact}
     />
   )
