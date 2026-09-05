@@ -19,7 +19,7 @@ import type { Band } from './bands'
 /* Schema                                                             */
 /* ------------------------------------------------------------------ */
 
-export type CabinetId = 'photosynthesis' | 'blood' | 'motion' | (string & {})
+export type CabinetId = 'photosynthesis' | 'blood' | 'motion' | 'physics' | (string & {})
 
 export type SkillId = 'measuring' | 'predicting' | 'controlling' | 'interpreting' | 'explaining'
 
@@ -40,6 +40,12 @@ export type EventPayloads = {
     anomalous: boolean
   }
   'mission.completed': { missionId: string; title: string; skill: SkillId }
+  /**
+   * A challenge handed in. Logged for the journal and the campaign map only:
+   * `progression.ts` awards it no XP by construction — score is not XP, and a
+   * fast reflex must never buy a rank.
+   */
+  'challenge.handedIn': { presetId: string; stage: number | null; score: number; hit: boolean }
   'writeup.completed': {
     variable: string
     claim: string

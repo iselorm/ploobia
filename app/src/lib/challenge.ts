@@ -115,6 +115,18 @@ export interface ChallengeGoal {
  */
 export type ResourceBudget = Record<string, number>
 
+/**
+ * Which game shape a challenge is played in.
+ *
+ * `gather` — catch the inputs, then run the lab on what you caught.
+ * `keep`   — hold one control against a scripted span of time the sim runs
+ *            on its own; the span *is* the trial. What the span is, what the
+ *            control is and what the budget means are the cabinet's business.
+ * Absent means `gather`, so every link written before loops existed still
+ * decodes into the world it described.
+ */
+export type ChallengeLoop = 'gather' | 'keep'
+
 export interface Challenge {
   v: number
   cabinet: string
@@ -129,6 +141,20 @@ export interface Challenge {
   gatherSeconds: number
   /** A label for the author. A nickname, never a real name. */
   by?: string
+  loop?: ChallengeLoop
+  /**
+   * Anything else the cabinet needs to rebuild the world that is not the
+   * seed or the specimen — for a keep round, which habitat's weather and
+   * how many hours ("desert:24"). Opaque to the spine; carried by the link.
+   */
+  world?: string
+  /**
+   * A condition the run must also satisfy for the goal to count — an id the
+   * cabinet understands ("leafFirm": standing at dusk). The spine only knows
+   * that an attempt reports whether it was met. A number can be hit by a
+   * plant that is dying; the condition is how a brief says "and alive".
+   */
+  condition?: string
 }
 
 /** A short stable id, so an attempt can be matched to the challenge it answers. */
@@ -144,6 +170,9 @@ export function challengeId(c: Challenge): string {
     c.goal.target,
     c.goal.tolerance,
     c.gatherSeconds,
+    c.loop ?? 'gather',
+    c.condition ?? '',
+    c.world ?? '',
     ...Object.keys(c.budget).sort().map((k) => `${k}:${c.budget[k]}`),
   ].join('|')
   let h = 0x811c9dc5
@@ -206,6 +235,8 @@ export interface ChallengeAttempt {
   gathered: ResourceBudget
   /** Wall seconds, for a tiebreak only. Never a scoring term of its own. */
   seconds: number
+  /** Whether the challenge's condition was met. Absent when there is none. */
+  conditionMet?: boolean
 }
 
 export interface ChallengeScore {
@@ -275,11 +306,23 @@ export function meetsGoal(goal: ChallengeGoal, best: number): boolean {
  * a learner is most likely to be watching.
  */
 export function scoreAttempt(challenge: Challenge, attempt: ChallengeAttempt): ChallengeScore {
-  const hit = meetsGoal(challenge.goal, attempt.best)
+  // A condition is a gate on the hit, not a term: "bank 100 mg" met by a leaf
+  // that is limp at dusk is not met. Accuracy still says how near the number
+  // came, because a miss is still information.
+  const conditionOk = !challenge.condition || attempt.conditionMet === true
+  const hit = meetsGoal(challenge.goal, attempt.best) && conditionOk
   const accuracy = accuracyOf(challenge.goal, attempt.best)
 
+  // In a keep round the span is the trial and there is exactly one, so the
+  // economy term would be a constant. It is spent on the condition instead:
+  // the plant standing at the end is what "doing it with less" means there.
   const trials = Math.max(1, Math.round(attempt.trials))
-  const economy = clamp01((TRIAL_FLOOR - trials) / (TRIAL_FLOOR - 1))
+  const economy =
+    challenge.loop === 'keep'
+      ? conditionOk
+        ? 1
+        : 0
+      : clamp01((TRIAL_FLOOR - trials) / (TRIAL_FLOOR - 1))
 
   // Thrift is measured only against what the budget actually offered; a
   // resource the challenge did not grant cannot be wasted.
@@ -373,6 +416,9 @@ export function encodeChallenge(c: Challenge): string {
     c.gatherSeconds,
     budget,
     c.by ?? '',
+    c.loop ?? '',
+    c.condition ?? '',
+    c.world ?? '',
   ]
   // NOT '.', which is one of the characters `encodeURIComponent` leaves
   // alone — so a tolerance of 0.5 became two fields and every value after it
@@ -421,6 +467,9 @@ export function decodeChallenge(text: string): Challenge | null {
       gatherSeconds: Number(p[10]),
       budget,
       by: p[12] || undefined,
+      loop: p[13] === 'keep' ? 'keep' : undefined,
+      condition: p[14] || undefined,
+      world: p[15] || undefined,
     }
   } catch {
     return null

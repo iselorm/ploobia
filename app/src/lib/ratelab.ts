@@ -110,6 +110,50 @@ export interface LabEnv {
   soilWater: number
   /** Leaf turgor / hydration, 0–1. 1 = firm, 0 = fully wilted. */
   turgor: number
+  /**
+   * How far the stomata may open, 0–1, as a fraction of the leaf's own
+   * maximum. A learner's ceiling, not a hand on the door: the leaf's reflexes
+   * (turgor, dry air, CAM) still close them further on top of this, and
+   * nothing can hold them open past it. Absent means 1 — the plain lab.
+   */
+  hatch?: number
+  /** Night. A CAM plant opens its hatches only now. */
+  night?: boolean
+}
+
+/**
+ * The leaf's own reflexes, 0–1 each — the part of the opening the learner
+ * does not control. Exposed so the HUD can draw where the plant is holding
+ * the hatches ("your slider says 80, the leaf is holding at 45").
+ */
+export interface StomatalGates {
+  /** A wilting leaf physically cannot hold its stomata open. */
+  turgor: number
+  /** Very dry air triggers partial closure even in a well-watered plant. */
+  vpd: number
+  /** CAM plants keep the doors shut through the day on purpose, and open at night. */
+  cam: number
+  /** The product — how far the plant itself would open, before any ceiling. */
+  plant: number
+}
+
+export function stomatalGates(leaf: LeafPreset, env: LabEnv): StomatalGates {
+  // Firm above 0.45, shut below 0.1. The old edges (0.18–0.6) closed the
+  // hatches so early and so smoothly that a leaf in a dry wind settled at
+  // half-open and half-firm and never actually wilted, whatever the learner
+  // did — a plant that could not be got wrong. Real closure is partial and
+  // late; a leaf in a drying pot under a hot wind does go limp.
+  const turgor = smoothstep(0.1, 0.45, env.turgor)
+  const cam = leaf.pathway === 'CAM' ? (env.night ? 0.85 : 0.12) : 1
+  const vpdKpa = vapourPressureDeficit(env.tempC, env.humidity)
+  const vpd = 1 / (1 + Math.pow(vpdKpa / 3.2, 1.6))
+  return { turgor, vpd, cam, plant: clamp01(turgor * cam * vpd) }
+}
+
+/** The pore as a fraction of fully open, 0–1: the plant's gates under the learner's ceiling. */
+export function poreOpening(leaf: LeafPreset, env: LabEnv): number {
+  const ceiling = env.hatch === undefined ? 1 : clamp01(env.hatch)
+  return Math.min(ceiling, stomatalGates(leaf, env).plant)
 }
 
 export interface Physiology {
@@ -146,14 +190,44 @@ export interface Physiology {
 /** How far the stomata are open, 0–1. */
 export function stomatalConductance(leaf: LeafPreset, env: LabEnv): number {
   const anatomicalMax = 0.2 + 0.8 * leaf.stomatalDensity
-  // A wilting leaf physically cannot hold its stomata open.
-  const turgorGate = smoothstep(0.18, 0.6, env.turgor)
-  // CAM plants keep the doors shut through the day on purpose.
-  const camGate = leaf.pathway === 'CAM' ? 0.12 : 1
-  // Very dry air triggers partial closure even in a well-watered plant.
-  const vpd = vapourPressureDeficit(env.tempC, env.humidity)
-  const vpdGate = 1 / (1 + Math.pow(vpd / 3.2, 1.6))
-  return clamp01(anatomicalMax * turgorGate * camGate * vpdGate)
+  // The plant's reflexes decide how far it would open; a ceiling from the
+  // learner can only cap that. With no ceiling this is exactly the old
+  // product of the three gates.
+  return clamp01(anatomicalMax * poreOpening(leaf, env))
+}
+
+/* ------------------------------------------------------------------ */
+/* Water, in millilitres                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A fully open stoma's conductance for a well-watered crop leaf, mol m⁻² s⁻¹.
+ *
+ * The model's `conductance` is a 0–1 index and its `transpiration` a
+ * relative number, which is fine for a bubble count but not for a jar
+ * marked in millilitres. The bridge is the standard gas-exchange relation
+ * E = gₛ · VPD / P, with gₛ at the upper middle of the range reported for
+ * irrigated crop trials — 300–700 mmol m⁻² s⁻¹ (Reynolds et al., CIMMYT
+ * *Physiological Breeding II*, ch. 2 "Stomatal conductance"). Not a bean
+ * figure: a whole-crop one, which is the honest level of precision here.
+ */
+export const GS_FULL_MOL = 0.5
+/** Atmospheric pressure, kPa. */
+const ATMOSPHERE_KPA = 101.3
+/** Water, g mol⁻¹. */
+const WATER_G_PER_MOL = 18.015
+
+/**
+ * Water a leaf loses per hour, mL, for a given opening and air.
+ *
+ * `conductance` is the model's 0–1 index; `leafAreaM2` the specimen's real
+ * leaf area. One millilitre is one gram. A bean leaf area of 0.028 m² fully
+ * open in 1.5 kPa air comes out at about 10 mL h⁻¹ — tens of millilitres a
+ * day, which is where the potometer in a school lab lands too.
+ */
+export function transpirationMlPerHour(conductance: number, vpdKpa: number, leafAreaM2: number): number {
+  const molPerM2s = clamp01(conductance) * GS_FULL_MOL * (Math.max(0, vpdKpa) / ATMOSPHERE_KPA)
+  return molPerM2s * leafAreaM2 * WATER_G_PER_MOL * 3600
 }
 
 /** Solve the whole leaf at one instant. Pure — safe to call inside a render loop. */
@@ -162,9 +236,16 @@ export function solveLeaf(leaf: LeafPreset, env: LabEnv): Physiology {
   const co2Ppm = env.co2 * CO2_MAX_PPM
   const vpd = vapourPressureDeficit(env.tempC, env.humidity)
   const conductance = stomatalConductance(leaf, env)
+  const pore = poreOpening(leaf, env)
 
-  // Stomata throttle how much CO₂ reaches the chloroplasts.
-  let ciPpm = co2Ppm * (0.45 + 0.55 * conductance)
+  // Stomata throttle how much CO₂ reaches the chloroplasts. Cᵢ/Cₐ runs from
+  // about 0.7 for a well-watered C3 leaf with its stomata open down toward
+  // the compensation point when they are shut; the floor is the leak through
+  // the cuticle and the CO₂ the leaf's own respiration hands back. The
+  // earlier `0.45 + 0.55·conductance` let a shut leaf keep nearly half its
+  // carbon supply, which made closing the hatches almost free — and a trade
+  // with a free side is not a trade.
+  let ciPpm = co2Ppm * (0.15 + 0.6 * pore)
   // A CAM plant works from the acid it banked overnight, so the CO₂ in today's
   // air barely matters to it — a genuinely surprising, checkable prediction.
   if (leaf.pathway === 'CAM') ciPpm = Math.max(ciPpm, 780)

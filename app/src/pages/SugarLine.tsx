@@ -82,9 +82,25 @@ import Welcome from '@/components/sugar/hud/Welcome'
 import DemoOverlay from '@/components/sugar/hud/DemoOverlay'
 import Reveal from '@/components/sugar/hud/Reveal'
 import { defaultViewFor, VIEW_BY_ID, viewsForStage } from '@/components/sugar/views'
-import { ChallengeBar, ChallengeBrief, GatherHud, ScoreCard } from '@/components/sugar/hud/Challenge'
+import {
+  ChallengeBrief,
+  GatherHud,
+  Handover,
+  ScoreCard,
+  TargetGauge,
+  metricPhrase,
+  playChallengeFor,
+  shortfall,
+} from '@/components/sugar/hud/Challenge'
+import { DayHud, DayTallyBlock, HatchPlate, type HatchState } from '@/components/sugar/hud/Hatches'
+import { buildDay, dayTally, endDay, startDay, weatherAt, type DayRun, type DayTally, type Weather } from '@/lib/hatches'
+import { cactusDay, safestCeiling } from '@/lib/hatchesReplay'
+import { poreOpening, stomatalGates } from '@/lib/ratelab'
+import { CONDITIONS, dayMetricValue, dayWorldOf, levelForBand, presetIdFor, stageOfPresetId } from '@/lib/sugarchallenge'
+import { CAMPAIGN_BY_ID, isStageOpen, recordHandIn, type CampaignStage } from '@/lib/campaign'
+import { soloChallenge } from '@/components/sugar/hud/Challenge'
 import { useSugarChallenge } from '@/hooks/use-sugar-challenge'
-import { decodeChallenge, type Challenge } from '@/lib/challenge'
+import { challengeId as challengeIdOf, decodeChallenge, type Challenge } from '@/lib/challenge'
 import { CO2_AMBIENT_PPM, CO2_MAX_PPM, PAR_FULL_SUN } from '@/lib/ratelab'
 import {
   BASE_SOIL_WATER,
@@ -170,16 +186,24 @@ function ClockChip({ hours, rate }: { hours: number; rate: number }) {
  * want it. Anyone who never presses this never meets a timer, a budget or a
  * score, and the cabinet behaves exactly as it did before the feature existed.
  */
-function ChallengeChip({ onClick }: { onClick: () => void }) {
+function ChallengeChip({ onClick, invite = false }: { onClick: () => void; invite?: boolean }) {
   return (
     <button
       onClick={onClick}
-      className="atlas-chip pointer-events-auto shrink-0 border-[#C8DFC2] bg-[#E7F1E3] font-extrabold text-[#2F6134] transition-all hover:scale-[1.04] hover:bg-[#DCEBD6] active:scale-95"
+      className={cn(
+        'atlas-chip pointer-events-auto shrink-0 border-[#C8DFC2] bg-[#E7F1E3] font-extrabold text-[#2F6134] transition-all hover:scale-[1.04] hover:bg-[#DCEBD6] active:scale-95',
+        invite && 'atlas-invite',
+      )}
     >
       <Swords className="h-3 w-3" />
       Challenge
     </button>
   )
+}
+
+/** Capitalise the first letter of a coach line. */
+function cap(str: string): string {
+  return str.charAt(0).toUpperCase() + str.slice(1)
 }
 
 /* ------------------------------------------------------------------ */
@@ -244,8 +268,29 @@ export default function SugarLine() {
   /** The last catch, purely so the gather HUD can flash. */
   const [caught, setCaught] = useState<{ kind: SugarResource; n: number } | null>(null)
   const catchCount = useRef(0)
-  const gathering = run.phase === 'gather'
-  const inChallenge = run.phase === 'gather' || run.phase === 'lab'
+  const keep = run.challenge?.loop === 'keep'
+  /** The collector is live through the get-ready beat and the round itself. */
+  const gathering = !keep && (run.phase === 'ready' || run.phase === 'gather')
+  const inLab = run.phase === 'lab'
+  /** A keep round's day: the countdown and the day itself. */
+  const inDay = keep && (run.phase === 'ready' || run.phase === 'day')
+  const inChallenge = gathering || run.phase === 'handover' || inLab || inDay
+  /* ---- the Hatches' day, mirrored for the HUD ---- */
+  const [dayRun, setDayRun] = useState<DayRun | null>(null)
+  const [dayWeather, setDayWeather] = useState<Weather | null>(null)
+  const [hatchState, setHatchState] = useState<HatchState>({ ceiling: 1, pore: 0, plant: 0, turgor: 1 })
+  /** The replay's answers for the tally card, computed once at the end of a day. */
+  const [dayExtras, setDayExtras] = useState<{
+    safest: { ceiling: number; sugarMg: number } | null
+    cactus: DayTally | null
+  }>({ safest: null, cactus: null })
+  /**
+   * The goal metric at the last two trials, for the gauge and the result
+   * card. Kept here rather than derived from `readings`, because the metric a
+   * challenge targets need not be the instrument the learner has selected.
+   */
+  const [goalLast, setGoalLast] = useState<number | null>(null)
+  const [goalPrev, setGoalPrev] = useState<number | null>(null)
   /**
    * The interval below is keyed on [sim, caps, band] and everything else it
    * reads is a stale closure — the same trap `predictionRef` and `readingsRef`
@@ -254,6 +299,13 @@ export default function SugarLine() {
    */
   const runRef = useRef(run)
   runRef.current = run
+  const goalLastRef = useRef<number | null>(null)
+
+  /** Whether the learner has opened a challenge this visit — the invite stops once they have. */
+  const challengeSeen = useRef(false)
+  useEffect(() => {
+    if (run.phase !== 'off') challengeSeen.current = true
+  }, [run.phase])
 
   const nextId = useRef(1)
   const lastCompleted = useRef(0)
@@ -305,6 +357,47 @@ export default function SugarLine() {
         Math.abs(prev.soilWater - sim.soilWater) > 0.004 ? { ...prev, soilWater: sim.soilWater } : prev,
       )
 
+      /* -- the day, if one is running -- */
+      {
+        const r = runRef.current
+        const d = sim.day
+        if (d || sim.stage === 'hatches') {
+          const sp = SPECIMEN_BY_ID[sim.specimenId] ?? specimen
+          const env = simEnv(sim)
+          setHatchState({
+            ceiling: sim.hatch,
+            pore: poreOpening(sp.leaf, env),
+            plant: stomatalGates(sp.leaf, env).plant,
+            turgor: sim.turgor,
+          })
+        }
+        if (d) {
+          setDayWeather(weatherAt(d.spec, d.hour))
+          // A fresh object each tick so React sees the change; the run
+          // itself is mutated in place by the sim.
+          setDayRun({ ...d })
+          if (d.done && r.phase === 'day' && r.challenge) {
+            const tally = dayTally(d, sim.turgor)
+            const cond = r.challenge.condition ? CONDITIONS[r.challenge.condition] : null
+            const world = dayWorldOf(r.challenge)
+            const safe = safestCeiling(sim.specimenId, d.spec)
+            setDayExtras({
+              safest: safe ? { ceiling: safe.ceiling, sugarMg: safe.tally.sugarMg } : null,
+              cactus: world.habitat === 'desert' && sim.specimenId !== 'opuntia' ? cactusDay(d.spec.seed, world.hours) : null,
+            })
+            endDay(sim)
+            // Hand the dials back at a sane afternoon, not the dusk the day ended on.
+            sim.night = false
+            sim.light = 0.6
+            sim.humidity = 0.55
+            sim.tempC = 24
+            sim.paused = false
+            setConditions((prev) => ({ ...prev, light: 0.6, night: false, soilWater: sim.soilWater }))
+            r.finishDay(tally, dayMetricValue(tally, r.challenge.goal.metric), cond ? cond.met(tally) : true, tally.waterMl)
+          }
+        }
+      }
+
       if (sim.trialCompleted !== lastCompleted.current) {
         lastCompleted.current = sim.trialCompleted
         const snap = sim.trialSnapshot
@@ -332,7 +425,11 @@ export default function SugarLine() {
                 night: false,
               }),
             )
-            r.offer(metricValue(simSolve(sim), r.challenge.goal.metric))
+            const v = metricValue(simSolve(sim), r.challenge.goal.metric)
+            r.offer(v)
+            setGoalPrev(goalLastRef.current)
+            setGoalLast(v)
+            goalLastRef.current = v
           }
           // The one moment the graph is worth interrupting for. Suppressed
           // during the demo, which drives the real handlers and would
@@ -448,9 +545,11 @@ export default function SugarLine() {
     if (!inChallenge) return null
     // The grant, not the balance — see `capsFor`. During the gather round the
     // grant is not settled yet, and the lab is not on screen anyway.
-    const c = capsFor(run.phase === 'lab' ? run.granted : run.bank)
+    const c = capsFor(run.phase === 'lab' || run.phase === 'handover' ? run.granted : run.bank)
     return { light: c.light, co2: co2DialFor(c.co2ppm), soilWater: c.water }
   }, [inChallenge, run.phase, run.granted, run.bank])
+  /** The same ceilings in the dials' own units, drawn on the dials themselves. */
+  const dialCeilings = useMemo(() => (inLab ? capsFor(run.granted) : null), [inLab, run.granted])
   const dialCapsRef = useRef(dialCaps)
   dialCapsRef.current = dialCaps
 
@@ -467,14 +566,16 @@ export default function SugarLine() {
       best: run.best,
       hit: run.hit,
       secondsLeft: run.secondsLeft,
+      readyLeft: run.readyLeft,
       score: run.score,
       challenge: run.challenge,
       caps: dialCaps,
+      goalLast,
     })
     return () => {
       delete w.__sugarRun
     }
-  }, [run, dialCaps])
+  }, [run, dialCaps, goalLast])
 
   const patchConditions = useCallback(
     (patch: Partial<Conditions>) => {
@@ -795,6 +896,9 @@ export default function SugarLine() {
       abortTrial()
       setPrediction(null)
       setReveal(null)
+      setGoalLast(null)
+      setGoalPrev(null)
+      goalLastRef.current = null
       if (SPECIMEN_BY_ID[c.setup]) {
         loadSpecimen(sim, c.setup)
         setSpecimenId(c.setup)
@@ -815,10 +919,109 @@ export default function SugarLine() {
         night: false,
         girdled: false,
       }))
-      if (sim.stage !== 'plant') handleStage('plant')
+      if (c.loop === 'keep') {
+        // A day is played on the stoma; the weather script sets the sky.
+        sim.hatch = 1
+        sim.paused = false
+        if (sim.stage !== 'hatches') handleStage('hatches')
+      } else if (sim.stage !== 'plant') handleStage('plant')
       run.begin(c)
     },
     [sim, abortTrial, handleStage, run],
+  )
+
+  /**
+   * The front door.
+   *
+   * An Explorer goes straight from the card into the countdown, with the
+   * band's own level already chosen: the brief was a wall of text between a
+   * ten-year-old and the game, and Ploob says the target over the countdown
+   * while the gauge shows it the instant the lab opens. A Scientist or an
+   * Analyst gets the brief, because the tolerance, the room code and the
+   * choice of challenge live there and choosing is part of the work at those
+   * ages.
+   */
+  const handlePlay = useCallback(
+    (stage?: CampaignStage) => {
+      sim.started = true
+      setStarted(true)
+      startNarration()
+      const stageId = stage?.id === 2 ? 2 : 1
+      if (band === 'explorer') beginChallenge(stage ? soloChallenge(levelForBand(band, stageId)) : playChallengeFor(band))
+      else run.open(null, stageId)
+    },
+    [sim, band, beginChallenge, run],
+  )
+
+  /** A hand-in walks the learner through a door. Recorded once per scoring. */
+  const scoredFor = useRef<string | null>(null)
+  const [doorOpened, setDoorOpened] = useState<CampaignStage | null>(null)
+  useEffect(() => {
+    if (run.phase !== 'scored' || !run.challenge || !run.score) return
+    const key = `${challengeIdOf(run.challenge)}:${run.trials}:${run.score.total}`
+    if (scoredFor.current === key) return
+    scoredFor.current = key
+    const presetId = presetIdFor(run.challenge)
+    if (!presetId) return
+    const stage = stageOfPresetId(presetId)
+    const opened = recordHandIn(presetId, stage, run.score.total)
+    setDoorOpened(opened && stage ? (CAMPAIGN_BY_ID[stage + 1] ?? null) : null)
+    logEvent('photosynthesis', getBand(), 'challenge.handedIn', {
+      presetId,
+      stage: stage ?? null,
+      score: run.score.total,
+      hit: run.score.hit,
+    })
+  }, [run.phase, run.challenge, run.score, run.trials])
+
+  /**
+   * The day starts the moment the countdown ends. The hook owns the phase;
+   * the page owns the sim, so this is where the two meet. The stage flies to
+   * the stoma, the specimen is the challenge's, and the weather is the
+   * seed's.
+   */
+  useEffect(() => {
+    if (run.phase !== 'day' || !run.challenge || sim.day) return
+    const world = dayWorldOf(run.challenge)
+    const spec = buildDay(run.challenge.seed, world.habitat, world.hours)
+    startDay(sim, spec, 1)
+    setDayRun({ ...sim.day! })
+    setDayWeather(weatherAt(spec, spec.from))
+    setHatchState((h) => ({ ...h, ceiling: 1, turgor: 1 }))
+    setDayExtras({ safest: null, cactus: null })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run.phase, run.challenge])
+
+  // Leaving a challenge mid-day hands the sim its dials back.
+  useEffect(() => {
+    if (run.phase === 'off' && sim.day) {
+      endDay(sim)
+      sim.night = false
+      sim.paused = false
+      setDayRun(null)
+    }
+  }, [run.phase, sim])
+
+  const handleHatch = useCallback(
+    (ceiling: number) => {
+      sim.hatch = Math.max(0, Math.min(1, ceiling))
+      setHatchState((h) => ({ ...h, ceiling: sim.hatch }))
+    },
+    [sim],
+  )
+  /** An Explorer's finger on the thumb holds the day; older bands' days do not wait. */
+  const handleHold = useCallback(
+    (held: boolean) => {
+      // Letting go always resumes; only an Explorer's hold pauses, and only
+      // while the day is actually running.
+      if (!held) {
+        sim.paused = false
+        return
+      }
+      if (band !== 'explorer' || !sim.day || sim.day.done) return
+      sim.paused = true
+    },
+    [sim, band],
   )
 
   const handleCatch = useCallback(
@@ -944,7 +1147,7 @@ export default function SugarLine() {
     useCallback(
       (a) => {
         if (a.type === 'tab' && !compact) {
-          const order: StageId[] = ['plant', 'leaf', 'stem']
+          const order: StageId[] = ['plant', 'leaf', 'hatches', 'stem']
           const i = order.indexOf(stage)
           handleStage(order[(i + a.dir + order.length) % order.length])
         }
@@ -980,10 +1183,49 @@ export default function SugarLine() {
   /** The control the active step is pointing at, or null. */
   const highlight = active?.step?.target ?? null
 
+  /**
+   * Why the last challenge reading landed where it did, in one sentence:
+   * which dials are at their ceiling (that is what you caught) and which
+   * still have room. Shared by the coach and the result card so they cannot
+   * disagree.
+   */
+  const ceilingWhy = useMemo(() => {
+    if (!dialCeilings || !run.challenge) return null
+    const atCap: string[] = []
+    const room: string[] = []
+    const nearly = (v: number, cap: number) => v >= cap - 0.02
+    if (conditions.night) atCap.push('the sun is off')
+    else (nearly(conditions.light, dialCeilings.light) ? atCap : room).push('light')
+    ;(nearly(conditions.co2, co2DialFor(dialCeilings.co2ppm)) ? atCap : room).push('carbon')
+    ;(nearly(conditions.soilWater, dialCeilings.water) ? atCap : room).push('water')
+    const list = (xs: string[]) => xs.join(xs.length === 3 ? ', ' : ' and ')
+    const hit = run.hit
+    if (hit) {
+      return room.length
+        ? `You hit it with ${list(room)} still in hand. Hand it in, or spend what is left on a cleaner reading.`
+        : 'You hit it with every dial at its ceiling. Hand it in.'
+    }
+    if (atCap.length && room.length)
+      return `${cap(list(atCap))} ${atCap.length === 1 && !conditions.night ? 'is' : 'are'} at the ceiling — that is what you caught. ${cap(list(room))} ${room.length === 1 ? 'is not' : 'are not'}. Turn ${room.length === 1 ? 'it' : 'them'} up and run again.`
+    if (atCap.length && !room.length)
+      return 'Every dial is at its ceiling. Temperature is still free — or go back and gather more.'
+    return `Nothing is at its ceiling yet. Turn ${list(room)} up and run again.`
+  }, [dialCeilings, run.challenge, run.hit, conditions])
+
   /** One line naming the single next action. */
   const coach = useMemo(() => {
     if (!started) return null
     if (demoStep >= 0) return null
+    // Inside a challenge the coach follows the run, not the missions: the
+    // chip is the one voice the learner is trained to look for, and a round
+    // with nobody talking in it was the whole feature's worst fault.
+    if (run.phase === 'lab' && run.challenge) {
+      const target = `Target: ${run.challenge.goal.target} ${run.challenge.goal.unit} · ${metricPhrase(run.challenge.goal.metric)}`
+      if (trialRunning) return { text: 'Measuring…', hint: target }
+      if (run.trials === 0)
+        return { text: 'Set the dials, then press Run measurement.', hint: target }
+      return { text: ceilingWhy ?? 'Run again.', hint: target }
+    }
     // A mission the learner has taken on outranks everything except surgery
     // and a running stopwatch, both of which are time-critical.
     if (active && !conditions.girdled && !tracerActive) {
@@ -1010,11 +1252,16 @@ export default function SugarLine() {
         text: 'Set the conditions, then press Run measurement.',
         hint: 'One reading is a dot. A curve needs five.',
       }
+    if (readings.length === 1 && run.phase === 'off' && !challengeSeen.current)
+      return {
+        text: 'That is your first reading. Ready for a challenge?',
+        hint: 'Press Challenge, next to the clock — the dials will only go as far as what you catch.',
+      }
     const missions = missionsForBand(band)
     const next = missions.find((m) => !m.check(readings))
     if (next) return { text: next.title, hint: next.brief }
     return { text: 'Every mission is done. Try another specimen.', hint: undefined }
-  }, [started, demoStep, active, conditions.girdled, tracerActive, tracerWatch, predictionPending, readings, band])
+  }, [started, demoStep, active, conditions.girdled, tracerActive, tracerWatch, predictionPending, readings, band, run.phase, run.challenge, run.trials, trialRunning, ceilingWhy])
 
   const stageMeta = STAGE_BY_ID[stage]
   const missionList = missionsForBand(band)
@@ -1065,6 +1312,7 @@ export default function SugarLine() {
         onNight={(on) => patchConditions({ night: on })}
       onWater={handleWater}
       embedded={compact}
+      ceilings={dialCeilings}
     />
   )
 
@@ -1211,7 +1459,7 @@ export default function SugarLine() {
           cabinet, but a `getByRole('button').first()` walks the DOM — and with
           the welcome last, "Start the line" resolved to a mission tile behind
           the overlay and every suite's opening click was intercepted. */}
-      {!started && <Welcome onStart={handleStart} onDemo={startDemo} />}
+      {!started && <Welcome onPlay={handlePlay} onStart={handleStart} onDemo={startDemo} />}
 
       {/* The gather round takes the whole screen: it is played by dragging
           across the canvas, and any panel is both in the way of the finger and
@@ -1221,6 +1469,7 @@ export default function SugarLine() {
           {/* One strip that scrolls sideways rather than a wrapping row: on a
               390 px phone the chips wrapped onto a second line and the stage
               tabs sat straight on top of them. */}
+          {!inDay && (
           <div
             className={`pointer-events-auto absolute top-3 right-0 left-0 flex items-center gap-2 overflow-x-auto px-3 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
               demoStep >= 0 ? 'pointer-events-none opacity-70' : ''
@@ -1230,17 +1479,40 @@ export default function SugarLine() {
             <BandSwitch />
             <ClockChip hours={plantHours} rate={clockRate} />
             <ProgressChip compact />
-            {!inChallenge && <ChallengeChip onClick={() => run.open(null)} />}
+            {!inChallenge && (
+              <ChallengeChip invite={readings.length > 0 && !challengeSeen.current} onClick={() => run.open(null)} />
+            )}
           </div>
+          )}
 
+          {!inDay && (
           <div className="absolute top-[4.4rem] right-3 left-3 flex flex-col items-stretch gap-2">
-            <StageTabs aim={highlight} stage={stage} onStage={handleStage} compact />
+            {/* During a challenge the gauge takes the stage tabs' strip. A
+                deliberate trade: the target and the reading must never be
+                behind a tab, and the round is played on the whole-plant stage. */}
+            {inLab && run.challenge ? (
+              <TargetGauge
+                challenge={run.challenge}
+                bank={run.bank}
+                best={run.best}
+                last={goalLast}
+                hit={run.hit}
+                trials={run.trials}
+                affordable={affordable}
+                compact
+                onFinish={run.finish}
+                onQuit={run.close}
+              />
+            ) : (
+              <StageTabs aim={highlight} stage={stage} onStage={handleStage} compact />
+            )}
             <div className="flex justify-end">{rail}</div>
           </div>
+          )}
 
           {/* A hint, not a rotate button — see RotateHint for why one cannot be
               built honestly. Only once, only on a phone, only in portrait. */}
-          {started && demoStep < 0 && <RotateHint />}
+          {started && demoStep < 0 && !inChallenge && <RotateHint />}
 
           {/* The scale bar and the coach chip live in the strip the sheet
               covers when it opens, so they ride up on top of it. Without this
@@ -1253,6 +1525,7 @@ export default function SugarLine() {
             <ScaleBar label={stageMeta.scale.label} />
           </div>
 
+          {!inDay && (
           <HudDrawer
             muted={demoStep >= 0}
             onObstructHeight={setSheetPx}
@@ -1289,8 +1562,9 @@ export default function SugarLine() {
               },
             ]}
           />
+          )}
 
-          {coach && !reveal && !inChallenge && (
+          {coach && !reveal && !gathering && !inDay && run.phase !== 'handover' && (
             <div
               className="pointer-events-none absolute inset-x-0 flex justify-center px-3 transition-[bottom] duration-200"
               style={{ bottom: `calc(4.2rem + ${sheetPx}px)` }}
@@ -1316,7 +1590,9 @@ export default function SugarLine() {
             <div className="pointer-events-auto flex flex-wrap items-center gap-2">
               <ClockChip hours={plantHours} rate={clockRate} />
               <ProgressChip compact />
-              {!inChallenge && <ChallengeChip onClick={() => run.open(null)} />}
+              {!inChallenge && (
+              <ChallengeChip invite={readings.length > 0 && !challengeSeen.current} onClick={() => run.open(null)} />
+            )}
             </div>
             <div className="pointer-events-auto min-h-0 flex-1 overflow-y-auto pr-1">
               <div className="flex flex-col gap-2">
@@ -1330,15 +1606,32 @@ export default function SugarLine() {
                   onGirdle={(on) => patchConditions({ girdled: on })}
                   onNight={(on) => patchConditions({ night: on })}
                   onWater={handleWater}
+                  ceilings={dialCeilings}
                 />
               </div>
             </div>
           </div>
 
-          {/* Top centre: the three stages, then the tool rail. */}
+          {/* Top centre: the three stages, then the tool rail — or, inside a
+              challenge, the target gauge in the stages' place. */}
           <div className="pointer-events-none absolute top-4 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2">
             <div className="pointer-events-auto">
-              <StageTabs aim={highlight} stage={stage} onStage={handleStage} />
+              {inLab && run.challenge ? (
+                <TargetGauge
+                  challenge={run.challenge}
+                  bank={run.bank}
+                  best={run.best}
+                  last={goalLast}
+                  hit={run.hit}
+                  trials={run.trials}
+                  affordable={affordable}
+                  compact={false}
+                  onFinish={run.finish}
+                  onQuit={run.close}
+                />
+              ) : (
+                <StageTabs aim={highlight} stage={stage} onStage={handleStage} />
+              )}
             </div>
             <div className="pointer-events-auto">{rail}</div>
             <p className="atlas-serif max-w-[26rem] text-center text-[11.5px] leading-snug text-[#8B8471] italic">
@@ -1415,7 +1708,7 @@ export default function SugarLine() {
             <ScaleBar label={stageMeta.scale.label} />
           </div>
 
-          {coach && !reveal && !inChallenge && (
+          {coach && !reveal && !gathering && !inDay && run.phase !== 'handover' && (
             <div className="pointer-events-none absolute inset-x-0 bottom-5 flex justify-center px-4">
               <Coach text={coach.text} hint={coach.hint} />
             </div>
@@ -1438,6 +1731,25 @@ export default function SugarLine() {
             reading={reveal}
             readings={readings}
             compact={compact}
+            challenge={
+              inLab && run.challenge && goalLast !== null
+                ? {
+                    value: goalLast,
+                    unit: run.challenge.goal.unit,
+                    target: run.challenge.goal.target,
+                    phrase: metricPhrase(run.challenge.goal.metric),
+                    hit: shortfall(run.challenge, goalLast).hit,
+                    gap: shortfall(run.challenge, goalLast).text,
+                    previous: goalPrev,
+                    why: ceilingWhy ?? '',
+                    trials: run.trials,
+                    onHandIn: () => {
+                      setReveal(null)
+                      run.finish()
+                    },
+                  }
+                : null
+            }
             onClose={() => setReveal(null)}
             onSeeData={() => {
               setReveal(null)
@@ -1493,15 +1805,18 @@ export default function SugarLine() {
           band={band}
           incoming={incoming}
           rival={run.rival}
+          stage={run.stage}
           onBegin={beginChallenge}
           onClose={run.close}
         />
       )}
 
-      {!stereo.on && run.phase === 'gather' && run.challenge && (
+      {!stereo.on && gathering && run.challenge && (
         <GatherHud
           secondsLeft={run.secondsLeft}
           total={run.challenge.gatherSeconds}
+          readyLeft={run.readyLeft}
+          ready={run.phase === 'ready'}
           bank={run.bank}
           budget={run.challenge.budget}
           caught={caught}
@@ -1509,20 +1824,40 @@ export default function SugarLine() {
         />
       )}
 
-      {!stereo.on && run.phase === 'lab' && run.challenge && !reveal && (
-        <ChallengeBar
-          challenge={run.challenge}
-          bank={run.bank}
-          ceiling={capsFor(run.granted)}
-          best={run.best}
-          hit={run.hit}
-          trials={run.trials}
-          affordable={affordable}
-          compact={compact}
-          bottomPx={sheetPx}
-          onFinish={run.finish}
-          onQuit={run.close}
-        />
+      {!stereo.on && run.phase === 'handover' && run.challenge && (
+        <Handover challenge={run.challenge} granted={run.granted} onEnter={run.enterLab} />
+      )}
+
+      {/* ---- the Hatches' day ---- */}
+      {!stereo.on && inDay && run.challenge && (
+        <>
+          <DayHud
+            challenge={run.challenge}
+            run={dayRun}
+            weather={dayWeather}
+            hatch={hatchState}
+            ready={run.phase === 'ready'}
+            readyLeft={run.readyLeft}
+            band={band}
+            compact={compact}
+            onQuit={run.close}
+          />
+          <div
+            className={cn(
+              'pointer-events-none fixed inset-x-0 z-30 flex justify-center px-3',
+              compact ? 'bottom-3' : 'bottom-5',
+            )}
+          >
+            <HatchPlate
+              hatch={hatchState}
+              wilted={hatchState.turgor < 0.35}
+              canHold={band === 'explorer'}
+              onChange={handleHatch}
+              onHold={handleHold}
+              compact={compact}
+            />
+          </div>
+        </>
       )}
 
       {!stereo.on && run.phase === 'scored' && run.challenge && run.score && (
@@ -1535,6 +1870,23 @@ export default function SugarLine() {
           rival={run.rival}
           onAgain={() => beginChallenge(run.challenge!)}
           onClose={run.close}
+          opened={doorOpened}
+          onNext={() => {
+            const next = doorOpened
+            if (!next || !isStageOpen(next.id)) return
+            setDoorOpened(null)
+            const stageId = next.id === 2 ? 2 : 1
+            if (band === 'explorer') beginChallenge(soloChallenge(levelForBand(band, stageId)))
+            else {
+              run.close()
+              run.open(null, stageId)
+            }
+          }}
+          tally={
+            run.tally ? (
+              <DayTallyBlock challenge={run.challenge} tally={run.tally} safest={dayExtras.safest} cactus={dayExtras.cactus} />
+            ) : null
+          }
         />
       )}
 

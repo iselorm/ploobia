@@ -29,6 +29,8 @@ import { CO2_AMBIENT_PPM, CO2_MAX_PPM, PAR_FULL_SUN } from './ratelab'
 import { MEASURES, type MeasureId, type SugarSolve } from './sugarline'
 import type { Challenge, ResourceBudget } from './challenge'
 import type { Band } from './bands'
+import type { BiomeId } from './leaves'
+import type { DayTally } from './hatches'
 
 /** The three things a plant is ever short of, in the units the cabinet shows. */
 export type SugarResource = 'light' | 'co2' | 'water'
@@ -173,12 +175,42 @@ export function metricValue(solve: SugarSolve, metric: string): number {
   return m ? m.read(solve) : 0
 }
 
+/**
+ * The day's metrics, read off a finished (or running) day rather than a
+ * solve. `sugarDay` is the whole-plant production integrated over the run —
+ * the same mg h⁻¹ the plant stage shows, summed; `mgPerMl` is that over the
+ * water the stomata let out. Both are on the day HUD the whole time.
+ */
+export const DAY_METRICS: Record<string, { label: string; unit: string; read: (t: DayTally) => number }> = {
+  sugarDay: { label: 'Sugar banked', unit: 'mg', read: (t) => t.sugarMg },
+  mgPerMl: { label: 'Sugar per water', unit: 'mg mL⁻¹', read: (t) => t.mgPerMl },
+}
+
+export function dayMetricValue(tally: DayTally, metric: string): number {
+  return DAY_METRICS[metric]?.read(tally) ?? 0
+}
+
 export function metricUnit(metric: string): string {
-  return MEASURES[metric as MeasureId]?.unit ?? ''
+  return MEASURES[metric as MeasureId]?.unit ?? DAY_METRICS[metric]?.unit ?? ''
 }
 
 export function metricLabel(metric: string): string {
-  return MEASURES[metric as MeasureId]?.label ?? metric
+  return MEASURES[metric as MeasureId]?.label ?? DAY_METRICS[metric]?.label ?? metric
+}
+
+/** The day a keep-round challenge asks for, read off its `world` ("desert:24"). */
+export function dayWorldOf(c: Challenge): { habitat: BiomeId; hours: number } {
+  const [h, n] = (c.world ?? '').split(':')
+  const habitat = (['rainforest', 'temperate', 'savanna', 'desert', 'boreal'] as BiomeId[]).includes(h as BiomeId)
+    ? (h as BiomeId)
+    : 'temperate'
+  const hours = Number(n)
+  return { habitat, hours: Number.isFinite(hours) && hours > 0 ? hours : 12 }
+}
+
+/** The one condition a Sugar Line challenge can ask for, in the learner's words. */
+export const CONDITIONS: Record<string, { label: string; met: (t: DayTally) => boolean }> = {
+  leafFirm: { label: 'leaf firm at the end', met: (t) => t.leafFirm },
 }
 
 /* ------------------------------------------------------------------ */
@@ -191,8 +223,25 @@ export interface SugarChallengePreset {
   /** The brief, in the learner's language. */
   brief: string
   band: Band
+  /**
+   * Where this sits on the campaign map, when it does. Stage 1 is the leaf —
+   * *The Factory* — and its three levels are the three bands, so a learner's
+   * band picks their level and the stage is never built three times. Presets
+   * with no level are the extra briefs offered under "other challenges".
+   */
+  stage?: 1 | 2
+  level?: 1 | 2 | 3
   build: (seed: number) => Challenge
+  /**
+   * For a `keep` round: how the day is scripted. The habitat the weather
+   * comes from, and how many plant hours it runs (12 = dawn to dusk; 24 = a
+   * day and the night after). Absent for a gather round.
+   */
+  day?: { habitat: BiomeId; hours: number }
 }
+
+/** The campaign stage a preset belongs to, for the brief's eyebrow. */
+export const STAGE_NAMES: Record<1 | 2, string> = { 1: 'The Factory', 2: 'The Hatches' }
 
 const CABINET = 'photosynthesis'
 
@@ -224,6 +273,8 @@ export const SUGAR_CHALLENGES: SugarChallengePreset[] = [
     brief:
       'Gather what you can, then get sugar leaving the leaf at 10 mg per hour or better. Light is the obvious lever — check whether it is the only one.',
     band: 'explorer',
+    stage: 1,
+    level: 1,
     build: (seed) =>
       make({
         seed,
@@ -235,10 +286,12 @@ export const SUGAR_CHALLENGES: SugarChallengePreset[] = [
   },
   {
     id: 'land-it',
-    title: 'Land it exactly',
+    title: 'Find the ceiling',
     brief:
-      'Hit 12.0 mg per hour, give or take 0.4. You cannot get there by turning everything up — you have to know which dial moves it and by how much.',
+      'Land 12.0 mg per hour, give or take 0.4. Turning everything up overshoots — you have to know which dial moves it and by how much, and watch the light curve flatten as you go.',
     band: 'scientist',
+    stage: 1,
+    level: 2,
     build: (seed) =>
       make({
         seed,
@@ -247,6 +300,91 @@ export const SUGAR_CHALLENGES: SugarChallengePreset[] = [
         budget: { light: 1500, co2: 350, water: 40 },
       }),
   },
+  {
+    id: 'balance-books',
+    title: 'Balance the books',
+    brief:
+      'Land net carbon gain within 0.5 of 12 mg per hour. The plant burns sugar all day and all night — respiration doubles for every 10 °C — so the books only balance in its favour where production outruns the burn.',
+    band: 'analyst',
+    stage: 1,
+    level: 3,
+    build: (seed) =>
+      make({
+        seed,
+        band: 'analyst',
+        gatherSeconds: 40,
+        goal: { metric: 'gain', direction: 'near', target: 12, tolerance: 0.5, unit: 'mg h⁻¹' },
+        budget: { light: 1500, co2: 350, water: 40 },
+      }),
+  },
+  /* ---- Stage 2 · The Hatches — keep it alive --------------------------- */
+  {
+    id: 'open-the-hatches',
+    title: 'Open the hatches',
+    brief:
+      'A whole day plays out in ninety seconds. Hold one slider — how far the hatches may open. Open, and carbon comes in and sugar gets made; but water leaves the same way, and a leaf that runs dry goes limp and stops. Bank 100 mg by dusk with the leaf still firm.',
+    band: 'explorer',
+    stage: 2,
+    level: 1,
+    day: { habitat: 'temperate', hours: 12 },
+    build: (seed) =>
+      make({
+        seed,
+        band: 'explorer',
+        loop: 'keep',
+        condition: 'leafFirm',
+        gatherSeconds: 0,
+        world: 'temperate:12',
+        goal: { metric: 'sugarDay', direction: 'atLeast', target: 100, tolerance: 2, unit: 'mg' },
+        // The water on offer: what a wide-open leaf would lose on this day.
+        // Thrift is measured against it, and set per seed in `dayBudget`.
+        budget: { water: 66 },
+      }),
+  },
+  {
+    id: 'harmattan',
+    title: 'The Harmattan',
+    brief:
+      'Maize, in the savanna, on a Harmattan day: the air is bone dry from mid-morning and the pot is all the water there is. Bank 730 mg by dusk and keep the leaf firm — the dry air has a name now (vapour-pressure deficit), and the plant will close its own hatches before you do.',
+    band: 'scientist',
+    stage: 2,
+    level: 2,
+    day: { habitat: 'savanna', hours: 12 },
+    build: (seed) =>
+      make({
+        seed,
+        setup: 'maize',
+        band: 'scientist',
+        loop: 'keep',
+        condition: 'leafFirm',
+        gatherSeconds: 0,
+        world: 'savanna:12',
+        goal: { metric: 'sugarDay', direction: 'atLeast', target: 730, tolerance: 5, unit: 'mg' },
+        budget: { water: 150 },
+      }),
+  },
+  {
+    id: 'desert-night',
+    title: 'Night shift, cactus rules',
+    brief:
+      'A bean in a hot desert for a day and the night after. Keep it standing and bank 30 mg — then look at what the prickly pear did with the same day. It opens its hatches only at night, when the air has stopped pulling; the bean cannot. Say why that matters, in two lines, on the numbers.',
+    band: 'analyst',
+    stage: 2,
+    level: 3,
+    day: { habitat: 'desert', hours: 24 },
+    build: (seed) =>
+      make({
+        seed,
+        band: 'analyst',
+        loop: 'keep',
+        condition: 'leafFirm',
+        gatherSeconds: 0,
+        world: 'desert:24',
+        goal: { metric: 'sugarDay', direction: 'atLeast', target: 30, tolerance: 1, unit: 'mg' },
+        budget: { water: 99 },
+      }),
+  },
+
   {
     id: 'thin-air',
     title: 'Thin air',
@@ -317,6 +455,66 @@ export function challengesForBand(band: Band): SugarChallengePreset[] {
   const order: Band[] = ['explorer', 'scientist', 'analyst']
   const ceiling = order.indexOf(band)
   return SUGAR_CHALLENGES.filter((c) => order.indexOf(c.band) <= ceiling)
+}
+
+/**
+ * The one brief the band's *Play* door opens on.
+ *
+ * The stage-1 level for the band — this is what makes "Play" a single tap:
+ * an Explorer never sees a list, and a Scientist sees their own level chosen
+ * with the rest one link away. Falls back to the easiest thing offered so a
+ * band with no level of its own still has a door.
+ */
+export function levelForBand(band: Band, stage: 1 | 2 = 1): SugarChallengePreset {
+  const offered = challengesForBand(band)
+  return (
+    offered.find((c) => c.stage === stage && c.band === band) ??
+    offered.find((c) => c.stage === stage) ??
+    offered.find((c) => c.stage === 1 && c.band === band) ??
+    offered[0]
+  )
+}
+
+/**
+ * Which preset a challenge is — for the campaign map, which keys progress by
+ * preset id. A challenge that arrived by link does not carry its id, so it
+ * is matched on the things a preset fixes: the plant, the goal, the loop and
+ * the world. Two presets never share all four.
+ */
+export function presetIdFor(c: Challenge): string | undefined {
+  return SUGAR_CHALLENGES.find((p) => {
+    const b = p.build(c.seed)
+    return (
+      b.setup === c.setup &&
+      b.goal.metric === c.goal.metric &&
+      b.goal.direction === c.goal.direction &&
+      b.goal.target === c.goal.target &&
+      (b.loop ?? 'gather') === (c.loop ?? 'gather') &&
+      (b.world ?? '') === (c.world ?? '') &&
+      b.gatherSeconds === c.gatherSeconds &&
+      // Two briefs can share a goal and differ only in what they offer —
+      // First light and The dry week are the same target on a wet and a dry
+      // budget — so the budget is part of the match.
+      sameBudget(b.budget, c.budget)
+    )
+  })?.id
+}
+
+/** Key order is not part of a budget — a link writes them sorted. */
+function sameBudget(a: ResourceBudget, b: ResourceBudget): boolean {
+  const ka = Object.keys(a).sort()
+  const kb = Object.keys(b).sort()
+  return ka.length === kb.length && ka.every((k, i) => k === kb[i] && Math.abs(a[k] - b[k]) < 1e-6)
+}
+
+/** The campaign stage a preset sits on, or undefined for the extra briefs. */
+export function stageOfPresetId(id: string): 1 | 2 | undefined {
+  return SUGAR_CHALLENGE_BY_ID[id]?.stage
+}
+
+/** The presets of one campaign stage, in level order. */
+export function levelsOfStage(stage: 1 | 2): SugarChallengePreset[] {
+  return SUGAR_CHALLENGES.filter((c) => c.stage === stage).sort((a, b) => (a.level ?? 0) - (b.level ?? 0))
 }
 
 /* ------------------------------------------------------------------ */

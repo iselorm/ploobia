@@ -143,6 +143,16 @@ export default function GatherRound({
   const motion = useRef<Motion[]>([])
   /** The pointer's place last frame, so a sweep is a segment and not a dot. */
   const prev = useRef({ x: 0, y: 0, has: 0 })
+  /**
+   * Whether the finger has moved since the round began.
+   *
+   * A catch only counts once it has. The collector sits wherever the pointer
+   * was when the round opened — the middle of the screen, where the plant is,
+   * where things fall — so without this the first "catch" happened to a
+   * learner who had not touched anything, and it ended the get-ready beat
+   * before they had read it. A catch is meant to be a gesture.
+   */
+  const moved = useRef({ x: 0, y: 0, armed: 0, yes: 0 })
 
   /* ------------------------------------------------------------------ */
   /* Framing                                                            */
@@ -263,6 +273,18 @@ export default function GatherRound({
     const mo = motion.current
     if (mo.length !== items.length) return
 
+    if (!running) {
+      moved.current.armed = 0
+      moved.current.yes = 0
+    } else if (!moved.current.armed) {
+      moved.current.armed = 1
+      moved.current.x = px
+      moved.current.y = py
+    } else if (!moved.current.yes && Math.abs(px - moved.current.x) + Math.abs(py - moved.current.y) > 0.02) {
+      moved.current.yes = 1
+    }
+    const canCatch = running && moved.current.yes === 1
+
     // Where the finger was last frame. On the first frame of a round there is
     // no segment yet, so the test degenerates to a point — which is correct,
     // not a special case.
@@ -300,7 +322,7 @@ export default function GatherRound({
          Screen space, not world space: the learner is aiming with a finger on
          glass, so the test has to be the one their eye is making. The aspect
          correction stops the catch area being an ellipse on a wide screen. */
-      if (!running || fade < 0.4) continue
+      if (!canCatch || fade < 0.4) continue
       tmp.ndc.copy(tmp.at).project(state.camera)
       if (tmp.ndc.z > 1) continue
       if (distToSweep(tmp.ndc.x, tmp.ndc.y, lastX, lastY, px, py, aspect) < CATCH_RADIUS) {

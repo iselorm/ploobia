@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { Target, X } from 'lucide-react'
+import { Flag, Target, X } from 'lucide-react'
 import { Tile } from '@/components/ui/tile'
 import { cn } from '@/lib/utils'
 import {
@@ -32,6 +32,30 @@ import { Graph } from './DataPlate'
 
 const LINGER_MS = 9000
 
+/**
+ * What a challenge adds to the card: the reading against the target, the
+ * dial that explains the gap, and the two honest next moves. Everything
+ * else on the card is the plain lab's — the prediction, the graph — and
+ * still shows when there is one.
+ */
+export interface RevealChallenge {
+  /** The goal metric's value at this reading. */
+  value: number
+  unit: string
+  target: number
+  /** The measured thing, in the learner's words. */
+  phrase: string
+  hit: boolean
+  /** "2.2 short", "on the mark". */
+  gap: string
+  /** The previous reading of the goal metric, for "7.8 → 11.2". */
+  previous: number | null
+  /** One sentence naming why — which dial is at its ceiling, which has room. */
+  why: string
+  trials: number
+  onHandIn: () => void
+}
+
 function verdictFor(gap: number, y: number): { label: string; tone: 'good' | 'warn' | 'neutral'; line: string } {
   const relative = Math.abs(y) > 0.01 ? gap / Math.abs(y) : gap
   if (relative <= 0.06) return { label: 'Bullseye', tone: 'good', line: 'That is a real prediction, not a lucky one.' }
@@ -51,12 +75,14 @@ export default function Reveal({
   onClose,
   onSeeData,
   compact = false,
+  challenge = null,
 }: {
   reading: SugarReading
   readings: SugarReading[]
   onClose: () => void
   onSeeData: () => void
   compact?: boolean
+  challenge?: RevealChallenge | null
 }) {
   const meta = SUGAR_VARS[reading.xVar]
   const mm = MEASURES[reading.measure]
@@ -122,11 +148,53 @@ export default function Reveal({
         </Tile>
       </div>
 
+      {challenge && (
+        <div
+          data-testid="reveal-challenge"
+          className={cn(
+            'mt-2 rounded-xl border px-3 py-2',
+            challenge.hit ? 'border-[#C8DFC2] bg-[#E7F1E3]' : 'border-[#EFD9A6] bg-[#FBF0D8]',
+          )}
+        >
+          <div className="flex items-baseline justify-between gap-2">
+            <span
+              className={cn(
+                'text-[10px] font-extrabold tracking-[0.09em] uppercase',
+                challenge.hit ? 'text-[#2F6134]' : 'text-[#8A5A0B]',
+              )}
+            >
+              {challenge.phrase} · trial {challenge.trials}
+            </span>
+            <span
+              className={cn(
+                'rounded-full px-2 py-0.5 text-[10.5px] font-extrabold',
+                challenge.hit ? 'bg-[#DCEBD6] text-[#2C5C31]' : 'bg-[#F6E4C0] text-[#8A5A0B]',
+              )}
+            >
+              {challenge.hit ? '✓ ' : ''}
+              {challenge.gap}
+            </span>
+          </div>
+          <p className="atlas-serif mt-0.5 text-[17px] leading-tight font-semibold text-[#2A2823] tabular-nums">
+            {challenge.previous !== null && (
+              <span className="text-[#B9B09A]">{challenge.previous.toFixed(1)} → </span>
+            )}
+            {challenge.value.toFixed(1)}{' '}
+            <span className="text-[11px] font-bold text-[#8B8471]">
+              {challenge.unit} · target {challenge.target}
+            </span>
+          </p>
+          <p className="mt-1 text-[11px] leading-snug font-semibold text-[#5F5A4E]">{challenge.why}</p>
+        </div>
+      )}
+
       {predicted === null ? (
-        <p className="mt-1.5 text-[11.5px] leading-snug font-semibold text-[#8B8471]">
-          Recorded {reading.y.toFixed(mm.decimals)} {mm.unit}. Next time, set a prediction first — the
-          measurement is far more interesting when you have something riding on it.
-        </p>
+        !challenge && (
+          <p className="mt-1.5 text-[11.5px] leading-snug font-semibold text-[#8B8471]">
+            Recorded {reading.y.toFixed(mm.decimals)} {mm.unit}. Next time, set a prediction first —
+            the measurement is far more interesting when you have something riding on it.
+          </p>
+        )
       ) : (
         <>
           <div className="mt-2 flex items-end gap-3">
@@ -195,12 +263,32 @@ export default function Reveal({
       )}
 
       <div className="mt-2 flex gap-1.5">
-        <AtlasButton onClick={onClose} tone="primary" ariaLabel="Keep going" className="flex-1">
-          Keep going
-        </AtlasButton>
-        <AtlasButton onClick={onSeeData} ariaLabel="See all the data">
-          See the data
-        </AtlasButton>
+        {challenge ? (
+          <>
+            <AtlasButton
+              onClick={challenge.onHandIn}
+              tone="primary"
+              invite={challenge.hit}
+              ariaLabel="Hand it in"
+              className="flex-1"
+            >
+              <Flag className="h-3.5 w-3.5" />
+              Hand it in
+            </AtlasButton>
+            <AtlasButton onClick={onClose} ariaLabel="Run again" className="flex-1">
+              Run again
+            </AtlasButton>
+          </>
+        ) : (
+          <>
+            <AtlasButton onClick={onClose} tone="primary" ariaLabel="Keep going" className="flex-1">
+              Keep going
+            </AtlasButton>
+            <AtlasButton onClick={onSeeData} ariaLabel="See all the data">
+              See the data
+            </AtlasButton>
+          </>
+        )}
       </div>
     </div>
   )

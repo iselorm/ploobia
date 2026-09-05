@@ -165,16 +165,20 @@ export function StageTabs({
             aria-pressed={on}
             aria-label={s.label}
             className={cn(
-              'flex-1 rounded-[14px] border px-3 py-2 text-center transition-all active:scale-[0.99]',
+              'flex-1 rounded-[14px] border text-center transition-all active:scale-[0.99]',
+              compact ? 'px-1.5 py-1.5' : 'px-3 py-2',
               on
                 ? 'border-[#3E7C43] bg-[#FCFAF4] shadow-[0_1px_2px_rgba(74,62,40,0.08)]'
                 : 'border-[#E4DCC9] bg-[rgba(252,250,244,0.72)] hover:bg-[#FCFAF4]',
             )}
           >
-            <span className="atlas-eyebrow block">{s.eyebrow}</span>
+            {/* Four tabs across a 390 px phone leave no room for an eyebrow
+                and a label both; the label is the one that names the view. */}
+            {!compact && <span className="atlas-eyebrow block">{s.eyebrow}</span>}
             <span
               className={cn(
-                'atlas-serif block text-[13.5px] font-semibold',
+                'atlas-serif block font-semibold',
+                compact ? 'text-[12px] leading-tight' : 'text-[13.5px]',
                 on ? 'text-[#2F6134]' : 'text-[#4A4438]',
               )}
             >
@@ -210,6 +214,7 @@ export function ConditionsPlate({
   onWater,
   aim = null,
   embedded = false,
+  ceilings = null,
 }: {
   conditions: Conditions
   caps: BandCaps
@@ -221,6 +226,12 @@ export function ConditionsPlate({
   /** The control the active mission step is pointing at. */
   aim?: MissionTarget | null
   embedded?: boolean
+  /**
+   * Where a challenge has capped the dials — `capsFor(granted)`, in the sim's
+   * normalised units. Null in the plain lab. Drawn on the dials themselves so
+   * the cap is visible at the moment the thumb hits it.
+   */
+  ceilings?: { light: number; co2ppm: number; water: number } | null
 }) {
   const v = SUGAR_VARS
   return (
@@ -261,6 +272,7 @@ export function ConditionsPlate({
         step={v.light.step}
         color={v.light.color}
         disabled={conditions.night}
+        ceiling={ceilings ? ceilings.light * v.light.max : null}
         onChange={(real) => onChange({ light: real / v.light.max })}
         note={conditions.night ? 'The sun is off. Anything still moving is running on starch.' : undefined}
       />
@@ -274,6 +286,7 @@ export function ConditionsPlate({
         max={v.co2.max}
         step={v.co2.step}
         color={v.co2.color}
+        ceiling={ceilings ? ceilings.co2ppm : null}
         onChange={(real) => onChange({ co2: real / v.co2.max })}
         note={
           specimen.leaf.pathway === 'CAM'
@@ -304,10 +317,19 @@ export function ConditionsPlate({
         max={v.water.max}
         step={v.water.step}
         color={v.water.color}
+        ceiling={ceilings ? ceilings.water * 100 : null}
         onChange={(real) => onChange({ soilWater: real / 100 })}
       />
       </Aim>
 
+      {ceilings && (
+        <p className="mt-1 text-[10.5px] leading-snug font-semibold text-[#8B8471]">
+          The hatched ends are what you did not catch. Light stops at{' '}
+          <strong className="text-[#4A4438]">{Math.round(ceilings.light * 100)}%</strong>, carbon at{' '}
+          <strong className="text-[#4A4438]">{Math.round(ceilings.co2ppm)} ppm</strong>, soil at{' '}
+          <strong className="text-[#4A4438]">{Math.round(ceilings.water * 100)}%</strong>.
+        </p>
+      )}
       <Rule />
       <div className="flex flex-wrap items-center gap-1.5">
         <AtlasButton onClick={onWater} ariaLabel="Water the plant">
@@ -839,11 +861,13 @@ export function TipCard({ stage, onClose }: { stage: StageId; onClose: () => voi
   const lines: Record<StageId, string[]> = {
     plant: ['Drag to rotate', 'Scroll to zoom', 'Gold is sugar, blue is water'],
     leaf: ['Grana run on light', 'The cycle runs on CO₂', 'Watch which one stalls first'],
+    hatches: ['Carbon comes in this way', 'Water goes out the same way', 'Light never touches it'],
     stem: ['Two pipes, opposite ways', 'Water crosses over at both ends', 'Cut the ring and watch'],
   }
   const note: Record<StageId, string> = {
     plant: 'Whole plant — source, phloem and every sink.',
     leaf: 'Inside one chloroplast, roughly two micrometres across.',
+    hatches: 'One stoma on the underside of a leaf, about twenty micrometres across.',
     stem: 'One xylem vessel and one sieve tube, hugely enlarged.',
   }
   return (

@@ -20,6 +20,7 @@ export * from '${path.resolve('src/lib/sugarchallenge')}'
 export * from '${path.resolve('src/lib/ratelab')}'
 export * from '${path.resolve('src/lib/sugarline')}'
 export * from '${path.resolve('src/lib/specimens')}'
+export * from '${path.resolve('src/lib/campaign')}'
 export * as SIM from '${path.resolve('src/lib/sugarsim')}'
 `,
 )
@@ -304,12 +305,24 @@ const base = () => ({
   check('there are challenges to play', M.SUGAR_CHALLENGES.length >= 5, String(M.SUGAR_CHALLENGES.length))
   for (const preset of M.SUGAR_CHALLENGES) {
     const c = preset.build(12345)
+    // Two shapes: a gather round banks three resources over a timed round;
+    // a keep round has no gather, a condition, a world for its weather and a
+    // water reference for thrift. Each is well-formed on its own terms.
     const ok =
       c.cabinet === 'photosynthesis' &&
       c.goal.target > 0 &&
-      c.gatherSeconds > 0 &&
-      Object.keys(c.budget).length === 3
+      (c.loop === 'keep'
+        ? c.gatherSeconds === 0 && !!c.condition && !!c.world && (c.budget.water ?? 0) > 0
+        : c.gatherSeconds > 0 && Object.keys(c.budget).length === 3)
     check(`  ${preset.id}: is a well-formed challenge`, ok)
+    if (c.loop === 'keep') {
+      const back = M.decodeChallenge(M.encodeChallenge(c))
+      check(
+        `  ${preset.id}: its loop, condition and world survive a link`,
+        back && back.loop === 'keep' && back.condition === c.condition && back.world === c.world,
+        JSON.stringify(back && [back.loop, back.condition, back.world]),
+      )
+    }
     check(`  ${preset.id}: survives a link`, !!M.decodeChallenge(M.encodeChallenge(c)))
     // A goal stated in units the instruments do not show would be a second,
     // invisible model the learner could not reason about.
@@ -406,7 +419,9 @@ const base = () => ({
     return out
   }
 
-  for (const preset of M.SUGAR_CHALLENGES) {
+  // Keep rounds are driven as whole days by `verify-hatches-model.mjs`; the
+  // grid below is the gather round's.
+  for (const preset of M.SUGAR_CHALLENGES.filter((p) => p.build(7).loop !== 'keep')) {
     const c = preset.build(7)
     const grid = sweep(c)
     const winners = grid.filter((g) => M.meetsGoal(c.goal, g.value))
@@ -445,6 +460,38 @@ const base = () => ({
       grid.some((g) => !M.meetsGoal(c.goal, g.value)),
     )
   }
+}
+
+/* ================================================================== */
+/* The campaign map: five doors, one light gate                       */
+/* ================================================================== */
+{
+  // A bare Node process has no localStorage; the store reads a fallback and
+  // writes into the void, which is exactly the walk we want to test.
+  M.resetCampaign()
+  check('five doors on the map', M.CAMPAIGN.length === 5 && M.CAMPAIGN.map((s) => s.id).join() === '1,2,3,4,5')
+  check('stage 1 is always open', M.isStageOpen(1))
+  check('stage 2 is shut until stage 1 is handed in', !M.isStageOpen(2))
+  check('the unbuilt stages are undiscovered, not shut', M.CAMPAIGN.filter((s) => !s.built).every((s) => M.doorState(s) === 'undiscovered'))
+  check('nothing on the map says coming soon', !JSON.stringify(M.CAMPAIGN).match(/coming soon/i))
+  check('Play opens on stage 1 first', M.nextDoor().id === 1)
+  // An extra brief (thin-air) is not a stage level and opens nothing.
+  M.recordHandIn('thin-air', M.stageOfPresetId('thin-air'), 500)
+  check('a brief off the map opens no door', !M.isStageOpen(2))
+  const opened = M.recordHandIn('first-light', M.stageOfPresetId('first-light'), 620)
+  check('one hand-in at stage 1 opens stage 2', opened === true && M.isStageOpen(2))
+  check('and only stage 2', !M.isStageOpen(3))
+  check('a second hand-in at stage 1 opens nothing new', M.recordHandIn('land-it', 1, 900) === false)
+  check('Play now opens on stage 2', M.nextDoor().id === 2)
+  check('stage 1 reads as handed in', M.doorState(M.CAMPAIGN[0]) === 'done' && M.doorState(M.CAMPAIGN[1]) === 'open')
+  // A challenge is matched to its preset by what the preset fixes, so a
+  // link from someone else still walks the door.
+  for (const p of M.SUGAR_CHALLENGES) {
+    const c = p.build(31337)
+    const back = M.decodeChallenge(M.encodeChallenge(c))
+    check(`  ${p.id} is recognised from its link`, back && M.presetIdFor(back) === p.id, String(back && M.presetIdFor(back)))
+  }
+  M.resetCampaign()
 }
 
 console.log(`\n${count - fails}/${count} challenge checks passed`)

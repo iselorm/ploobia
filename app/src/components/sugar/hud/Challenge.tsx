@@ -1,10 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Check, Copy, Flag, Hourglass, Swords, Target, X } from 'lucide-react'
+import Ploob2 from '@/components/brand/Ploob2'
 import { Tile } from '@/components/ui/tile'
 import { cn } from '@/lib/utils'
 import type { Band } from '@/lib/bands'
+import { BAND_META } from '@/lib/bands'
 import {
   encodeChallenge,
+  meetsGoal,
   roomCode,
   seedFromCode,
   type Challenge,
@@ -12,11 +15,15 @@ import {
   type ResourceBudget,
 } from '@/lib/challenge'
 import {
+  STAGE_NAMES,
   SUGAR_RESOURCES,
   challengesForBand,
+  levelForBand,
   metricLabel,
+  type SugarChallengePreset,
   type SugarResource,
 } from '@/lib/sugarchallenge'
+import { isStageOpen } from '@/lib/campaign'
 import { AtlasButton, Chip, Meter } from './AtlasKit'
 
 /**
@@ -51,18 +58,83 @@ import { AtlasButton, Chip, Meter } from './AtlasKit'
  */
 const SESSION_SEED = (Date.now() ^ 0x9e3779b9) >>> 0
 
-function goalSentence(c: Challenge): string {
-  const what = metricLabel(c.goal.metric).toLowerCase()
+/** A preset built for this tab's own world — what *Play* opens on. */
+export function soloChallenge(preset: SugarChallengePreset): Challenge {
+  return preset.build(seedFromCode(`${SESSION_SEED}:${preset.id}`))
+}
+
+/** The band's stage-1 level, built for this tab. */
+export function playChallengeFor(band: Band): Challenge {
+  return soloChallenge(levelForBand(band))
+}
+
+/**
+ * The measured thing, in the learner's words.
+ *
+ * One name for it everywhere — the brief, the gauge, the handover, the coach
+ * — so nothing has to be re-learned between screens. The instrument's formal
+ * label ("Sugar export rate") stays on the instrument.
+ */
+export function metricPhrase(metric: string): string {
+  if (metric === 'export') return 'sugar leaving the leaf'
+  if (metric === 'velocity') return 'sap speed'
+  if (metric === 'gain') return 'net carbon gain'
+  if (metric === 'sugarDay') return 'sugar banked'
+  if (metric === 'mgPerMl') return 'sugar per water'
+  return metricLabel(metric).toLowerCase()
+}
+
+/** "by dusk" / "by the next dawn", for a keep round. */
+function spanWord(c: Challenge): string {
+  const hours = Number((c.world ?? '').split(':')[1])
+  return hours > 12 ? 'by the next dawn' : 'by dusk'
+}
+
+export function goalSentence(c: Challenge): string {
+  const what = metricPhrase(c.goal.metric)
   const n = `${c.goal.target} ${c.goal.unit}`
+  if (c.loop === 'keep' && c.goal.metric === 'sugarDay') return `Bank ${n} ${spanWord(c)}`
   if (c.goal.direction === 'near') return `Land ${what} within ${c.goal.tolerance} of ${n}`
   if (c.goal.direction === 'atMost') return `Keep ${what} at or under ${n}`
   return `Get ${what} to ${n} or better`
+}
+
+/** The goal as a headline: "Make sugar leave the leaf at 10 mg h⁻¹ or better." */
+function goalHeadline(c: Challenge): { lead: string; number: string; tail: string } {
+  const n = `${c.goal.target} ${c.goal.unit}`
+  const what = metricPhrase(c.goal.metric)
+  if (c.loop === 'keep' && c.goal.metric === 'sugarDay')
+    return { lead: 'Bank ', number: n, tail: ` of sugar ${spanWord(c)}${c.condition === 'leafFirm' ? ' — with the leaf still firm' : ''}.` }
+  if (c.goal.direction === 'near')
+    return { lead: `Land ${what} at `, number: n, tail: `, give or take ${c.goal.tolerance}.` }
+  if (c.goal.direction === 'atMost') return { lead: `Keep ${what} under `, number: n, tail: '.' }
+  return { lead: `Get ${what} to `, number: n, tail: ' or better.' }
+}
+
+/** The target as a chip: "Target 12 ± 0.4", "Target 10 or better". */
+function targetChip(c: Challenge): string {
+  if (c.goal.direction === 'near') return `Target ${c.goal.target} ± ${c.goal.tolerance} ${c.goal.unit}`
+  if (c.goal.direction === 'atMost') return `Target ${c.goal.target} ${c.goal.unit} or under`
+  return `Target ${c.goal.target} ${c.goal.unit} or better`
+}
+
+/** How far a reading is from the mark, signed the way the learner reads it. */
+export function shortfall(c: Challenge, value: number | null): { hit: boolean; text: string } {
+  if (value === null) return { hit: false, text: 'no reading yet' }
+  const hit = meetsGoal(c.goal, value)
+  const d = value - c.goal.target
+  const abs = Math.abs(d).toFixed(1)
+  if (hit) return { hit: true, text: 'on the mark' }
+  if (c.goal.direction === 'atMost') return { hit: false, text: `${abs} over` }
+  if (c.goal.direction === 'near') return { hit: false, text: d < 0 ? `${abs} short` : `${abs} over` }
+  return { hit: false, text: `${abs} short` }
 }
 
 export function ChallengeBrief({
   band,
   incoming,
   rival,
+  stage = 1,
   onBegin,
   onClose,
 }: {
@@ -70,12 +142,23 @@ export function ChallengeBrief({
   /** A challenge that arrived by link. Offered first, and cannot be edited. */
   incoming: Challenge | null
   rival: number | null
+  /** The campaign stage the brief opens on. */
+  stage?: 1 | 2
   onBegin: (c: Challenge) => void
   onClose: () => void
 }) {
   const presets = useMemo(() => challengesForBand(band), [band])
   const [code, setCode] = useState('')
-  const [pickedId, setPickedId] = useState(presets[0]?.id ?? '')
+  const [pickedId, setPickedId] = useState(levelForBand(band, stage).id)
+  /**
+   * The list and the room code are folded away. The brief opens on **one**
+   * challenge — the band's own level — with the target as the headline and
+   * one green button, because a wall of four cards with the target at the
+   * very bottom was the first thing a learner saw and the last thing they
+   * read. Choosing is still there for anyone who wants it, one link away.
+   */
+  const [showList, setShowList] = useState(false)
+  const [showRoom, setShowRoom] = useState(false)
 
   const picked = presets.find((p) => p.id === pickedId) ?? presets[0]
   /**
@@ -91,24 +174,25 @@ export function ChallengeBrief({
     if (!picked) return null
     // Solo worlds still differ between challenges, so playing all six in one
     // sitting is six different skies rather than the same one relabelled.
-    return picked.build(seed ?? seedFromCode(`${SESSION_SEED}:${picked.id}`))
+    return seed === null ? soloChallenge(picked) : picked.build(seed)
     // A new object per keystroke is fine — it is three numbers and a string.
   }, [picked, seed])
 
   const offer = incoming ?? built
+  const headline = offer ? goalHeadline(offer) : null
+  const eyebrow = incoming
+    ? 'Someone sent you this one'
+    : picked?.stage && picked.level
+      ? `Stage ${picked.stage} · ${STAGE_NAMES[picked.stage]} · Level ${picked.level}`
+      : (picked?.title ?? 'Challenge')
 
   return (
     <div className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-[#2A2823]/35 p-3 backdrop-blur-[2px]">
       <div className="atlas-plate atlas-arrive max-h-[92vh] w-full max-w-md overflow-y-auto p-4">
         <div className="flex items-start justify-between gap-2">
-          <div>
-            <span className="atlas-eyebrow">
-              <Swords className="h-3 w-3" /> Challenge
-            </span>
-            <h2 className="atlas-serif text-[21px] leading-tight font-semibold text-[#2A2823]">
-              {incoming ? 'Someone sent you this one' : 'Gather, then hit the mark'}
-            </h2>
-          </div>
+          <span className="atlas-eyebrow">
+            <Swords className="h-3 w-3" /> {eyebrow}
+          </span>
           <Tile
             onClick={onClose}
             aria-label="Close the challenge brief"
@@ -118,10 +202,24 @@ export function ChallengeBrief({
           </Tile>
         </div>
 
-        <p className="mt-1.5 text-[12px] leading-relaxed font-semibold text-[#8B8471]">
-          A short round where you catch light, carbon and water out of the air — then the dials
-          only go as far as what you caught. Same cabinet, same physics; the difference is that
-          this time you can run out.
+        {headline && (
+          <h2
+            data-testid="brief-headline"
+            className="atlas-serif mt-1 text-[22px] leading-tight font-semibold text-[#2A2823]"
+          >
+            {picked && !incoming && <span className="text-[#8B8471]">{picked.title}. </span>}
+            {headline.lead}
+            <span className="text-[#2F6134]">{headline.number}</span>
+            {headline.tail}
+          </h2>
+        )}
+
+        <p className="mt-2 text-[12px] leading-relaxed font-semibold text-[#5F5A4E]">
+          {incoming
+            ? offer!.loop === 'keep'
+              ? 'A whole day plays out on its own. You hold one slider — how far the hatches may open — and the plant closes them further whenever it must.'
+              : `${offer!.gatherSeconds} seconds to gather light, carbon and water out of the air. After that the dials only go as far as what you caught — so this time you can run out.`
+            : picked?.brief}
         </p>
 
         {incoming && (
@@ -138,62 +236,26 @@ export function ChallengeBrief({
           </div>
         )}
 
-        {!incoming && (
-          <>
-            <div className="mt-3 flex flex-col gap-1.5">
-              {presets.map((p) => (
-                <Tile
-                  key={p.id}
-                  onClick={() => setPickedId(p.id)}
-                  className={cn(
-                    'rounded-xl border px-3 py-2 text-left transition-all active:scale-[0.99]',
-                    p.id === picked?.id
-                      ? 'border-[#2F6134] bg-[#E7F1E3]'
-                      : 'border-[#E4DCC9] bg-[#FCFAF4] hover:bg-[#F1ECDE]',
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="atlas-serif text-[15px] font-semibold text-[#2A2823]">
-                      {p.title}
-                    </span>
-                    <Chip tone={p.band === 'explorer' ? 'good' : p.band === 'analyst' ? 'warn' : 'neutral'}>
-                      {p.band}
-                    </Chip>
-                  </div>
-                  <p className="mt-0.5 text-[11.5px] leading-snug font-semibold text-[#8B8471]">
-                    {p.brief}
-                  </p>
-                </Tile>
-              ))}
-            </div>
-
-            <label className="mt-3 block">
-              <span className="atlas-eyebrow">Room code — optional</span>
-              <input
-                value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase().slice(0, 8))}
-                placeholder="Leave blank for your own world"
-                aria-label="Room code"
-                className="mt-1 w-full rounded-xl border border-[#E4DCC9] bg-[#FCFAF4] px-3 py-2 text-[13px] font-extrabold tracking-[0.14em] text-[#2A2823] placeholder:font-semibold placeholder:tracking-normal placeholder:text-[#B9B09A] focus:border-[#2F6134] focus:outline-none"
-              />
-            </label>
-            <p className="mt-1 text-[11px] leading-snug font-semibold text-[#8B8471]">
-              Everyone who types the same code gets the same sky and the same budget — that is what
-              makes the scores comparable.
-            </p>
-          </>
-        )}
-
         {offer && (
           <>
-            <div className="atlas-rule my-3" />
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
               <Chip tone="good">
-                <Target className="h-3 w-3" /> {goalSentence(offer)}
+                <Target className="h-3 w-3" /> Target: {goalSentence(offer).replace(/^(Get|Land|Keep) /, '')}
               </Chip>
-              <Chip>
-                <Hourglass className="h-3 w-3" /> {offer.gatherSeconds}s to gather
-              </Chip>
+              {offer.loop === 'keep' ? (
+                <>
+                  {offer.condition === 'leafFirm' && <Chip tone="good">💧 leaf firm at the end</Chip>}
+                  <Chip>
+                    <Hourglass className="h-3 w-3" />{' '}
+                    {Number((offer.world ?? '').split(':')[1]) > 12 ? 'a day and a night · 3 min' : 'one plant-day · 90 s'}
+                  </Chip>
+                </>
+              ) : (
+                <Chip>
+                  <Hourglass className="h-3 w-3" /> {offer.gatherSeconds}s to gather
+                </Chip>
+              )}
+              <Chip>{BAND_META[offer.band].label}</Chip>
               <Chip title="The world this challenge builds">Room {roomCode(offer.seed)}</Chip>
             </div>
             <AtlasButton
@@ -202,8 +264,86 @@ export function ChallengeBrief({
               onClick={() => onBegin(offer)}
               className="mt-3 w-full py-2.5 text-[13px]"
             >
-              Start gathering
+              {offer.loop === 'keep' ? 'Start the day' : 'Start gathering'}
             </AtlasButton>
+          </>
+        )}
+
+        {!incoming && (
+          <>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <Tile
+                onClick={() => setShowList((v) => !v)}
+                aria-expanded={showList}
+                aria-label="Other challenges"
+                className="text-[11px] font-extrabold text-[#8B8471] hover:text-[#2F6134]"
+              >
+                Other challenges {showList ? '▾' : '▸'}
+              </Tile>
+              <Tile
+                onClick={() => setShowRoom((v) => !v)}
+                aria-expanded={showRoom}
+                aria-label="Join a room"
+                className="text-[11px] font-extrabold text-[#8B8471] hover:text-[#2F6134]"
+              >
+                Join a room code {showRoom ? '▾' : '▸'}
+              </Tile>
+            </div>
+
+            {showList && (
+              <div className="mt-2 flex flex-col gap-1.5">
+                {presets.map((p) => (
+                  <Tile
+                    key={p.id}
+                    disabled={!!p.stage && !isStageOpen(p.stage)}
+                    title={p.stage && !isStageOpen(p.stage) ? `Hand in any level of stage ${p.stage - 1} first` : undefined}
+                    onClick={() => setPickedId(p.id)}
+                    className={cn(
+                      'rounded-xl border px-3 py-2 text-left transition-all active:scale-[0.99]',
+                      p.id === picked?.id
+                        ? 'border-[#2F6134] bg-[#E7F1E3]'
+                        : 'border-[#E4DCC9] bg-[#FCFAF4] hover:bg-[#F1ECDE]',
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="atlas-serif text-[15px] font-semibold text-[#2A2823]">
+                        {p.title}
+                      </span>
+                      {p.stage && p.level && (
+                        <Chip tone={isStageOpen(p.stage) ? 'good' : 'neutral'}>
+                          {isStageOpen(p.stage) ? '' : '🔒 '}Stage {p.stage} · L{p.level}
+                        </Chip>
+                      )}
+                      <Chip tone={p.band === 'explorer' ? 'good' : p.band === 'analyst' ? 'warn' : 'neutral'}>
+                        {p.band}
+                      </Chip>
+                    </div>
+                    <p className="mt-0.5 text-[11.5px] leading-snug font-semibold text-[#8B8471]">
+                      {p.brief}
+                    </p>
+                  </Tile>
+                ))}
+              </div>
+            )}
+
+            {showRoom && (
+              <label className="mt-2 block">
+                <span className="atlas-eyebrow">Room code</span>
+                <input
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.toUpperCase().slice(0, 8))}
+                  placeholder="Leave blank for your own world"
+                  aria-label="Room code"
+                  className="mt-1 w-full rounded-xl border border-[#E4DCC9] bg-[#FCFAF4] px-3 py-2 text-[13px] font-extrabold tracking-[0.14em] text-[#2A2823] placeholder:font-semibold placeholder:tracking-normal placeholder:text-[#B9B09A] focus:border-[#2F6134] focus:outline-none"
+                />
+              </label>
+            )}
+            {showRoom && (
+              <p className="mt-1 text-[11px] leading-snug font-semibold text-[#8B8471]">
+                Everyone who types the same code gets the same sky and the same budget — that is
+                what makes the scores comparable.
+              </p>
+            )}
           </>
         )}
       </div>
@@ -254,15 +394,56 @@ function BankRow({
 }
 
 /**
- * The gather round's own HUD: a clock and three filling jars.
+ * What Ploob says during the round, read off the jars.
+ *
+ * The geography is the biology's: light comes down the sun's own lanes, high
+ * up; carbon drifts across the canopy; water rises out of the soil, low down.
+ * So the emptiest jar names a *place* to sweep, not just a thing to want.
+ */
+function gatherLine(
+  bank: ResourceBudget,
+  budget: ResourceBudget,
+  secondsLeft: number,
+  ready: boolean,
+): string {
+  if (ready)
+    return 'Light comes down in shafts. Carbon drifts across the leaves. Water rises off the soil. Catch all three — you will need all three.'
+  const frac = (k: SugarResource) => ((budget[k] ?? 0) > 0 ? (bank[k] ?? 0) / (budget[k] as number) : 1)
+  const order: SugarResource[] = ['light', 'co2', 'water']
+  const lowest = order.reduce((a, b) => (frac(b) < frac(a) ? b : a))
+  const full = order.filter((k) => frac(k) >= 0.999)
+  const where: Record<SugarResource, string> = {
+    light: 'Light comes down the sun lanes, up high — sweep through the shafts.',
+    co2: 'Carbon drifts across the leaves — sweep at leaf height.',
+    water: 'Water rises off the soil, low down — sweep near the ground.',
+  }
+  if (secondsLeft <= 5) {
+    const name = lowest === 'co2' ? 'carbon' : lowest
+    return full.length === 3 ? 'Every jar is full. Take it to the lab.' : `Last few seconds — grab ${name}.`
+  }
+  if (full.length === 3) return 'Every jar is full. Nothing more to catch — take it to the lab.'
+  if (frac(lowest) < 0.15) {
+    const name = lowest === 'co2' ? 'carbon' : lowest
+    return `You have barely any ${name}. ${where[lowest]}`
+  }
+  return where[lowest]
+}
+
+/**
+ * The gather round's own HUD: a clock, three filling jars, and a voice.
  *
  * Kept out of the drawer and off the sides on purpose. During this round the
  * whole screen is the playfield, and a panel anywhere near the middle would be
- * both in the way of the finger and in the way of the eye.
+ * both in the way of the finger and in the way of the eye. The coach line at
+ * the bottom is the one exception, because a HUD with nobody talking in it
+ * was the round's biggest fault: a learner who had never met a jar was left
+ * to work out what the three bars were for.
  */
 export function GatherHud({
   secondsLeft,
   total,
+  readyLeft,
+  ready,
   bank,
   budget,
   caught,
@@ -270,6 +451,9 @@ export function GatherHud({
 }: {
   secondsLeft: number
   total: number
+  /** The get-ready countdown, while `ready` is true. */
+  readyLeft: number
+  ready: boolean
   bank: ResourceBudget
   budget: ResourceBudget
   /** The most recent catch, for the little flash. */
@@ -277,16 +461,17 @@ export function GatherHud({
   onDone: () => void
 }) {
   const frac = total > 0 ? secondsLeft / total : 0
-  const urgent = secondsLeft <= 5
+  const urgent = !ready && secondsLeft <= 5
+  const line = gatherLine(bank, budget, secondsLeft, ready)
   return (
-    <div className="pointer-events-none fixed inset-0 z-30">
+    <div className="pointer-events-none fixed inset-0 z-30" data-testid="gather-hud">
       <div className="absolute inset-x-3 top-3 mx-auto flex max-w-[36rem] flex-col gap-2">
         <div className="flex items-center gap-2">
           <div className="flex flex-1 items-center gap-2 rounded-full border border-[#E4DCC9] bg-[#FCFAF4]/92 px-3 py-1.5 backdrop-blur-md">
             <span
               className={cn(
                 'text-[13px] font-black tabular-nums',
-                urgent ? 'text-[#9A302A]' : 'text-[#2A2823]',
+                urgent ? 'text-[#9A302A]' : ready ? 'text-[#B9B09A]' : 'text-[#2A2823]',
               )}
             >
               {secondsLeft.toFixed(1)}s
@@ -295,15 +480,43 @@ export function GatherHud({
               <Meter value={frac} color={urgent ? '#C0453C' : '#3E7C43'} height={5} />
             </div>
           </div>
-          <AtlasButton onClick={onDone} className="pointer-events-auto shrink-0">
+          <AtlasButton onClick={onDone} className="pointer-events-auto shrink-0" disabled={ready}>
             To the lab
           </AtlasButton>
         </div>
         <BankRow bank={bank} budget={budget} compact />
+        <p className="px-1 text-center text-[10.5px] font-bold text-[#6B6555]">
+          What you catch is what the dials will reach.
+        </p>
       </div>
 
-      <div className="absolute inset-x-0 bottom-8 flex flex-col items-center gap-1.5 px-4">
-        {caught && (
+      {/* The get-ready beat. The clock waits for it, or for the first catch —
+          whichever comes first — so a learner who has found the gesture is
+          never held up by a countdown telling them about it. */}
+      {ready && (
+        <div className="absolute inset-x-4 top-[8.6rem] flex justify-center">
+          <div
+            data-testid="get-ready"
+            className="atlas-plate atlas-arrive w-full max-w-[22rem] px-4 py-3 text-center"
+          >
+            <span
+              className="atlas-serif block text-[44px] leading-none font-semibold text-[#2F6134] tabular-nums"
+              aria-live="polite"
+            >
+              {Math.max(1, Math.ceil(readyLeft))}
+            </span>
+            <p className="mt-1 text-[13px] leading-snug font-black text-[#2A2823]">
+              Drag the ring through the light.
+            </p>
+            <p className="mt-0.5 text-[11.5px] leading-snug font-semibold text-[#8B8471]">
+              A leaf does not grab. It holds out area and catches what falls through it.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="absolute inset-x-0 bottom-6 flex flex-col items-center gap-1.5 px-4">
+        {caught && !ready && (
           <span
             key={caught.n}
             className="fact-pop rounded-full border border-[#C8DFC2] bg-[#E7F1E3]/95 px-3 py-1 text-[12px] font-extrabold text-[#2F6134] backdrop-blur-md"
@@ -311,145 +524,312 @@ export function GatherHud({
             +{caught.kind === 'light' ? 'light' : caught.kind === 'co2' ? 'carbon' : 'water'}
           </span>
         )}
-        <p className="atlas-serif max-w-[26rem] text-center text-[12px] leading-snug font-semibold text-[#5A5445] italic">
-          Sweep the ring through the light, the carbon and the water. A leaf does not grab —
-          it holds out area and catches what falls through it.
-        </p>
+        <div
+          data-testid="gather-coach"
+          className="atlas-plate flex max-w-[min(30rem,calc(100vw-2rem))] items-center gap-2.5 px-3 py-2"
+        >
+          <Ploob2 size={22} />
+          <div className="min-w-0">
+            <span className="atlas-eyebrow block leading-none">Ploob</span>
+            <p className="text-[12px] leading-snug font-extrabold text-[#2A2823]">{line}</p>
+          </div>
+        </div>
       </div>
     </div>
   )
 }
 
 /* ------------------------------------------------------------------ */
-/* The lab strip                                                       */
+/* The handover                                                        */
 /* ------------------------------------------------------------------ */
 
 /**
- * What sits over the lab while a challenge is being spent.
+ * The card between the round and the lab.
  *
- * Three facts and one button, because everything else the learner needs is
- * already the cabinet's own instruments. Deliberately not a scoreboard: the
- * score is computed once, at the end, so that nobody plays the number instead
- * of the plant.
+ * The one moment the first build skipped. The round ended, the lab appeared
+ * with the dials capped, and nothing said why — the only sentence connecting
+ * the two halves was folded inside a collapsed strip. This says: here is what
+ * you caught, here is what it is for, and here are the three moves.
  */
-export function ChallengeBar({
+export function Handover({
+  challenge,
+  granted,
+  onEnter,
+}: {
+  challenge: Challenge
+  granted: ResourceBudget
+  onEnter: () => void
+}) {
+  const h = goalHeadline(challenge)
+  return (
+    <div className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-[#F6F2E8]/72 p-3 backdrop-blur-[3px]">
+      <div
+        data-testid="handover"
+        className="atlas-plate atlas-arrive w-full max-w-md p-4"
+      >
+        <span className="atlas-eyebrow">Round over · here is what you caught</span>
+        <div className="mt-2">
+          <BankRow bank={granted} budget={challenge.budget} />
+        </div>
+        <h2 className="atlas-serif mt-3.5 text-[21px] leading-tight font-semibold text-[#2A2823]">
+          Now use it. {h.lead}
+          <span className="text-[#2F6134]">{h.number}</span>
+          {h.tail}
+        </h2>
+        <p className="mt-2 text-[12px] leading-relaxed font-semibold text-[#5F5A4E]">
+          The dials only go as far as your jars. Each measurement spends a little of them, so a
+          few good trials beat many wild ones.
+        </p>
+        <div className="mt-3 flex items-center gap-3">
+          <ol className="flex-1 text-[11.5px] leading-relaxed font-extrabold text-[#8B8471]">
+            <li>1 &nbsp;Set the dials</li>
+            <li>
+              2 &nbsp;Press <span className="text-[#2A2823]">Run measurement</span>
+            </li>
+            <li>3 &nbsp;Read the gauge</li>
+          </ol>
+          <AtlasButton tone="primary" invite onClick={onEnter} className="flex-1 py-2.5 text-[13px]">
+            Into the lab
+          </AtlasButton>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* The target gauge                                                    */
+/* ------------------------------------------------------------------ */
+
+/** A round-number axis top that leaves the target and the readings room. */
+function niceAxisMax(c: Challenge, best: number | null, last: number | null): number {
+  const need = Math.max(c.goal.target * 1.5, (best ?? 0) * 1.1, (last ?? 0) * 1.1, c.goal.target + 2 * c.goal.tolerance)
+  const steps = [1, 2, 5, 10, 16, 20, 25, 30, 40, 50, 100]
+  for (const st of steps) if (need <= st) return st
+  return Math.ceil(need / 10) * 10
+}
+
+/**
+ * The target and the reading on one bar.
+ *
+ * Pinned to the top of the screen for the whole lab phase, in the strip the
+ * stage tabs use — never behind a tab. The target is a line with the "or
+ * better" zone shaded beside it (or a tolerance band, for a `near` goal); the
+ * last reading is a ring; the best so far is a tick; the gap is a chip in the
+ * learner's own words. The number being chased and the number just measured
+ * are read off the same axis, which is the whole reason this exists: before,
+ * the target lived in a bottom strip and the reading lived in an instrument
+ * plate behind the Data tab, and a learner was told to hit a number they
+ * could not see.
+ *
+ * Deliberately not a scoreboard. The score is computed once, at hand-in, so
+ * nobody plays the number instead of the plant.
+ */
+export function TargetGauge({
   challenge,
   bank,
-  ceiling,
   best,
+  last,
   hit,
   trials,
   affordable,
   compact,
-  bottomPx = 0,
   onFinish,
   onQuit,
 }: {
   challenge: Challenge
   bank: ResourceBudget
-  /** What the gather round bought — `capsFor(granted)`, not of the balance. */
-  ceiling: { light: number; co2ppm: number; water: number }
   best: number | null
+  /** The most recent reading of the goal metric, or null before the first. */
+  last: number | null
   hit: boolean
   trials: number
   affordable: boolean
   compact: boolean
-  /** How far up the compact strip must sit to clear the drawer. */
-  bottomPx?: number
   onFinish: () => void
   onQuit: () => void
 }) {
-  /**
-   * On a phone this opens as one line and expands on a tap.
-   *
-   * The last round of mobile feedback on this cabinet was entirely about
-   * panels covering the specimen, and a permanently-open five-row card
-   * floating over a 390 px screen would have earned exactly the same
-   * complaint. Everything the learner needs *at a glance* — the target, their
-   * best, their trial count — is on the closed line; the bank and the hand-in
-   * button are one tap away, and on desktop there is room for all of it.
-   */
-  const [open, setOpen] = useState(!compact)
-  const expanded = open || !compact
+  const [open, setOpen] = useState(false)
+  const g = challenge.goal
+  const axisMax = niceAxisMax(challenge, best, last)
+  const W = 292
+  const x = (v: number) => 6 + (280 * Math.max(0, Math.min(axisMax, v))) / axisMax
+  const tx = x(g.target)
+  const gap = shortfall(challenge, last)
+  const showBest = best !== null && last !== null && Math.abs(best - last) > 1e-6
+  const phrase = metricPhrase(g.metric)
 
   return (
-    /* Bottom centre, which is the slot the coach chip and the result card
-       already share. That is deliberate: it is where a learner in this cabinet
-       is trained to look for "what now", and putting a fourth thing anywhere
-       else would only add a place to check. The page stands this down while a
-       result card is up, exactly as it stands the coach down. */
     <div
+      data-testid="target-gauge"
       className={cn(
-        'pointer-events-none fixed z-30 flex justify-center px-2 transition-[bottom] duration-200',
-        compact ? 'inset-x-0' : 'inset-x-0',
+        'atlas-plate pointer-events-auto px-3 pt-2 pb-2',
+        compact ? 'w-full' : 'w-[24rem]',
       )}
-      style={{ bottom: compact ? `calc(4.2rem + ${bottomPx}px)` : '1.25rem' }}
     >
-      <div className="atlas-plate pointer-events-auto flex w-full max-w-[30rem] flex-col gap-1.5 px-3 py-2">
-        <div className="flex items-center gap-2">
-          <Tile
-            onClick={() => setOpen((v) => !v)}
-            aria-label={expanded ? 'Collapse the challenge strip' : 'Expand the challenge strip'}
-            aria-expanded={expanded}
-            className="flex min-w-0 flex-1 items-center gap-2 text-left"
-          >
-            <span className="atlas-eyebrow shrink-0">
-              <Target className="h-3 w-3" /> Target
-            </span>
-            <span className="min-w-0 flex-1 truncate text-[11.5px] font-extrabold text-[#2A2823]">
-              {goalSentence(challenge)}
-            </span>
-          </Tile>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="atlas-eyebrow">
+          <Target className="h-3 w-3" /> {phrase}
+        </span>
+        <span className="flex items-center gap-2 text-[10.5px] font-black text-[#8B8471]">
+          {trials} {trials === 1 ? 'trial' : 'trials'}
           <Tile
             onClick={onQuit}
             aria-label="Leave the challenge"
-            className="shrink-0 rounded-full px-1.5 text-[13px] font-bold text-[#B9B09A] hover:text-[#4A4438]"
+            className="rounded-full px-1 text-[13px] font-bold text-[#B9B09A] hover:text-[#4A4438]"
           >
             <X className="h-3.5 w-3.5" />
           </Tile>
-        </div>
+        </span>
+      </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Chip tone={hit ? 'good' : 'neutral'} title="The best you have reached so far">
-            {hit && <Check className="h-3 w-3" />}
-            Best {best === null ? '—' : best.toFixed(1)} {challenge.goal.unit}
-          </Chip>
-          <Chip tone={trials >= 5 ? 'warn' : 'neutral'} title="Fewer trials scores higher">
-            {trials} {trials === 1 ? 'trial' : 'trials'}
-          </Chip>
-          {!affordable && (
-            <Chip tone="warn" title="Turn something down, or run the trial at night">
-              Too dear to run
-            </Chip>
-          )}
-        </div>
-
-        {expanded && (
+      <svg viewBox={`0 0 ${W} 56`} className="mt-1 block h-auto w-full" aria-hidden>
+        <rect x="6" y="22" width="280" height="10" rx="5" fill="#EAE4D4" />
+        {/* the zone that counts */}
+        {g.direction === 'atLeast' && (
+          <rect x={tx} y="22" width={286 - tx} height="10" rx="5" fill="#C8DFC2" />
+        )}
+        {g.direction === 'atMost' && <rect x="6" y="22" width={tx - 6} height="10" rx="5" fill="#C8DFC2" />}
+        {g.direction === 'near' && (
+          <rect
+            x={x(g.target - g.tolerance)}
+            y="22"
+            width={Math.max(4, x(g.target + g.tolerance) - x(g.target - g.tolerance))}
+            height="10"
+            rx="5"
+            fill="#C8DFC2"
+          />
+        )}
+        {/* what the last reading reached */}
+        {last !== null && (
+          <rect
+            x="6"
+            y="22"
+            width={Math.max(0, x(last) - 6)}
+            height="10"
+            rx="5"
+            fill={gap.hit ? '#3E7C43' : '#E8A33D'}
+            opacity={gap.hit ? 1 : 0.85}
+          />
+        )}
+        {/* the miss, drawn as a length */}
+        {last !== null && !gap.hit && (
+          <line
+            x1={x(last)}
+            y1="27"
+            x2={g.direction === 'near' && last > g.target ? x(g.target + g.tolerance) : tx}
+            y2="27"
+            stroke="#FCFAF4"
+            strokeWidth="2"
+            strokeDasharray="3 3"
+          />
+        )}
+        {/* the target */}
+        <line x1={tx} y1="12" x2={tx} y2="42" stroke="#2F6134" strokeWidth="2" />
+        <text
+          x={tx}
+          y="9"
+          textAnchor={tx > W - 40 ? 'end' : tx < 40 ? 'start' : 'middle'}
+          fontSize="9.5"
+          fontWeight="900"
+          fill="#2F6134"
+          fontFamily="Nunito, system-ui, sans-serif"
+        >
+          TARGET {g.target}
+        </text>
+        {/* best so far */}
+        {showBest && (
           <>
-            {/* The one sentence that connects the two halves of the game.
-                Without it a learner whose light dial stops at a third has no
-                way to know that the gather round is why, and reads a capped
-                control as a broken one. */}
-            <p className="text-[10.5px] leading-snug font-semibold text-[#8B8471]">
-              Your gathering set the ceilings: light stops at{' '}
-              <strong className="text-[#4A4438]">{Math.round(ceiling.light * 100)}%</strong>, carbon
-              at <strong className="text-[#4A4438]">{Math.round(ceiling.co2ppm)} ppm</strong>, soil
-              at <strong className="text-[#4A4438]">{Math.round(ceiling.water * 100)}%</strong>.
-            </p>
-            <BankRow bank={bank} budget={challenge.budget} />
-            <AtlasButton
-              tone="primary"
-              onClick={onFinish}
-              invite={hit}
-              disabled={trials === 0}
-              className="w-full"
+            <polygon points={`${x(best!)},18 ${x(best!) + 5},12 ${x(best!) - 5},12`} fill="#8B8471" />
+            <text
+              x={x(best!)}
+              y="53"
+              textAnchor="middle"
+              fontSize="9"
+              fontWeight="800"
+              fill="#8B8471"
+              fontFamily="Nunito, system-ui, sans-serif"
             >
-              <Flag className="h-3.5 w-3.5" />
-              {trials === 0 ? 'Run a measurement first' : 'Hand it in'}
-            </AtlasButton>
+              best {best!.toFixed(1)}
+            </text>
           </>
         )}
+        {/* the last reading */}
+        {last !== null && (
+          <circle
+            cx={x(last)}
+            cy="27"
+            r={gap.hit ? 8 : 7}
+            fill="#FCFAF4"
+            stroke={gap.hit ? '#2F6134' : '#2A2823'}
+            strokeWidth={gap.hit ? 3 : 2.5}
+          />
+        )}
+        <text x="6" y="53" fontSize="9" fontWeight="800" fill="#B9B09A" fontFamily="Nunito, system-ui, sans-serif">
+          0
+        </text>
+        <text
+          x="286"
+          y="53"
+          textAnchor="end"
+          fontSize="9"
+          fontWeight="800"
+          fill="#B9B09A"
+          fontFamily="Nunito, system-ui, sans-serif"
+        >
+          {axisMax} {g.unit}
+        </text>
+      </svg>
+
+      <div className="flex items-center justify-between gap-2">
+        {last === null ? (
+          <span className="text-[12px] leading-none font-extrabold text-[#8B8471]">No reading yet</span>
+        ) : (
+          <span className="text-[19px] leading-none font-black text-[#2A2823] tabular-nums">
+            {last.toFixed(1)}{' '}
+            <span className="text-[10.5px] font-bold text-[#8B8471]">{g.unit} · last reading</span>
+          </span>
+        )}
+        <Chip tone={gap.hit ? 'good' : last === null ? 'neutral' : 'warn'} title="How far the last reading was from the mark">
+          {gap.hit && <Check className="h-3 w-3" />}
+          {last === null ? targetChip(challenge) : gap.text}
+        </Chip>
       </div>
+
+      {!affordable && (
+        <p className="mt-1 text-[10.5px] leading-snug font-bold text-[#96591C]">
+          Too dear to run at these settings — turn something down, or run it at night.
+        </p>
+      )}
+
+      {/* On a phone the bank and the hand-in fold behind a tap; on desktop
+          there is room for all of it. Hand-in also lives on every result
+          card, so nobody has to find this. */}
+      {compact && (
+        <Tile
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open || hit}
+          aria-label={open ? 'Fold the gauge' : 'What is left in the jars'}
+          className="mt-1 w-full text-left text-[10.5px] font-extrabold text-[#8B8471]"
+        >
+          {open || hit ? 'Jars and hand-in ▾' : 'Jars and hand-in ▸'}
+        </Tile>
+      )}
+      {(!compact || open || hit) && (
+        <div className="mt-1.5 flex flex-col gap-1.5">
+          <BankRow bank={bank} budget={challenge.budget} />
+          <AtlasButton
+            tone="primary"
+            onClick={onFinish}
+            invite={hit}
+            disabled={trials === 0}
+            className="w-full"
+          >
+            <Flag className="h-3.5 w-3.5" />
+            {trials === 0 ? 'Run a measurement first' : 'Hand it in'}
+          </AtlasButton>
+        </div>
+      )}
     </div>
   )
 }
@@ -493,6 +873,9 @@ export function ScoreCard({
   rival,
   onAgain,
   onClose,
+  tally = null,
+  opened = null,
+  onNext,
 }: {
   challenge: Challenge
   score: ChallengeScore
@@ -503,8 +886,14 @@ export function ScoreCard({
   rival: number | null
   onAgain: () => void
   onClose: () => void
+  /** A keep round's day, drawn in place of the gather round's summary. */
+  tally?: ReactNode
+  /** A door this hand-in opened, and the way through it. */
+  opened?: { name: string; id: number } | null
+  onNext?: () => void
 }) {
   const [copied, setCopied] = useState(false)
+  const keep = challenge.loop === 'keep'
 
   /**
    * How much of what was on offer the learner actually caught.
@@ -571,13 +960,17 @@ export function ScoreCard({
           </Tile>
         </div>
 
-        <p className="mt-2 text-[12.5px] leading-relaxed font-semibold text-[#5A5445]">
-          {score.hit
-            ? `You landed it: ${best?.toFixed(1)} ${challenge.goal.unit}, in ${trials} ${trials === 1 ? 'trial' : 'trials'}.`
-            : `Best you reached was ${best === null ? '—' : best.toFixed(1)} ${challenge.goal.unit}. Missing is the useful kind of wrong — it tells you which input was actually holding the line back.`}
-        </p>
+        {keep ? (
+          tally
+        ) : (
+          <p className="mt-2 text-[12.5px] leading-relaxed font-semibold text-[#5A5445]">
+            {score.hit
+              ? `You landed it: ${best?.toFixed(1)} ${challenge.goal.unit}, in ${trials} ${trials === 1 ? 'trial' : 'trials'}.`
+              : `Best you reached was ${best === null ? '—' : best.toFixed(1)} ${challenge.goal.unit}. Missing is the useful kind of wrong — it tells you which input was actually holding the line back.`}
+          </p>
+        )}
 
-        {thinGather && (
+        {thinGather && !keep && (
           <p className="mt-2 rounded-xl border border-[#EFC9A6] bg-[#FBEEE0] px-3 py-2 text-[11.5px] leading-snug font-bold text-[#96591C]">
             You gathered about {Math.round(share * 100)}% of what was on offer, so the dials never
             got far. That ceiling is most of why the number would not come — go back and gather
@@ -607,14 +1000,22 @@ export function ScoreCard({
             why="How near the mark you got. Worth the most, because it is the only part that is about understanding the plant."
           />
           <Part
-            label="Economy"
+            label={keep ? 'Standing' : 'Economy'}
             value={score.economy}
-            why="How few trials it took. Reasoning your way there beats trying everything."
+            why={
+              keep
+                ? 'Whether the leaf was firm at the end. A number banked by a plant that is dying is not banked.'
+                : 'How few trials it took. Reasoning your way there beats trying everything.'
+            }
           />
           <Part
-            label="Thrift"
+            label={keep ? 'Water' : 'Thrift'}
             value={score.thrift}
-            why="How little of what you gathered you burnt. Light you could not use was light you wasted."
+            why={
+              keep
+                ? 'How much of the water a wide-open leaf would have lost you kept in the pot.'
+                : 'How little of what you gathered you burnt. Light you could not use was light you wasted.'
+            }
           />
         </div>
 
@@ -623,13 +1024,30 @@ export function ScoreCard({
           recorded, exactly as it does in the plain lab — a challenge cannot buy it.
         </p>
 
+        {opened && onNext && (
+          <div
+            data-testid="door-opened"
+            className="mt-3 flex items-center gap-2 rounded-xl border border-[#C8DFC2] bg-[#E7F1E3] px-3 py-2"
+          >
+            <div className="min-w-0 flex-1">
+              <span className="atlas-eyebrow" style={{ color: '#2F6134' }}>A door has opened</span>
+              <p className="text-[12px] leading-snug font-extrabold text-[#2A2823]">
+                Stage {opened.id} · {opened.name}
+              </p>
+            </div>
+            <AtlasButton tone="primary" invite onClick={onNext} className="shrink-0">
+              Go through
+            </AtlasButton>
+          </div>
+        )}
+
         <div className="mt-3 flex gap-2">
           <AtlasButton onClick={copyLink} className="flex-1">
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             {copied ? 'Link copied' : 'Challenge a friend'}
           </AtlasButton>
-          <AtlasButton tone="primary" onClick={onAgain} className="flex-1">
-            Play again
+          <AtlasButton tone="primary" onClick={onAgain} className="flex-1" invite={keep && !score.hit}>
+            {keep ? 'Play the day again' : 'Play again'}
           </AtlasButton>
         </div>
       </div>

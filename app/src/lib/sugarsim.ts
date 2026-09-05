@@ -11,6 +11,7 @@
 import type { Band, BandCaps } from './bands'
 import type { LabEnv } from './ratelab'
 import { CO2_AMBIENT_PPM, CO2_MAX_PPM, PAR_FULL_SUN, TEMP_MAX_C, TEMP_MIN_C } from './ratelab'
+import { stepDay, type DayRun } from './hatches'
 import { DEFAULT_SPECIMEN, SPECIMEN_BY_ID, type Specimen } from './specimens'
 import {
   clamp,
@@ -67,7 +68,7 @@ export const TRACER_GAP_FRACTION = 0.3
  * Three views of one plant, in the order a learner should meet them: the whole
  * supply chain, then the factory that feeds it, then the pipe it travels down.
  */
-export type StageId = 'plant' | 'leaf' | 'stem'
+export type StageId = 'plant' | 'leaf' | 'hatches' | 'stem'
 
 export interface StageMeta {
   id: StageId
@@ -94,6 +95,13 @@ export const STAGES: StageMeta[] = [
     eyebrow: 'THE FACTORY',
     hint: 'A chloroplast at work: light split water, the Calvin cycle builds sugar.',
     scale: { label: '2 µm', metres: 2e-6 },
+  },
+  {
+    id: 'hatches',
+    label: 'The hatches',
+    eyebrow: 'THE HATCHES',
+    hint: 'One stoma, from underneath. Carbon comes in this way and water goes out.',
+    scale: { label: '20 µm', metres: 2e-5 },
   },
   {
     id: 'stem',
@@ -203,6 +211,16 @@ export interface SugarSim {
   turgor: number
   /** Night forces light to zero and makes the plant live off its starch. */
   night: boolean
+  /**
+   * How far the stomata may open, 0–1. The Hatches stage's one control; 1 in
+   * the plain lab, where the plant alone decides.
+   */
+  hatch: number
+  /**
+   * A scripted plant-day the sim is running on its own — the Keep-it-alive
+   * loop. Null outside a challenge. Owned by `lib/hatches.ts`.
+   */
+  day: DayRun | null
 
   /* ---- specimen and surgery ---- */
   specimenId: string
@@ -289,6 +307,8 @@ export function createSugarSim(): SugarSim {
     tempC: 24,
     soilWater: 0.7,
     humidity: 0.55,
+    hatch: 1,
+    day: null,
     turgor: 1,
     night: false,
 
@@ -353,6 +373,8 @@ export function simEnv(sim: SugarSim): LabEnv {
     humidity: sim.humidity,
     soilWater: sim.soilWater,
     turgor: sim.turgor,
+    hatch: sim.hatch,
+    night: sim.night,
   }
 }
 
@@ -401,12 +423,24 @@ export function stepSim(sim: SugarSim, rawDt: number): void {
   sim.solve = solve
   if (sim.paused || !sim.started) return
 
-  sim.clockRate = sim.tracerActive ? CLOCK_TRACER_HOURS_PER_SECOND : CLOCK_LIVE_HOURS_PER_SECOND
+  sim.clockRate = sim.tracerActive
+    ? CLOCK_TRACER_HOURS_PER_SECOND
+    : sim.day && !sim.day.done
+      ? sim.day.spec.hoursPerSecond
+      : CLOCK_LIVE_HOURS_PER_SECOND
   const dtHours = stepDt * sim.clockRate
   sim.plantHours += dtHours
 
+  // A scripted day sets the weather before the plant responds to it, so the
+  // solve above is one step stale during a day run — which is invisible at
+  // these rates and keeps the solve pure.
+  const dayRunning = !!sim.day && !sim.day.done
+  if (dayRunning) stepDay(sim, solve, dtHours)
+
   stepCarbon(simSpecimen(sim), sim.carbon, solve, dtHours * 3600)
-  stepTurgor(sim, solve, dtHours)
+  // During a day run the pot and the leaf's water are real millilitres and
+  // the day owns them; the plain lab keeps its lighter-touch turgor.
+  if (!dayRunning) stepTurgor(sim, solve, dtHours)
 
   /* ---- the measurement trial ---- */
   if (sim.trialRunning) {

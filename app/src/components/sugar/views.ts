@@ -84,6 +84,22 @@ export const VIEWPOINTS: Viewpoint[] = [
     target: [0.05, 1.05, 0.15],
   },
   {
+    id: 'pore',
+    label: 'The pore',
+    stage: 'hatches',
+    hint: 'Two guard cells and the gap between them. Carbon in, water out.',
+    position: [0.3, 1.7, 7.4],
+    target: [0.05, 1.3, 0],
+  },
+  {
+    id: 'skin',
+    label: 'The skin',
+    stage: 'hatches',
+    hint: 'Pull back: one hatch among the pavement cells of the leaf\'s underside.',
+    position: [-1.2, 2.3, 10.5],
+    target: [0.1, 1.35, 0],
+  },
+  {
     id: 'section',
     label: 'Section',
     stage: 'stem',

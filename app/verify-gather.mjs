@@ -65,8 +65,45 @@ async function open(width, height, touch = false, hash = '#/photosynthesis?q=low
   })
   watch(page)
   await page.goto(`${BASE}${hash}`, { waitUntil: 'load' })
+  // Every page starts with no doors walked through, so the map's state is
+  // the run's doing and not a previous run's.
+  await page.evaluate(() => localStorage.removeItem('ploobia.campaign.photosynthesis.v1'))
+  await page.reload({ waitUntil: 'load' })
   await page.waitForTimeout(1800)
   return page
+}
+
+/**
+ * End the round and take the handover.
+ *
+ * Since Sugar Line VI the round hands over through a card — what you caught,
+ * what to do with it — before the capped lab appears. Every path into the lab
+ * goes through it, so the suites do too.
+ */
+async function toTheLab(page) {
+  await tap(page, 'To the lab')
+  await waitFor(async () => (await run(page)).phase === 'handover')
+  const h = await run(page)
+  check('the round hands over through a card, not a cold cut', h.phase === 'handover', String(h.phase))
+  check('and the handover names what was caught', (await page.getByTestId('handover').count()) === 1)
+  await tap(page, 'Into the lab')
+  await waitFor(async () => (await run(page)).phase === 'lab')
+}
+
+/**
+ * Press Start gathering and wait through the get-ready beat.
+ *
+ * The clock does not run until the three-second beat ends or the first catch
+ * lands, so a suite that expects `gather` straight away is testing a build
+ * that no longer exists.
+ */
+async function startGathering(page) {
+  await tap(page, 'Start gathering')
+  await waitFor(async () => (await run(page)).phase === 'ready', 8000)
+  const r = await run(page)
+  check('the round opens on a get-ready beat, with the clock held', r.phase === 'ready' && r.secondsLeft === r.challenge.gatherSeconds, `${r.phase} ${r.secondsLeft}`)
+  check('and the beat says what to do', (await page.getByTestId('get-ready').count()) === 1)
+  await waitFor(async () => (await run(page)).phase === 'gather', 15000)
 }
 
 async function start(page) {
@@ -108,6 +145,66 @@ async function sweepPointer(page, moves) {
 }
 
 /* ================================================================== */
+/* The front door: Play first, and an Explorer never sees the brief   */
+/* ================================================================== */
+{
+  const page = await open(390, 844, true)
+  await page.evaluate(() => localStorage.setItem('ploobia.band.v1', JSON.stringify('explorer')))
+  await page.reload({ waitUntil: 'load' })
+  await page.waitForTimeout(1800)
+
+  const doors = await page.evaluate(() =>
+    [...document.querySelectorAll('button')]
+      .map((b) => b.getAttribute('aria-label'))
+      .filter((l) => l === 'Play' || l === 'Start' || l === 'Watch it play itself'),
+  )
+  check('the welcome card leads with Play', doors[0] === 'Play', doors.join(' → '))
+  check('and keeps the free lab one tap away', doors.includes('Start'))
+
+  /* -- the map: five doors, named, honestly shut -- */
+  const states = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid^="door-"]')].map((d) => d.getAttribute('data-state')),
+  )
+  check('the welcome card shows five doors', states.length === 5, states.join(','))
+  check('the first is open and the second is shut', states[0] === 'open' && states[1] === 'shut', states.join(','))
+  check('the unbuilt ones are on the map, undiscovered', states.slice(2).every((s) => s === 'undiscovered'))
+  check('and none of them says coming soon', !(await page.evaluate(() => /coming soon/i.test(document.body.innerText))))
+  await resilientClick(page.getByTestId('door-2'), { label: 'door 2' })
+  await page.waitForTimeout(300)
+  const note = await page.getByTestId('door-note').textContent().catch(() => '')
+  check('a shut door says what opens it', /stage 1/i.test(note || ''), note || '')
+  check('and does not open', (await run(page))?.phase === 'off')
+
+  await tap(page, 'Play')
+  await waitFor(async () => (await run(page))?.phase === 'ready', 8000)
+  const r = await run(page)
+  check('an Explorer goes straight from Play into the countdown', r?.phase === 'ready', String(r?.phase))
+  check('on the band\'s own level', r?.challenge?.band === 'explorer' && r?.challenge?.goal?.target === 10, JSON.stringify(r?.challenge?.goal))
+  check('with no brief in the way', (await page.getByTestId('brief-headline').count()) === 0)
+  check('and a voice in the round', (await page.getByTestId('gather-coach').count()) === 1)
+  check('the clock is held during the beat', r?.secondsLeft === r?.challenge?.gatherSeconds)
+
+  // A catch made without moving is not a gesture, so it must not end the beat.
+  await page.waitForTimeout(800)
+  const still = await run(page)
+  check('a still finger does not start the clock', still?.phase === 'ready' || still?.readyLeft < 1, `${still?.phase} readyLeft ${still?.readyLeft}`)
+  await page.close()
+}
+
+{
+  const page = await open(1440, 900)
+  await page.evaluate(() => localStorage.setItem('ploobia.band.v1', JSON.stringify('scientist')))
+  await page.reload({ waitUntil: 'load' })
+  await page.waitForTimeout(1800)
+  await tap(page, 'Play')
+  await waitFor(async () => (await run(page))?.phase === 'brief', 8000)
+  const r = await run(page)
+  check('a Scientist\'s Play opens the brief', r?.phase === 'brief', String(r?.phase))
+  check('on level 2, with the target as the headline', /12 mg h⁻¹/.test((await page.getByTestId('brief-headline').textContent()) || ''))
+  await page.close()
+}
+
+/* ================================================================== */
 /* The lab is untouched until you ask for a challenge                 */
 /* ================================================================== */
 {
@@ -131,11 +228,20 @@ async function sweepPointer(page, moves) {
   await tap(page, 'Challenge')
   await page.waitForTimeout(500)
   check('the brief opens', (await run(page)).phase === 'brief')
+  // The brief opens on one challenge — the band's own level — with the
+  // target as the headline. The list and the room code are one tap away.
+  const headline = await page.getByTestId('brief-headline').textContent()
+  check('the brief opens on one challenge with the target as the headline', /12 mg h⁻¹/.test(headline || ''), headline || '')
+  check('the list is folded away until asked for', (await page.getByText('Thin air').count()) === 0)
+  await tap(page, 'Other challenges')
+  await page.waitForTimeout(300)
   check(
-    'it offers more than one brief to choose from',
+    'and offers more than one brief to choose from',
     (await page.getByText('First light').count()) >= 1 &&
-      (await page.getByText('Land it exactly').count()) >= 1,
+      (await page.getByText('Find the ceiling').count()) >= 1,
   )
+  await tap(page, 'Join a room')
+  await page.waitForTimeout(300)
   check(
     'and a room code box, so a class can share one world',
     (await page.getByLabel('Room code').count()) === 1,
@@ -160,12 +266,13 @@ async function sweepPointer(page, moves) {
 
   // A typed room code must produce a reproducible world, and the brief has to
   // show which one before the learner commits to it.
+  await tap(page, 'Join a room')
+  await page.waitForTimeout(300)
   await page.getByLabel('Room code').fill('MANGO')
   await page.waitForTimeout(300)
   check('a room code names a room', (await page.getByText(/^Room [A-Z0-9]{5}$/).count()) >= 1)
 
-  await tap(page, 'Start gathering')
-  await waitFor(async () => (await run(page)).phase === 'gather')
+  await startGathering(page)
   {
     // The pointer is left wherever the button was — mid-screen, which is now
     // the middle of the field — so the collector starts catching immediately.
@@ -286,8 +393,7 @@ async function sweepPointer(page, moves) {
   )
   check('the clock is running down', g1.secondsLeft < g0.secondsLeft)
 
-  await tap(page, 'To the lab')
-  await waitFor(async () => (await run(page)).phase === 'lab')
+  await toTheLab(page)
   const lab = await run(page)
   check('finishing early opens the lab', lab.phase === 'lab')
   check('what was banked becomes the grant', lab.granted.light === g1.bank.light)
@@ -360,6 +466,27 @@ async function sweepPointer(page, moves) {
     `${after.caps.light} vs ${ceiling}`,
   )
 
+  /* ---- the ceiling is drawn on the dial, and the reveal answers on the target ---- */
+  {
+    const dial = await page.evaluate(() => {
+      const el = document.querySelector('[aria-label="Light intensity"]')
+      if (!el) return null
+      const dead = el.querySelector('[data-testid="dial-dead-zone"]')
+      return { ceiling: el.getAttribute('data-ceiling'), dead: !!dead, text: el.textContent || '' }
+    })
+    check('the ceiling is drawn on the light dial', dial !== null && dial.dead && dial.ceiling !== null, JSON.stringify(dial))
+    check('and the dial says so at the stop', dial !== null && /ceiling/i.test(dial.text), dial?.text.slice(0, 60))
+    const reveal = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="reveal-challenge"]')
+      return el ? el.textContent || '' : null
+    })
+    check('the result card answers against the target', reveal !== null && /target/i.test(reveal), reveal?.slice(0, 80))
+    check('and names the gap in the learner\'s words', reveal !== null && /(short|over|on the mark)/.test(reveal), reveal?.slice(0, 80))
+    check('and offers the hand-in on the card', (await page.getByRole('button', { name: 'Hand it in', exact: true }).count()) >= 1)
+    const gaugeText = await page.evaluate(() => document.querySelector('[data-testid="target-gauge"]')?.textContent || '')
+    check('the gauge shows the reading beside the target', /last reading/.test(gaugeText) && /TARGET/.test(gaugeText), gaugeText.slice(0, 80))
+  }
+
   /* ---- and the reading still lands in the learner's own evidence ---- */
   check(
     'a challenge trial is still a real reading',
@@ -374,6 +501,11 @@ async function sweepPointer(page, moves) {
   await waitFor(async () => (await run(page)).phase === 'scored')
   const scored = await run(page)
   check('handing in scores the run', scored.phase === 'scored' && scored.score !== null)
+  await page.waitForTimeout(400)
+  check('the hand-in opens the next door on the card', (await page.getByTestId('door-opened').count()) === 1)
+  check('with a way through it', (await page.getByRole('button', { name: 'Go through', exact: true }).count()) === 1)
+  const walked = await page.evaluate(() => JSON.parse(localStorage.getItem('ploobia.campaign.photosynthesis.v1') || '{}'))
+  check('and is remembered', walked.handedIn && Object.keys(walked.handedIn).length === 1, JSON.stringify(walked))
   check(
     'the score is inside its range',
     scored.score.total >= 0 && scored.score.total <= 1000,
@@ -465,8 +597,7 @@ async function sweepPointer(page, moves) {
   await start(page)
   await tap(page, 'Challenge')
   await page.waitForTimeout(400)
-  await tap(page, 'Start gathering')
-  await waitFor(async () => (await run(page)).phase === 'gather')
+  await startGathering(page)
 
   // The HUD must not eat the pointer, or the game cannot be played at all.
   const centre = await page.evaluate(() => {
@@ -503,24 +634,22 @@ async function sweepPointer(page, moves) {
   await sweepPointer(page, 36)
   check('the round can be played with a finger', Object.values((await run(page)).bank).some((v) => v > 0))
 
-  await tap(page, 'To the lab')
-  await waitFor(async () => (await run(page)).phase === 'lab')
+  await toTheLab(page)
   await page.waitForTimeout(600)
 
-  const bar = await page.evaluate(() => {
-    const el = [...document.querySelectorAll('button')].find((b) =>
-      (b.ariaLabel || '').includes('challenge strip'),
-    )
+  /* ---- the target gauge is on screen, at the top, never behind a tab ---- */
+  const gauge = await page.evaluate(() => {
+    const el = document.querySelector('[data-testid="target-gauge"]')
     if (!el) return null
-    const card = el.closest('.atlas-plate').getBoundingClientRect()
-    return { top: card.top, bottom: card.bottom, h: card.height }
+    const r = el.getBoundingClientRect()
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + 12)
+    return { top: r.top, bottom: r.bottom, h: r.height, onTop: !!hit && el.contains(hit) }
   })
-  check('the lab strip is on screen', bar !== null && bar.top >= 0 && bar.bottom <= 844, JSON.stringify(bar))
-  check(
-    'and opens as one line rather than covering the specimen',
-    bar !== null && bar.h < 160,
-    `${Math.round(bar?.h ?? 0)}px tall`,
-  )
+  check('the target gauge is on screen', gauge !== null && gauge.top >= 0 && gauge.bottom <= 844, JSON.stringify(gauge))
+  check('and nothing is drawn over it', gauge !== null && gauge.onTop)
+  check('and it is not behind a tab', gauge !== null && gauge.top < 300, `top ${Math.round(gauge?.top ?? 0)}`)
+  check('and folds so the specimen stays visible', gauge !== null && gauge.h < 230, `${Math.round(gauge?.h ?? 0)}px tall`)
+  check('the coach is still talking inside the challenge', (await page.getByTestId('coach').count()) === 1)
 
   await page.close()
 }

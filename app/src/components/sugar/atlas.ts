@@ -97,6 +97,67 @@ function make(
   return texture
 }
 
+/**
+ * The underside of a leaf: pavement cells, drawn once.
+ *
+ * Epidermal cells are the jigsaw pieces every microscope slide shows — here
+ * as a field of soft irregular blobs with a darker wall between them, on the
+ * pale green of a leaf's lower surface. Seeded by hand so the picture is the
+ * same on every visit; the stoma the stage draws sits in the middle of it.
+ */
+export function leafSkinTexture(): THREE.CanvasTexture {
+  return make(
+    'leaf-skin',
+    1024,
+    1024,
+    (ctx, w, h) => {
+      ctx.fillStyle = '#B9D19E'
+      ctx.fillRect(0, 0, w, h)
+      let seed = 20260905
+      const rnd = () => {
+        seed = (seed * 1664525 + 1013904223) >>> 0
+        return seed / 4294967296
+      }
+      // Cells: a jittered grid of blobs, each a few overlapping ellipses.
+      const cols = 9
+      const rows = 9
+      for (let r = -1; r <= rows; r++) {
+        for (let c = -1; c <= cols; c++) {
+          const cx = ((c + 0.5 + (rnd() - 0.5) * 0.7) / cols) * w
+          const cy = ((r + 0.5 + (rnd() - 0.5) * 0.7) / rows) * h
+          // Leave the middle clear for the stoma.
+          const dx = cx - w / 2
+          const dy = cy - h / 2
+          if (Math.hypot(dx / 1.35, dy) < 150) continue
+          const rx = (w / cols) * (0.55 + rnd() * 0.35)
+          const ry = (h / rows) * (0.5 + rnd() * 0.35)
+          ctx.save()
+          ctx.translate(cx, cy)
+          ctx.rotate(rnd() * Math.PI)
+          ctx.beginPath()
+          ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2)
+          ctx.fillStyle = `rgba(255,255,255,${0.09 + rnd() * 0.08})`
+          ctx.fill()
+          ctx.lineWidth = 6
+          ctx.strokeStyle = 'rgba(70,110,60,0.35)'
+          ctx.stroke()
+          ctx.restore()
+        }
+      }
+      // A soft vignette so the edges of the field fall away.
+      const v = ctx.createRadialGradient(w / 2, h / 2, w * 0.25, w / 2, h / 2, w * 0.75)
+      v.addColorStop(0, 'rgba(0,0,0,0)')
+      v.addColorStop(1, 'rgba(60,90,50,0.35)')
+      ctx.fillStyle = v
+      ctx.fillRect(0, 0, w, h)
+    },
+    (t) => {
+      t.wrapS = THREE.ClampToEdgeWrapping
+      t.wrapT = THREE.ClampToEdgeWrapping
+    },
+  )
+}
+
 /* ------------------------------------------------------------------ */
 /* Sprites                                                            */
 /* ------------------------------------------------------------------ */

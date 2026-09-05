@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Slider } from '@/components/ui/slider'
+import Ploob2 from '@/components/brand/Ploob2'
 import { Tile } from '@/components/ui/tile'
 import { cn } from '@/lib/utils'
 
@@ -207,6 +208,7 @@ export function Dial({
   onChange,
   note,
   disabled,
+  ceiling,
 }: {
   label: string
   value: number
@@ -218,25 +220,65 @@ export function Dial({
   onChange: (v: number) => void
   note?: string
   disabled?: boolean
+  /**
+   * Where this dial stops, in the dial's own units, when a challenge has
+   * capped it. Drawn as a hard stop and a hatched dead zone over the track,
+   * so a slider that will not go further reads as *caused* rather than
+   * broken — the one sentence that used to carry this was folded inside a
+   * collapsed strip, and a learner whose light stopped at a third had no way
+   * to know the gather round was why.
+   */
+  ceiling?: number | null
 }) {
+  const capped = ceiling !== undefined && ceiling !== null && ceiling < max - 1e-9
+  const capFrac = capped ? Math.max(0, Math.min(1, (ceiling - min) / (max - min))) : 1
+  const atCeiling = capped && value >= ceiling - step / 2
   return (
-    <div aria-label={label} className="py-1">
+    <div aria-label={label} className="py-1" data-ceiling={capped ? ceiling : undefined}>
       <div className="mb-1 flex items-baseline justify-between gap-2">
         <span className="text-[11.5px] font-bold text-[#4A4438]">{label}</span>
         <span className="text-[12px] font-extrabold tabular-nums" style={{ color }}>
           {display}
+          {atCeiling && (
+            <span className="ml-1 text-[9.5px] font-black tracking-[0.06em] text-[#8B8471] uppercase">
+              · ceiling
+            </span>
+          )}
         </span>
       </div>
-      <Slider
-        value={[value]}
-        min={min}
-        max={max}
-        step={step}
-        disabled={disabled}
-        onValueChange={(v) => onChange(v[0])}
-        className="[&_[data-slot=slider-range]]:bg-[color:var(--dial)] [&_[data-slot=slider-thumb]]:border-[color:var(--dial)] [&_[data-slot=slider-track]]:bg-[#E7E1D2]"
-        style={{ ['--dial' as string]: color }}
-      />
+      <div className="relative">
+        <Slider
+          value={[value]}
+          min={min}
+          max={max}
+          step={step}
+          disabled={disabled}
+          onValueChange={(v) => onChange(v[0])}
+          className="[&_[data-slot=slider-range]]:bg-[color:var(--dial)] [&_[data-slot=slider-thumb]]:border-[color:var(--dial)] [&_[data-slot=slider-track]]:bg-[#E7E1D2]"
+          style={{ ['--dial' as string]: color }}
+        />
+        {capped && (
+          <>
+            {/* The dead zone: the part of the track your gathering did not buy. */}
+            <span
+              aria-hidden
+              data-testid="dial-dead-zone"
+              className="pointer-events-none absolute top-1/2 right-0 h-1.5 -translate-y-1/2 rounded-r-full"
+              style={{
+                left: `${capFrac * 100}%`,
+                backgroundImage:
+                  'repeating-linear-gradient(90deg, #D8D0BC 0 3px, transparent 3px 6px)',
+              }}
+            />
+            {/* The hard stop. */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute top-1/2 h-3.5 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#2A2823]"
+              style={{ left: `${capFrac * 100}%` }}
+            />
+          </>
+        )}
+      </div>
       {note ? <p className="mt-1 text-[10.5px] leading-snug font-semibold text-[#9A9482]">{note}</p> : null}
     </div>
   )
@@ -304,13 +346,18 @@ export function Meter({
  * a learner needs to be told what to do *now*, at the moment they are looking
  * for it, and the button it points at gets a ring at the same time.
  */
-export function Coach({ text, hint }: { text: string; hint?: string }) {
+export function Coach({ text, hint, who = 'Ploob' }: { text: string; hint?: string; who?: string }) {
   return (
-    <div className="atlas-plate atlas-arrive pointer-events-none flex max-w-[min(30rem,calc(100vw-2rem))] items-center gap-2 px-3.5 py-2">
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#E4EFDF] text-[11px] font-black text-[#2F6134]">
-        →
-      </span>
+    <div
+      data-testid="coach"
+      className="atlas-plate atlas-arrive pointer-events-none flex max-w-[min(30rem,calc(100vw-2rem))] items-center gap-2.5 px-3 py-2"
+    >
+      {/* Ploob 2.0 is the face of the chip. He never speaks on camera, so the
+          line is not in a bubble from his mouth — it is the coach's line, and
+          he is the one standing beside it. */}
+      <Ploob2 size={22} />
       <div className="min-w-0">
+        <span className="atlas-eyebrow block leading-none">{who}</span>
         <p className="text-[12.5px] leading-snug font-extrabold text-[#2A2823]">{text}</p>
         {hint ? <p className="text-[11px] leading-snug font-semibold text-[#8B8471]">{hint}</p> : null}
       </div>

@@ -16,6 +16,7 @@ import Habitat from './Habitat'
 import PlantStage from './PlantStage'
 import LeafStage from './LeafStage'
 import StemStage from './StemStage'
+import HatchStage from './HatchStage'
 import { defaultViewFor, VIEW_BY_ID } from './views'
 
 /**
@@ -137,7 +138,8 @@ function Lights({ stage }: { stage: StageId }) {
   const accentRef = useRef<THREE.PointLight>(null)
   const quality = getQualityCaps()
 
-  const accent = stage === 'leaf' ? '#8FD07A' : stage === 'stem' ? '#F3C05A' : '#FFE7A8'
+  const accent =
+    stage === 'leaf' ? '#8FD07A' : stage === 'hatches' ? '#BFE0A0' : stage === 'stem' ? '#F3C05A' : '#FFE7A8'
 
   useFrame((_, rawDt) => {
     const light = accentRef.current
@@ -569,6 +571,7 @@ export default function SugarScene({
         <PlantStage sim={sim} specimenId={specimenId} outdoors={outdoors} gather={gather} />
       )}
       {stage === 'leaf' && <LeafStage sim={sim} />}
+      {stage === 'hatches' && <HatchStage sim={sim} />}
       {stage === 'stem' && <StemStage sim={sim} />}
       {stereo.on && <Stereo sim={sim} />}
     </Canvas>
