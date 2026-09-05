@@ -15,6 +15,8 @@ export interface CabinetMeta {
   tint: string
   tintSoft: string
   status: 'live' | 'soon'
+  /** Live and routable, but not shown in the hall (reached from another cabinet). */
+  hidden?: boolean
   /** Whether the cabinet ships a guided demo the hall can launch. */
   hasDemo: boolean
   /** IGCSE-ish topic tags for the mapping layer (kept short here). */
@@ -56,8 +58,22 @@ export const CABINETS: CabinetMeta[] = [
     topics: ['Blood components', 'Circulation', 'Gas exchange', 'Cells & respiration', 'Immune response'],
   },
   {
+    id: 'physics',
+    route: '/physics',
+    title: 'First Physics',
+    subject: 'Physics',
+    tagline: 'One thing at a time. Drag it, time it, push it — and watch each idea earn its equation.',
+    cta: 'Start with one Ploob',
+    tint: '#2E6DA8',
+    tintSoft: '#D9E6F2',
+    status: 'live',
+    hasDemo: false,
+    topics: ['Distance & speed', 'Distance–time graphs', 'Forces as arrows', 'Balanced forces', 'Friction', 'Weight & gravity'],
+  },
+  {
     id: 'motion',
     route: '/motion',
+    hidden: true,
     title: 'Motion Yard',
     subject: 'Physics',
     tagline: 'Race it, launch it, drop it. Every flight wears its own numbers — and gravity retunes the whole world.',

@@ -4,6 +4,7 @@ import BloodVoyage from './pages/BloodVoyage'
 import SugarLine from './pages/SugarLine'
 import Home from './pages/Home'
 import MotionLab from './pages/MotionLab'
+import FirstPhysics from './pages/FirstPhysics'
 import AtomFoundry from './pages/AtomFoundry'
 import RiverBasin from './pages/RiverBasin'
 import Brand from './pages/Brand'
@@ -16,6 +17,8 @@ export default function App() {
         <Route path="/" element={<Menu />} />
         <Route path="/blood" element={<BloodVoyage />} />
         <Route path="/photosynthesis" element={<SugarLine />} />
+        <Route path="/physics" element={<FirstPhysics />} />
+        <Route path="/physics/:episode" element={<FirstPhysics />} />
         <Route path="/motion" element={<MotionLab />} />
         <Route path="/atoms" element={<AtomFoundry />} />
         <Route path="/rivers" element={<RiverBasin />} />
