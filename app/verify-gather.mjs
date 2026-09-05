@@ -175,6 +175,34 @@ async function sweepPointer(page, moves) {
   )
   check('the bank starts empty', Object.values(g0.bank).every((v) => v === 0))
 
+  /* ---- the drag belongs to the game, not to the camera ---- */
+  {
+    // A drag across the glass is both the orbit gesture and the catch gesture.
+    // With orbit live, every sweep tumbles the scene under the collector and
+    // the round is unplayable — and nothing overlaps, nothing is off screen,
+    // so no geometry check can see it. Only this can.
+    const before = await page.evaluate(() => {
+      const c = window.__sugarCam
+      return c ? [c.position.x, c.position.y, c.position.z] : null
+    })
+    const box = await page.locator('canvas').first().boundingBox()
+    await page.mouse.move(box.x + box.width * 0.35, box.y + box.height * 0.35)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.65, { steps: 8 })
+    await page.mouse.up()
+    await page.waitForTimeout(700)
+    const after = await page.evaluate(() => {
+      const c = window.__sugarCam
+      return c ? [c.position.x, c.position.y, c.position.z] : null
+    })
+    const moved = before && after ? Math.hypot(...before.map((v, i) => v - after[i])) : -1
+    check(
+      'dragging during the round does not spin the camera',
+      moved >= 0 && moved < 0.05,
+      `camera moved ${moved.toFixed(3)}`,
+    )
+  }
+
   await sweepPointer(page, 48)
   const g1 = await run(page)
   const banked = Object.values(g1.bank).reduce((a, b) => a + b, 0)
@@ -191,6 +219,30 @@ async function sweepPointer(page, moves) {
   check('finishing early opens the lab', lab.phase === 'lab')
   check('what was banked becomes the grant', lab.granted.light === g1.bank.light)
   check('and the grant sets a ceiling on the dials', lab.caps !== null && lab.caps.light <= 1)
+
+  /* ---- and the camera is handed back when the round ends ---- */
+  {
+    const before = await page.evaluate(() => {
+      const c = window.__sugarCam
+      return c ? [c.position.x, c.position.y, c.position.z] : null
+    })
+    const box = await page.locator('canvas').first().boundingBox()
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.5, { steps: 8 })
+    await page.mouse.up()
+    await page.waitForTimeout(700)
+    const after = await page.evaluate(() => {
+      const c = window.__sugarCam
+      return c ? [c.position.x, c.position.y, c.position.z] : null
+    })
+    const moved = before && after ? Math.hypot(...before.map((v, i) => v - after[i])) : -1
+    check(
+      'and the orbit is handed back in the lab',
+      moved > 0.05,
+      `camera moved ${moved.toFixed(3)}`,
+    )
+  }
 
   /* ---- the ceiling is real, not decorative ---- */
   const ceiling = lab.caps.light

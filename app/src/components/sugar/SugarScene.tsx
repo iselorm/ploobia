@@ -191,8 +191,15 @@ const MAX_ORBIT = 22
  * camera is; when it lands, OrbitControls owns the camera again. Nothing is
  * lerped toward a home position every frame, because that quietly drags a
  * learner back out of whatever they were looking at.
+ *
+ * The one exception is the gather round, and it is not a preference — a drag
+ * across the glass is *both* the orbit gesture and the catch gesture, so with
+ * orbit live every sweep tumbles the scene under the collector and the round
+ * is unplayable. For those forty seconds the drag belongs to the game. Found
+ * by playing it on real hardware; no amount of geometry checking would have
+ * shown it, because nothing overlaps and nothing is off screen.
  */
-function SugarCamera({ sim, frame }: { sim: SugarSim; frame: number }) {
+function SugarCamera({ sim, frame, orbit = true }: { sim: SugarSim; frame: number; orbit?: boolean }) {
   const stereo = useStereo()
   const controls = useThree((s) => s.controls) as OrbitLike | null
   const camera = useThree((s) => s.camera)
@@ -335,7 +342,7 @@ function SugarCamera({ sim, frame }: { sim: SugarSim; frame: number }) {
   return (
     <OrbitControls
       makeDefault
-      enabled={!stereo.on}
+      enabled={!stereo.on && orbit}
       enablePan={false}
       enableDamping
       dampingFactor={0.08}
@@ -554,7 +561,7 @@ export default function SugarScene({
           <Lights stage={stage} />
         </>
       )}
-      <SugarCamera sim={sim} frame={frame} />
+      <SugarCamera sim={sim} frame={frame} orbit={!gather?.running} />
       {/* Stereo owns the projection matrices per eye; a view offset on the
           shared camera would be applied twice and skew the pair. */}
       {!stereo.on && <SceneLift px={obstructBottom} />}

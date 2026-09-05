@@ -236,7 +236,7 @@ function BankRow({
             className="rounded-lg border border-[#E4DCC9] bg-[#FCFAF4]/92 px-2 py-1 backdrop-blur-md"
           >
             <div className="flex items-baseline justify-between gap-1">
-              <span className="text-[9.5px] font-black tracking-[0.1em] text-[#8B8471] uppercase">
+              <span className="text-[10.5px] font-black tracking-[0.08em] text-[#6B6555] uppercase">
                 {r.label}
               </span>
               <span className="text-[11px] font-extrabold text-[#2A2823] tabular-nums">
@@ -280,7 +280,7 @@ export function GatherHud({
   const urgent = secondsLeft <= 5
   return (
     <div className="pointer-events-none fixed inset-0 z-30">
-      <div className="absolute inset-x-3 top-3 flex flex-col gap-2">
+      <div className="absolute inset-x-3 top-3 mx-auto flex max-w-[36rem] flex-col gap-2">
         <div className="flex items-center gap-2">
           <div className="flex flex-1 items-center gap-2 rounded-full border border-[#E4DCC9] bg-[#FCFAF4]/92 px-3 py-1.5 backdrop-blur-md">
             <span
