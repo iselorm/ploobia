@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import { getQualityCaps } from '@/lib/quality'
-import { rngFor } from '@/lib/challenge'
 import type { SugarResource } from '@/lib/sugarchallenge'
 import { glowSprite } from './atlas'
+import { buildGatherField, CATCH_WINDOW, framingFor } from './gatherfield'
 import type { SugarRig } from './rig'
 
 /**
@@ -74,20 +74,6 @@ function distToSweep(
 const WORTH: Record<SugarResource, number> = { light: 95, co2: 26, water: 4 }
 
 /**
- * Where one catchable comes from and where it is going. Derived from the seed
- * and then never touched — two players on one link must gather from an
- * identical sky, and a plan that could be edited would not stay identical.
- */
-interface Spawn {
-  kind: SugarResource
-  from: THREE.Vector3
-  to: THREE.Vector3
-  speed: number
-  /** Its starting place along the path, 0–1. */
-  phase: number
-}
-
-/**
  * The part that moves, kept deliberately apart from the plan.
  *
  * Two arrays rather than one mutable one, because the plan is a memo and a memo
@@ -135,68 +121,105 @@ export default function GatherRound({
    * gameplay one, and the two must not be confused. The floor is high enough
    * that the round is still playable on the lowest tier.
    */
-  const fieldSize = Math.max(14, Math.round(CATCHABLES * Math.max(0.5, quality.particleScale)))
+  const fieldSize = Math.max(18, Math.round(CATCHABLES * Math.max(0.6, quality.particleScale)))
 
   const tmp = useMemo(
     () => ({ at: new THREE.Vector3(), ndc: new THREE.Vector3(), aim: new THREE.Vector3() }),
     [],
   )
 
-  /** Where the light comes from — the same angle the shafts use. */
-  const travel = useMemo(() => {
-    const v = new THREE.Vector3(
-      Math.cos(elevation) * Math.sin(azimuth),
-      Math.sin(elevation),
-      Math.cos(elevation) * Math.cos(azimuth),
-    )
-    return v.normalize().multiplyScalar(-1)
-  }, [elevation, azimuth])
-
   /**
    * The world, built once from the seed.
    *
-   * Light falls down the lanes onto leaves, carbon drifts in across the canopy,
-   * water rises out of the soil. Each stream comes from where that resource
-   * really comes from, because a game whose geography contradicts the science
-   * is teaching the wrong thing quietly.
+   * The geometry lives in `gatherfield.ts` because the camera needs the same
+   * answer — see that module for why one definition matters here.
    */
-  const items = useMemo<Spawn[]>(() => {
-    const next = rngFor(seed)
-    const leaves = [...rig.leaves].sort((a, b) => b.source.y - a.source.y)
-    const canopy = rig.height * 0.7
-    const out: Spawn[] = []
-    for (let i = 0; i < fieldSize; i++) {
-      const roll = next()
-      const kind: SugarResource = roll < 0.5 ? 'light' : roll < 0.82 ? 'co2' : 'water'
-      const leaf = leaves[i % Math.max(1, leaves.length)]
-      const to = leaf ? leaf.source.clone() : new THREE.Vector3(0, canopy, 0)
-      let from: THREE.Vector3
-
-      if (kind === 'light') {
-        from = to.clone().addScaledVector(travel, -(rig.height * 1.4 + 1.4))
-      } else if (kind === 'co2') {
-        const a = next() * Math.PI * 2
-        const r = 1.5 + next() * 0.8
-        from = new THREE.Vector3(Math.cos(a) * r, canopy + (next() - 0.5) * 0.8, Math.sin(a) * r)
-      } else {
-        const a = next() * Math.PI * 2
-        const r = 0.25 + next() * 0.5
-        from = new THREE.Vector3(Math.cos(a) * r, -0.35, Math.sin(a) * r)
-      }
-      out.push({
-        kind,
-        from,
-        to: kind === 'water' ? new THREE.Vector3(from.x * 0.3, canopy * 0.8, from.z * 0.3) : to,
-        phase: next(),
-        speed: 0.16 + next() * 0.16,
-      })
-    }
-    return out
-  }, [rig, seed, travel, fieldSize])
+  const field = useMemo(
+    () => buildGatherField(rig, seed, elevation, azimuth, fieldSize),
+    [rig, seed, elevation, azimuth, fieldSize],
+  )
+  const items = field.items
 
   const motion = useRef<Motion[]>([])
   /** The pointer's place last frame, so a sweep is a segment and not a dot. */
   const prev = useRef({ x: 0, y: 0, has: 0 })
+
+  /* ------------------------------------------------------------------ */
+  /* Framing                                                            */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * The round frames the field, and hands the view back when it ends.
+   *
+   * Camera work inside what is otherwise a particle component looks out of
+   * place, and the alternative — threading a bounding box up through
+   * `PlantStage` into `SugarScene` — is worse: two components would have to
+   * agree about a volume only this one computes, which is the arrangement that
+   * produced the bug in the first place. The whole feature stays in one file
+   * and one mount point instead.
+   *
+   * Orbit is already disabled for the duration of the round, so nothing fights
+   * this. On unmount the camera is put back exactly where it was, because a
+   * learner who spent a minute finding an angle they liked should not lose it
+   * to a game they chose to play.
+   */
+  const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera
+  const controls = useThree((s) => s.controls) as
+    | { target: THREE.Vector3; update: () => void }
+    | null
+  const wanted = useMemo(
+    () => ({ position: new THREE.Vector3(), target: new THREE.Vector3() }),
+    [],
+  )
+  const saved = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null)
+
+  useEffect(() => {
+    if (!running) return
+    saved.current = {
+      position: camera.position.clone(),
+      target: controls ? controls.target.clone() : new THREE.Vector3(),
+    }
+    return () => {
+      const back = saved.current
+      saved.current = null
+      if (!back) return
+      camera.position.copy(back.position)
+      if (controls) {
+        controls.target.copy(back.target)
+        controls.update()
+      }
+      camera.lookAt(back.target)
+    }
+    // The camera object is stable for the life of the canvas; `controls` may
+    // arrive a frame late, which is why it is a dependency.
+  }, [running, camera, controls])
+
+  /**
+   * The field, for the suite.
+   *
+   * The claim that has to be checkable is *every catchable is on screen while
+   * it can be caught*. That is a projection of world paths through the live
+   * camera, so it cannot be asserted from the DOM and it cannot be asserted
+   * from outside the page. Hence a handle.
+   */
+  useEffect(() => {
+    const w = window as unknown as Record<string, unknown>
+    w.__gatherField = () => ({
+      window: CATCH_WINDOW,
+      bounds: {
+        min: field.bounds.min.toArray(),
+        max: field.bounds.max.toArray(),
+      },
+      items: field.items.map((it) => ({
+        kind: it.kind,
+        from: it.from.toArray(),
+        to: it.to.toArray(),
+      })),
+    })
+    return () => {
+      delete w.__gatherField
+    }
+  }, [field])
 
   useEffect(() => {
     motion.current = items.map((it) => ({ t: it.phase, dead: 0 }))
@@ -214,6 +237,16 @@ export default function GatherRound({
     const px = state.pointer.x
     const py = state.pointer.y
     const aspect = state.size.width / Math.max(1, state.size.height)
+
+    if (running) {
+      // Eased rather than snapped: the round opens by drawing back to take in
+      // the whole sky, which reads as the game beginning. An exponential ease
+      // is frame-rate independent, which a plain lerp is not.
+      framingFor(field.bounds, camera.position, camera.fov, aspect, wanted)
+      const k = 1 - Math.exp(-dt * 3.2)
+      camera.position.lerp(wanted.position, k)
+      camera.lookAt(wanted.target)
+    }
 
     // The collector sits a fixed way in front of the camera, so it is always
     // in view and always the same size to aim with.

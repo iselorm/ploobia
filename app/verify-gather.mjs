@@ -166,6 +166,14 @@ async function sweepPointer(page, moves) {
 
   await tap(page, 'Start gathering')
   await waitFor(async () => (await run(page)).phase === 'gather')
+  {
+    // The pointer is left wherever the button was — mid-screen, which is now
+    // the middle of the field — so the collector starts catching immediately.
+    // That is right for a player and wrong for this assertion, which is about
+    // what `begin()` sets up, not about how fast the game starts working.
+    const box = await page.locator('canvas').first().boundingBox()
+    await page.mouse.move(box.x + 16, box.y + box.height - 16)
+  }
   const g0 = await run(page)
   check('the gather round starts', g0.phase === 'gather')
   check('the clock is set from the brief', g0.secondsLeft > 0)
@@ -175,31 +183,96 @@ async function sweepPointer(page, moves) {
   )
   check('the bank starts empty', Object.values(g0.bank).every((v) => v === 0))
 
+  /* ---- the playfield and the frame are the same thing ---- */
+  {
+    /* The bug this replaces: motes streamed in from far above the frame while
+       the camera framed the plant, so most of a mote's catchable life happened
+       off screen. Two full sweeps of the visible grass on the deployed build
+       caught nothing at all, and every existing check passed throughout —
+       nothing overlapped, nothing was mis-sized, the camera was where it
+       should be. Only projecting the paths through the live camera can see it. */
+    await page.waitForTimeout(2200) // let the opening framing settle
+    const shot = await page.evaluate(() => {
+      const f = window.__gatherField?.()
+      const cam = window.__sugarCam
+      if (!f || !cam) return null
+      cam.updateMatrixWorld()
+      cam.updateProjectionMatrix()
+      const m = new (Object.getPrototypeOf(cam.projectionMatrix).constructor)()
+      m.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse)
+      const project = (p) => {
+        const v = { x: p[0], y: p[1], z: p[2], w: 1 }
+        const e = m.elements
+        const x = e[0] * v.x + e[4] * v.y + e[8] * v.z + e[12]
+        const y = e[1] * v.x + e[5] * v.y + e[9] * v.z + e[13]
+        const w = e[3] * v.x + e[7] * v.y + e[11] * v.z + e[15]
+        return w !== 0 ? [x / w, y / w] : [99, 99]
+      }
+      const lerp = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t)
+      const off = []
+      let sampled = 0
+      for (const it of f.items) {
+        for (let k = 0; k <= 10; k++) {
+          const t = f.window.lo + ((f.window.hi - f.window.lo) * k) / 10
+          const [nx, ny] = project(lerp(it.from, it.to, t))
+          sampled++
+          if (Math.abs(nx) > 1 || Math.abs(ny) > 1)
+            off.push(`${it.kind}@${t.toFixed(2)} (${nx.toFixed(2)},${ny.toFixed(2)})`)
+        }
+      }
+      return { sampled, off, count: f.items.length }
+    })
+    check('the field handle is exposed', shot !== null)
+    if (shot) {
+      check(
+        'there is a field worth sweeping',
+        shot.count >= 18,
+        `${shot.count} catchables`,
+      )
+      check(
+        'every catchable stays on screen for the whole time it can be caught',
+        shot.off.length === 0,
+        `${shot.off.length}/${shot.sampled} samples off screen: ${shot.off.slice(0, 4).join(', ')}`,
+      )
+    }
+  }
+
   /* ---- the drag belongs to the game, not to the camera ---- */
   {
-    // A drag across the glass is both the orbit gesture and the catch gesture.
-    // With orbit live, every sweep tumbles the scene under the collector and
-    // the round is unplayable — and nothing overlaps, nothing is off screen,
-    // so no geometry check can see it. Only this can.
-    const before = await page.evaluate(() => {
-      const c = window.__sugarCam
-      return c ? [c.position.x, c.position.y, c.position.z] : null
-    })
+    /* Measured as a *direction*, not a position.
+       Orbit rotates the camera about its target; the round's framing only ever
+       changes the distance along the ray the learner was already on. So the
+       question "did the drag orbit?" is exactly "did the direction change?",
+       and asking it that way is immune to the framing ease still settling —
+       which under SwiftShader takes several seconds and is otherwise
+       indistinguishable from a small orbit nudge. */
+    const dirOf = () =>
+      page.evaluate(() => {
+        const c = window.__sugarCam
+        const f = window.__gatherField?.()
+        if (!c || !f) return null
+        const cx = (f.bounds.min[0] + f.bounds.max[0]) / 2
+        const cy = (f.bounds.min[1] + f.bounds.max[1]) / 2
+        const cz = (f.bounds.min[2] + f.bounds.max[2]) / 2
+        const v = [c.position.x - cx, c.position.y - cy, c.position.z - cz]
+        const n = Math.hypot(...v)
+        return n > 1e-6 ? v.map((k) => k / n) : null
+      })
+
+    const before = await dirOf()
     const box = await page.locator('canvas').first().boundingBox()
     await page.mouse.move(box.x + box.width * 0.35, box.y + box.height * 0.35)
     await page.mouse.down()
-    await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.65, { steps: 8 })
+    await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.7, { steps: 10 })
     await page.mouse.up()
-    await page.waitForTimeout(700)
-    const after = await page.evaluate(() => {
-      const c = window.__sugarCam
-      return c ? [c.position.x, c.position.y, c.position.z] : null
-    })
-    const moved = before && after ? Math.hypot(...before.map((v, i) => v - after[i])) : -1
+    await page.waitForTimeout(900)
+    const after = await dirOf()
+    const dot = before && after ? before.reduce((n, v, i) => n + v * after[i], 0) : -1
+    const degrees = dot >= -1 ? (Math.acos(Math.min(1, dot)) * 180) / Math.PI : 999
     check(
       'dragging during the round does not spin the camera',
-      moved >= 0 && moved < 0.05,
-      `camera moved ${moved.toFixed(3)}`,
+      degrees < 0.5,
+      `camera direction turned ${degrees.toFixed(2)}°`,
     )
   }
 
