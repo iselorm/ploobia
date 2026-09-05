@@ -151,28 +151,11 @@ export const WATER_PER_POUR = 12
  */
 export const POUR_DRAW = round2(WATER_PER_POUR * TRIAL_SHARE)
 
-/** Subtract a cost from a bank, never below zero. */
-export function drawDown(bank: ResourceBudget, cost: ResourceBudget): ResourceBudget {
-  const out: ResourceBudget = { ...bank }
-  for (const k of Object.keys(cost)) {
-    out[k] = round2(Math.max(0, (out[k] ?? 0) - (cost[k] ?? 0)))
-  }
-  return out
-}
-
-/** Can this trial be afforded at all? A learner must be told before, not after. */
-export function canAfford(bank: ResourceBudget, cost: ResourceBudget): boolean {
-  return Object.keys(cost).every((k) => (bank[k] ?? 0) + 1e-6 >= (cost[k] ?? 0))
-}
-
-/** Total spent = what was banked minus what is left. */
-export function spentSoFar(granted: ResourceBudget, remaining: ResourceBudget): ResourceBudget {
-  const out: ResourceBudget = {}
-  for (const k of Object.keys(granted)) {
-    out[k] = round2(Math.max(0, (granted[k] ?? 0) - (remaining[k] ?? 0)))
-  }
-  return out
-}
+/* The budget arithmetic moved to `lib/challenge.ts` when the Motion Yard
+   needed the same three functions — a joule and a photon come off a bank
+   identically. Re-exported here so nothing that already imports them from the
+   cabinet's own module has to care. */
+export { canAfford, drawDown, spentSoFar } from './challenge'
 
 /* ------------------------------------------------------------------ */
 /* Reading the goal off the model                                      */

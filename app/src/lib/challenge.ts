@@ -155,6 +155,41 @@ export function challengeId(c: Challenge): string {
 }
 
 /* ------------------------------------------------------------------ */
+/* Budget arithmetic                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Adding and subtracting budgets is the same in every cabinet.
+ *
+ * These lived in the Sugar Line's half until a second cabinet needed them,
+ * which is the moment that settles whether something is general: a photon and
+ * a joule are subtracted from a bank identically, and a function that had to
+ * be written twice would be two chances to make the balance disagree with
+ * itself.
+ */
+export function drawDown(bank: ResourceBudget, cost: ResourceBudget): ResourceBudget {
+  const out: ResourceBudget = { ...bank }
+  for (const k of Object.keys(cost)) {
+    out[k] = round2(Math.max(0, (out[k] ?? 0) - (cost[k] ?? 0)))
+  }
+  return out
+}
+
+/** Can this trial be afforded at all? A learner must be told before, not after. */
+export function canAfford(bank: ResourceBudget, cost: ResourceBudget): boolean {
+  return Object.keys(cost).every((k) => (bank[k] ?? 0) + 1e-6 >= (cost[k] ?? 0))
+}
+
+/** Total spent = what was banked minus what is left. */
+export function spentSoFar(granted: ResourceBudget, remaining: ResourceBudget): ResourceBudget {
+  const out: ResourceBudget = {}
+  for (const k of Object.keys(granted)) {
+    out[k] = round2(Math.max(0, (granted[k] ?? 0) - (remaining[k] ?? 0)))
+  }
+  return out
+}
+
+/* ------------------------------------------------------------------ */
 /* Attempts and scoring                                                */
 /* ------------------------------------------------------------------ */
 
@@ -405,4 +440,8 @@ function clamp01(n: number): number {
 
 function round3(n: number): number {
   return Math.round(n * 1000) / 1000
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100
 }
