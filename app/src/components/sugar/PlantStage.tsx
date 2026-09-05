@@ -17,6 +17,8 @@ import {
 } from './atlas'
 import { buildRig, METRES_PER_UNIT, type SugarRig } from './rig'
 import { habitatForSpecimen } from '@/lib/sugarworld'
+import type { SugarResource } from '@/lib/sugarchallenge'
+import GatherRound from './GatherRound'
 
 /**
  * The whole-plant plate.
@@ -1291,11 +1293,18 @@ export default function PlantStage({
   sim,
   specimenId,
   outdoors = false,
+  gather = null,
 }: {
   sim: SugarSim
   specimenId: string
   /** True when the habitat ring is drawn: the ground line is then real ground. */
   outdoors?: boolean
+  /**
+   * The gather round, when a challenge is running. Null in the plain lab —
+   * which is the whole promise of the opt-in mode: with no challenge, not one
+   * line of this file behaves differently.
+   */
+  gather?: { seed: number; running: boolean; onCatch: (kind: SugarResource, amount: number) => void } | null
 }) {
   const specimen = useMemo(
     () => SPECIMEN_BY_ID[specimenId] ?? SPECIMEN_BY_ID[DEFAULT_SPECIMEN],
@@ -1343,6 +1352,16 @@ export default function PlantStage({
           dial doing anything. Kept at every tier for that reason — the motes
           thin out with `particleScale`, the shafts do not. */}
       <SunRays sim={sim} rig={rig} elevation={sun.elevation} azimuth={sun.azimuth} />
+      {gather && (
+        <GatherRound
+          rig={rig}
+          seed={gather.seed}
+          elevation={sun.elevation}
+          azimuth={sun.azimuth}
+          running={gather.running}
+          onCatch={gather.onCatch}
+        />
+      )}
     </group>
   )
 }

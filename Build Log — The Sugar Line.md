@@ -207,6 +207,8 @@ A **field-guide plate**, not a diorama. Two references, used differently:
 | `verify-journey.mjs` | 40/40 |
 | `verify-blood5.mjs` | 21/21 |
 | `verify-blood6.mjs` | 35/35 |
+| `verify-challenge.mjs` (new) | **136/136** — determinism, room codes, the link round trip, the economy, scoring, ranking, and every brief run through the real sim to prove it is winnable, affordable, missable and not already won |
+| `verify-gather.mjs` (new) | **45/45** — the opt-in stays opt-in, the round is playable with a pointer, the dials stop where the gathering ran out, a trial draws the bank down, a link carries a challenge, and the phone layout survives it |
 | `verify-perf.mjs` | 17/17, 4 honest skips |
 
 Cabinet cost at the low tier, 1280×800: **85 draw calls, 18 k triangles** —
@@ -218,6 +220,103 @@ triangles so a regression fails loudly.
 the pure model with esbuild and asserts against it in Node, which is the only
 way to check that the carbon balances or that a full sink pushes back — neither
 is observable through the HUD.
+
+## The challenge layer (`lib/challenge.ts`, `lib/sugarchallenge.ts`)
+
+Opt-in. The cabinet opens exactly as it did; a chip beside the clock says
+**Challenge**, and a learner who never presses it never meets a timer, a budget
+or a score. That is the whole architectural constraint, and it is why the run
+lives in `hooks/use-sugar-challenge.ts` rather than in the page: the lab never
+asks whether a challenge is on, the page asks and passes ceilings down.
+
+### The shape
+
+```
+gather  →  a short round: sweep a collector through the light, the carbon
+           and the water rising off the soil, and bank what you intercept
+spend   →  the dials now stop where your gathering ran out, and each trial
+           draws the bank down
+hit     →  scored on reaching a target, in few trials, cheaply
+```
+
+The arcade round deliberately **does not touch the trial**. A game that let you
+spray light at a plant under time pressure would teach the exact habit this
+cabinet exists to break. Instead the game sits in front of the loop and makes
+the inputs *scarce*, so a limiting factor stops being a sentence and becomes
+the reason the dial will not go any further.
+
+### Three rules in the spine
+
+1. **A room is many people on one seed.** Two friends comparing a link and a
+   class of thirty on one code are the same data structure — one `Challenge`,
+   many `ChallengeAttempt`s, ranked by the same pure `rank()`. There is no
+   separate multiplayer model to build later.
+2. **The world comes from a seed, not a server.** Everything that varies
+   derives from one integer, so a challenge fits in a URL fragment: no backend,
+   no accounts, no data stored about a child, and it works on a bad connection
+   or none.
+3. **Score is not XP.** `lib/events.ts` guarantees nothing is earned for clicks
+   *by construction*, and a fast reflex is a click. A challenge awards a score;
+   XP still comes only from recorded evidence, which a challenge happens to
+   produce because hitting a target requires running real trials. Nothing in
+   the scoring rewards speed, and the score card says so out loud.
+
+Scoring is accuracy (up to 600) + economy, meaning few trials (250) + thrift,
+meaning unspent budget (150). A miss still scores, because "way out" is framed
+everywhere else here as the useful kind of wrong.
+
+### Traps this layer hit — do not relearn
+
+- **`.` is not escaped by `encodeURIComponent`.** The link encoder joined on
+  it, so a tolerance of `0.5` split into two fields and every value after it
+  was read out of the wrong slot. Joined on `,` — which *is* escaped as `%2C`,
+  so the split can never be ambiguous.
+- **Float equality fails a learner who lands exactly on the line.** `12.3 - 12`
+  is `0.30000000000000027`, so a target of 12 ± 0.3 rejected 12.3. `meetsGoal`
+  carries an epsilon; being failed by the last bit of a double is indefensible.
+- **`L` reads as `1` when a code is said aloud.** Removed from the room-code
+  alphabet along with the vowels.
+- **The budget was doing two jobs and doing both badly.** `capsFor` reads it as
+  *how bright you may go*, `trialCost` as *how much you may burn* — so with a
+  trial priced at the raw dial value, gathering enough light to reach the
+  ceiling bought exactly one trial at that ceiling, and the second reading of a
+  two-reading comparison was unaffordable by construction. `TRIAL_SHARE = 1/3`
+  separates them: how bright is what you caught, how many times is what is
+  left. The ceiling is computed from the **grant**, never the running balance,
+  for the same reason.
+- **The CO₂ cost was on a different scale from the CO₂ dial.** `sim.co2` is
+  normalised against `CO2_MAX_PPM`; the first cost function normalised against
+  the ambient-to-max span, so the cap sat at a number the learner was not
+  looking at.
+- **A cold `solveSugarLine` cannot tell light from darkness.** Export rate is
+  driven by the leaf's sugar pool, and a freshly created specimen carries a
+  full one — so the first winnability check read the same 10.6 mg h⁻¹ at zero
+  light as at full sun, and cheerfully blessed briefs that were unreachable
+  while passing briefs that were already won before the learner touched
+  anything. The check now drives the **real sim** forward four plant hours per
+  grid point. It immediately found that `fast-line` was asking for a
+  translocation speed its own budget could not reach, and that `thin-air` and
+  `drought` were met by doing nothing.
+- **`stepSim` returns early until `sim.started`.** Correct behaviour, and it
+  silently made every reading in that check the cold one anyway.
+- **A frame is a snapshot, and a finger is a sweep.** Testing interception only
+  against where the pointer *is* means a fast drag tunnels straight through
+  everything it crosses. On a phone at thirty frames a second that is most of a
+  sweep, and the round feels broken in a way the player can neither see nor
+  correct. The test is point-to-**segment**, against the path swept since the
+  last frame.
+- **A mutable `useMemo`.** The catchables were one array holding both the
+  seeded plan and the per-frame motion, and the frame loop wrote to it. Split
+  into an immutable plan and a `useRef` of motion — a memo is a value React may
+  hand back to anyone.
+- **A control test that cannot fail.** The first ceiling check poked an
+  `input[type=range]` that does not exist (the dial is a Radix slider), changed
+  nothing, and passed — because zero is under every ceiling. It now clicks the
+  real track and asserts the dial both *stops at* and *reaches* the ceiling.
+- **Wall-clock budgets lie under SwiftShader.** A single `mouse.move` can take
+  most of a second, so twelve seconds of "playing" was nineteen pointer
+  positions and the mechanic looked dead. The suite counts **moves, not
+  seconds**.
 
 ## What moved, and what is now unreferenced
 
@@ -244,6 +343,19 @@ of a **Cell Transport** cabinet.
 
 ## Next
 
+- **The gather round wants a real device.** `WORTH` (what one catch banks) and
+  `CATCH_RADIUS` were set by reasoning, not by playing: the harness runs at a
+  frame or two a second under SwiftShader and cannot tell a generous mechanic
+  from a stingy one. Everything downstream of the bank is checked, and the
+  score card names a thin gather as the reason for a miss, but the feel of the
+  round is the one thing on this feature that has not been measured.
+- **The other cabinets.** `lib/challenge.ts` knows nothing about plants — the
+  budget is a `Record<string, number>` on purpose, so the Motion Yard can bank
+  launches and the Atom Foundry protons. What each cabinet has to supply is its
+  own `capsFor`/`trialCost` pair and a set of goals stated in metrics its
+  instruments already display.
+- **Rooms as a screen.** `rank()` already takes many attempts at one challenge
+  and orders them; nothing yet collects a class's attempts into one view.
 - The Tripo asset layer — see [[Tripo Asset Brief — The Sugar Line]]. The pods,
   the cob, the tubers and the root ball are where a generated mesh would beat
   generated geometry; the molecules and the organelle must stay diagrammatic.

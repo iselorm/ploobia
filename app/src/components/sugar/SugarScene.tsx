@@ -10,6 +10,7 @@ import { registerCamera } from '@/lib/input'
 import { stepSim, type StageId, type SugarSim } from '@/lib/sugarsim'
 import { SPECIMEN_BY_ID } from '@/lib/specimens'
 import { habitatForSpecimen } from '@/lib/sugarworld'
+import type { SugarResource } from '@/lib/sugarchallenge'
 import { ATLAS, atlasEnvironment, DOT_GRID_FRAG, DOT_GRID_VERT } from './atlas'
 import Habitat from './Habitat'
 import PlantStage from './PlantStage'
@@ -359,6 +360,12 @@ interface Props {
   habitat: boolean
   /** Pixels of viewport bottom hidden behind a panel — see `SceneLift`. */
   obstructBottom?: number
+  /** The gather round, when a challenge is running. Null in the plain lab. */
+  gather?: {
+    seed: number
+    running: boolean
+    onCatch: (kind: SugarResource, amount: number) => void
+  } | null
   onContextLost: () => void
 }
 
@@ -493,6 +500,7 @@ export default function SugarScene({
   specimenId,
   habitat,
   obstructBottom = 0,
+  gather = null,
   onContextLost,
 }: Props) {
   const quality = useQualityCaps()
@@ -550,7 +558,9 @@ export default function SugarScene({
       {/* Stereo owns the projection matrices per eye; a view offset on the
           shared camera would be applied twice and skew the pair. */}
       {!stereo.on && <SceneLift px={obstructBottom} />}
-      {stage === 'plant' && <PlantStage sim={sim} specimenId={specimenId} outdoors={outdoors} />}
+      {stage === 'plant' && (
+        <PlantStage sim={sim} specimenId={specimenId} outdoors={outdoors} gather={gather} />
+      )}
       {stage === 'leaf' && <LeafStage sim={sim} />}
       {stage === 'stem' && <StemStage sim={sim} />}
       {stereo.on && <Stereo sim={sim} />}

@@ -1,6 +1,15 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { ArrowLeft, Clock, LineChart, RotateCcw, SlidersHorizontal, Sprout, Trophy } from 'lucide-react'
+import {
+  ArrowLeft,
+  Clock,
+  LineChart,
+  RotateCcw,
+  SlidersHorizontal,
+  Sprout,
+  Swords,
+  Trophy,
+} from 'lucide-react'
 import SceneErrorBoundary from '@/components/SceneErrorBoundary'
 import BandSwitch from '@/components/hud/BandSwitch'
 import HudDrawer from '@/components/hud/HudDrawer'
@@ -73,6 +82,21 @@ import Welcome from '@/components/sugar/hud/Welcome'
 import DemoOverlay from '@/components/sugar/hud/DemoOverlay'
 import Reveal from '@/components/sugar/hud/Reveal'
 import { defaultViewFor, VIEW_BY_ID, viewsForStage } from '@/components/sugar/views'
+import { ChallengeBar, ChallengeBrief, GatherHud, ScoreCard } from '@/components/sugar/hud/Challenge'
+import { useSugarChallenge } from '@/hooks/use-sugar-challenge'
+import { decodeChallenge, type Challenge } from '@/lib/challenge'
+import { CO2_AMBIENT_PPM, CO2_MAX_PPM, PAR_FULL_SUN } from '@/lib/ratelab'
+import {
+  BASE_SOIL_WATER,
+  canAfford,
+  capsFor,
+  co2DialFor,
+  metricValue,
+  POUR_DRAW,
+  trialCost,
+  WATER_PER_POUR,
+  type SugarResource,
+} from '@/lib/sugarchallenge'
 
 const SugarScene = lazy(() => import('@/components/sugar/SugarScene'))
 
@@ -138,6 +162,26 @@ function ClockChip({ hours, rate }: { hours: number; rate: number }) {
   )
 }
 
+/**
+ * The way into the arcade layer, and the only one.
+ *
+ * A chip beside the clock rather than a banner or an interstitial: the lab is
+ * the spine, and the challenge is something a learner reaches for when they
+ * want it. Anyone who never presses this never meets a timer, a budget or a
+ * score, and the cabinet behaves exactly as it did before the feature existed.
+ */
+function ChallengeChip({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="atlas-chip pointer-events-auto shrink-0 border-[#C8DFC2] bg-[#E7F1E3] font-extrabold text-[#2F6134] transition-all hover:scale-[1.04] hover:bg-[#DCEBD6] active:scale-95"
+    >
+      <Swords className="h-3 w-3" />
+      Challenge
+    </button>
+  )
+}
+
 /* ------------------------------------------------------------------ */
 
 export default function SugarLine() {
@@ -193,6 +237,24 @@ export default function SugarLine() {
   const [demoStep, setDemoStep] = useState(-1)
   const [demoProgress, setDemoProgress] = useState(0)
 
+  /* ---- the challenge layer, which the lab below knows nothing about ---- */
+  const run = useSugarChallenge()
+  /** A challenge that arrived by link, offered in place of the preset list. */
+  const [incoming, setIncoming] = useState<Challenge | null>(null)
+  /** The last catch, purely so the gather HUD can flash. */
+  const [caught, setCaught] = useState<{ kind: SugarResource; n: number } | null>(null)
+  const catchCount = useRef(0)
+  const gathering = run.phase === 'gather'
+  const inChallenge = run.phase === 'gather' || run.phase === 'lab'
+  /**
+   * The interval below is keyed on [sim, caps, band] and everything else it
+   * reads is a stale closure — the same trap `predictionRef` and `readingsRef`
+   * already exist to avoid. The run object is rebuilt every render, so it has
+   * to come through a ref or the bank would never be drawn down.
+   */
+  const runRef = useRef(run)
+  runRef.current = run
+
   const nextId = useRef(1)
   const lastCompleted = useRef(0)
   const lastAborted = useRef(0)
@@ -229,6 +291,7 @@ export default function SugarLine() {
     }
   }, [sim])
 
+
   /* ---- keep the UI in step with what the render loop mutates ---- */
   useEffect(() => {
     const t = window.setInterval(() => {
@@ -249,6 +312,28 @@ export default function SugarLine() {
           const reading = makeReading(nextId.current++, sim, snap, caps, predictionRef.current)
           setReadings((prev) => [...prev, reading])
           setPrediction(null)
+          /* A challenge pays for the trial it has just run, and is offered the
+             goal metric. The goal is read off the model rather than off the
+             result card, because the metric a challenge targets need not be
+             the instrument the learner happens to have selected. Paying on
+             *completion* rather than on start is deliberate: a trial the
+             learner aborted by moving a dial produced no evidence, and
+             charging for it would punish the correction the cabinet spent all
+             its effort teaching. */
+          const r = runRef.current
+          if (r.phase === 'lab' && r.challenge && !sim.demoMode) {
+            r.spend(
+              trialCost({
+                // `snap.light` is already in PAR units with night applied, and
+                // `snap.co2` is already ppm — so both are converted back to
+                // dial units here rather than the cost being redefined.
+                light: snap.light / PAR_FULL_SUN,
+                co2: snap.co2 / CO2_MAX_PPM,
+                night: false,
+              }),
+            )
+            r.offer(metricValue(simSolve(sim), r.challenge.goal.metric))
+          }
           // The one moment the graph is worth interrupting for. Suppressed
           // during the demo, which drives the real handlers and would
           // otherwise pop a card on every one of its fourteen steps.
@@ -351,9 +436,59 @@ export default function SugarLine() {
     setTrialProgress(0)
   }, [sim])
 
+  /**
+   * How far each dial may travel, given what is left in the bank.
+   *
+   * This is the feature's whole argument in four lines. A limiting factor
+   * described in a sentence is forgettable; a light dial that *stops* two
+   * thirds of the way along, because that is where your gathering ran out, is
+   * not. Null in the plain lab, where nothing is scarce.
+   */
+  const dialCaps = useMemo(() => {
+    if (!inChallenge) return null
+    // The grant, not the balance — see `capsFor`. During the gather round the
+    // grant is not settled yet, and the lab is not on screen anyway.
+    const c = capsFor(run.phase === 'lab' ? run.granted : run.bank)
+    return { light: c.light, co2: co2DialFor(c.co2ppm), soilWater: c.water }
+  }, [inChallenge, run.phase, run.granted, run.bank])
+  const dialCapsRef = useRef(dialCaps)
+  dialCapsRef.current = dialCaps
+
+  // The challenge run, for the same reason. A suite that could only read the
+  // HUD would pass on a bar that displayed a bank nothing was drawing down.
+  useEffect(() => {
+    const w = window as unknown as Record<string, unknown>
+    w.__sugarRun = () => ({
+      phase: run.phase,
+      bank: run.bank,
+      granted: run.granted,
+      spent: run.spent,
+      trials: run.trials,
+      best: run.best,
+      hit: run.hit,
+      secondsLeft: run.secondsLeft,
+      score: run.score,
+      challenge: run.challenge,
+      caps: dialCaps,
+    })
+    return () => {
+      delete w.__sugarRun
+    }
+  }, [run, dialCaps])
+
   const patchConditions = useCallback(
     (patch: Partial<Conditions>) => {
       abortTrial()
+      // Clamped here rather than in the panel so that every route to a
+      // condition — sliders, the demo, a mission, a keyboard — meets the same
+      // ceiling. A cap one caller can forget is not a cap.
+      const cap = dialCapsRef.current
+      if (cap) {
+        if (patch.light !== undefined) patch = { ...patch, light: Math.min(patch.light, cap.light) }
+        if (patch.co2 !== undefined) patch = { ...patch, co2: Math.min(patch.co2, cap.co2) }
+        if (patch.soilWater !== undefined)
+          patch = { ...patch, soilWater: Math.min(patch.soilWater, cap.soilWater) }
+      }
       if (patch.light !== undefined) sim.light = patch.light
       if (patch.co2 !== undefined) sim.co2 = patch.co2
       if (patch.tempC !== undefined) sim.tempC = patch.tempC
@@ -422,8 +557,23 @@ export default function SugarLine() {
     [sim, abortTrial],
   )
 
+  /**
+   * What the conditions on the dials right now would cost, and whether the
+   * bank covers it. Recomputed every render because every dial move changes it.
+   */
+  const pendingCost = useMemo(
+    () => trialCost({ light: conditions.light, co2: conditions.co2, night: conditions.night }),
+    [conditions.light, conditions.co2, conditions.night],
+  )
+  const affordable = run.phase !== 'lab' || canAfford(run.bank, pendingCost)
+  const affordableRef = useRef(affordable)
+  affordableRef.current = affordable
+
   const handleRunTrial = useCallback(() => {
     if (sim.trialRunning) return
+    // Refused before it starts, never after: a learner must never watch six
+    // seconds of measurement and then be told they could not pay for it.
+    if (!affordableRef.current) return
     sim.trialLength = caps.trialSeconds
     sim.trialElapsed = 0
     sim.trialSum = 0
@@ -466,8 +616,26 @@ export default function SugarLine() {
     }
   }, [sim])
 
+  /**
+   * The watering can.
+   *
+   * In the plain lab it fills the pot, because a learner should not have to
+   * fight the apparatus. In a challenge it pours one measured amount out of a
+   * finite bank — which is the point at which "water is a limiting factor"
+   * stops being a phrase and starts being a decision.
+   */
   const handleWater = useCallback(() => {
     abortTrial()
+    const r = runRef.current
+    if (r.phase === 'lab' && r.challenge) {
+      if ((r.bank.water ?? 0) + 1e-6 < POUR_DRAW) return
+      r.draw({ water: POUR_DRAW })
+      const next = Math.min(1, sim.soilWater + WATER_PER_POUR / 100)
+      sim.soilWater = next
+      sim.turgor = Math.max(sim.turgor, next)
+      setConditions((prev) => ({ ...prev, soilWater: next }))
+      return
+    }
     sim.soilWater = 1
     sim.turgor = 1
     setConditions((prev) => ({ ...prev, soilWater: 1 }))
@@ -610,7 +778,90 @@ export default function SugarLine() {
     setDemoStep(0)
   }, [sim])
 
+  /* ---- the challenge layer's own handlers ----------------------------- */
+
+  /**
+   * Open a challenge on the plate.
+   *
+   * The learner's existing readings are deliberately *not* cleared. They are
+   * evidence, they have already been paid for in XP, and throwing them away
+   * because someone pressed a button labelled "challenge" would be a small
+   * betrayal. The trial count that scores the run is the hook's own, and
+   * starts at zero regardless.
+   */
+  const beginChallenge = useCallback(
+    (c: Challenge) => {
+      setIncoming(null)
+      abortTrial()
+      setPrediction(null)
+      setReveal(null)
+      if (SPECIMEN_BY_ID[c.setup]) {
+        loadSpecimen(sim, c.setup)
+        setSpecimenId(c.setup)
+      }
+      // Start from an empty sky. Nothing is banked, so nothing may be spent —
+      // and the very first thing the learner does is go and get some light.
+      const ambient = CO2_AMBIENT_PPM / CO2_MAX_PPM
+      sim.light = 0
+      sim.co2 = ambient
+      sim.soilWater = BASE_SOIL_WATER
+      sim.night = false
+      sim.girdled = false
+      setConditions((prev) => ({
+        ...prev,
+        light: 0,
+        co2: ambient,
+        soilWater: BASE_SOIL_WATER,
+        night: false,
+        girdled: false,
+      }))
+      if (sim.stage !== 'plant') handleStage('plant')
+      run.begin(c)
+    },
+    [sim, abortTrial, handleStage, run],
+  )
+
+  const handleCatch = useCallback(
+    (kind: SugarResource, amount: number) => {
+      run.catchOne(kind, amount)
+      catchCount.current += 1
+      setCaught({ kind, n: catchCount.current })
+    },
+    [run],
+  )
+
+  const gatherProps = useMemo(
+    () =>
+      gathering && run.challenge
+        ? { seed: run.challenge.seed, running: true, onCatch: handleCatch }
+        : null,
+    [gathering, run.challenge, handleCatch],
+  )
+
   const [searchParams] = useSearchParams()
+
+  /**
+   * A challenge that arrived in the link.
+   *
+   * Read once, on mount. The whole world is in the fragment, so this works with
+   * no connection and no account — which was the point of encoding it that way.
+   */
+  const linkRead = useRef(false)
+  useEffect(() => {
+    if (linkRead.current) return
+    linkRead.current = true
+    const raw = searchParams.get('c')
+    if (!raw) return
+    const c = decodeChallenge(raw)
+    if (!c || c.cabinet !== 'photosynthesis') return
+    const r = Number(searchParams.get('r'))
+    setIncoming(c)
+    sim.started = true
+    setStarted(true)
+    run.open(Number.isFinite(r) && r > 0 ? r : null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
   const autoDemo = searchParams.get('demo') === '1'
   const autoDemoDone = useRef(false)
   useEffect(() => {
@@ -939,6 +1190,7 @@ export default function SugarLine() {
             specimenId={specimenId}
             habitat={habitat}
             obstructBottom={sheetPx}
+            gather={gatherProps}
             onContextLost={() => setContextLost(true)}
           />
         </Suspense>
@@ -961,7 +1213,10 @@ export default function SugarLine() {
           the overlay and every suite's opening click was intercepted. */}
       {!started && <Welcome onStart={handleStart} onDemo={startDemo} />}
 
-      {!stereo.on && compact && (
+      {/* The gather round takes the whole screen: it is played by dragging
+          across the canvas, and any panel is both in the way of the finger and
+          in the way of the eye. */}
+      {!stereo.on && compact && !gathering && (
         <div className="hud pointer-events-none fixed inset-0 z-20">
           {/* One strip that scrolls sideways rather than a wrapping row: on a
               390 px phone the chips wrapped onto a second line and the stage
@@ -975,6 +1230,7 @@ export default function SugarLine() {
             <BandSwitch />
             <ClockChip hours={plantHours} rate={clockRate} />
             <ProgressChip compact />
+            {!inChallenge && <ChallengeChip onClick={() => run.open(null)} />}
           </div>
 
           <div className="absolute top-[4.4rem] right-3 left-3 flex flex-col items-stretch gap-2">
@@ -1034,7 +1290,7 @@ export default function SugarLine() {
             ]}
           />
 
-          {coach && !reveal && (
+          {coach && !reveal && !inChallenge && (
             <div
               className="pointer-events-none absolute inset-x-0 flex justify-center px-3 transition-[bottom] duration-200"
               style={{ bottom: `calc(4.2rem + ${sheetPx}px)` }}
@@ -1045,7 +1301,7 @@ export default function SugarLine() {
         </div>
       )}
 
-      {!stereo.on && !compact && (
+      {!stereo.on && !compact && !gathering && (
         <div className="hud pointer-events-none fixed inset-0 z-20">
           {/* Left column. */}
           <div
@@ -1060,6 +1316,7 @@ export default function SugarLine() {
             <div className="pointer-events-auto flex flex-wrap items-center gap-2">
               <ClockChip hours={plantHours} rate={clockRate} />
               <ProgressChip compact />
+              {!inChallenge && <ChallengeChip onClick={() => run.open(null)} />}
             </div>
             <div className="pointer-events-auto min-h-0 flex-1 overflow-y-auto pr-1">
               <div className="flex flex-col gap-2">
@@ -1158,7 +1415,7 @@ export default function SugarLine() {
             <ScaleBar label={stageMeta.scale.label} />
           </div>
 
-          {coach && !reveal && (
+          {coach && !reveal && !inChallenge && (
             <div className="pointer-events-none absolute inset-x-0 bottom-5 flex justify-center px-4">
               <Coach text={coach.text} hint={coach.hint} />
             </div>
@@ -1228,6 +1485,57 @@ export default function SugarLine() {
 
       {!stereo.on && demoStep >= 0 && (
         <DemoOverlay step={demoStep} progress={demoProgress} onSkip={() => finishDemo(false)} />
+      )}
+
+      {/* ---- the challenge layer ---- */}
+      {!stereo.on && run.phase === 'brief' && (
+        <ChallengeBrief
+          band={band}
+          incoming={incoming}
+          rival={run.rival}
+          onBegin={beginChallenge}
+          onClose={run.close}
+        />
+      )}
+
+      {!stereo.on && run.phase === 'gather' && run.challenge && (
+        <GatherHud
+          secondsLeft={run.secondsLeft}
+          total={run.challenge.gatherSeconds}
+          bank={run.bank}
+          budget={run.challenge.budget}
+          caught={caught}
+          onDone={run.endGather}
+        />
+      )}
+
+      {!stereo.on && run.phase === 'lab' && run.challenge && !reveal && (
+        <ChallengeBar
+          challenge={run.challenge}
+          bank={run.bank}
+          ceiling={capsFor(run.granted)}
+          best={run.best}
+          hit={run.hit}
+          trials={run.trials}
+          affordable={affordable}
+          compact={compact}
+          bottomPx={sheetPx}
+          onFinish={run.finish}
+          onQuit={run.close}
+        />
+      )}
+
+      {!stereo.on && run.phase === 'scored' && run.challenge && run.score && (
+        <ScoreCard
+          challenge={run.challenge}
+          score={run.score}
+          best={run.best}
+          trials={run.trials}
+          granted={run.granted}
+          rival={run.rival}
+          onAgain={() => beginChallenge(run.challenge!)}
+          onClose={run.close}
+        />
       )}
 
       {!stereo.on && <InputHints extra={[['LB/RB', 'Plant / leaf / stem']]} />}
