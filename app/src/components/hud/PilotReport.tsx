@@ -50,13 +50,13 @@ export default function PilotReport() {
   const areaRef = useRef<HTMLTextAreaElement>(null)
 
   const cabinet = useMemo(() => {
-    const match = CABINETS.find((c) => c.route === pathname)
+    const match = CABINETS.find((c) => pathname === c.route || pathname.startsWith(c.route + '/'))
     if (match) return match.title
     if (pathname === '/') return 'The hall'
     return pathname.replace('/', '') || 'The hall'
   }, [pathname])
 
-  const tint = useMemo(() => CABINETS.find((c) => c.route === pathname)?.tint ?? '#E8A33D', [pathname])
+  const tint = useMemo(() => CABINETS.find((c) => pathname === c.route || pathname.startsWith(c.route + '/'))?.tint ?? '#E8A33D', [pathname])
 
   // Frame sampling runs only while the sheet is shut, so the numbers describe
   // playing rather than typing.

@@ -170,3 +170,25 @@ export function deliveryPing(): void {
 export function loadClick(): void {
   blip(1180, 0.07, 0.06, 'triangle')
 }
+
+/* ------------------------------------------------------------------ */
+/* First Physics — one tick per dial notch, one chord per landing     */
+/* ------------------------------------------------------------------ */
+
+/** A soft tick for a dial notch. */
+export function dialTick(): void {
+  blip(1320, 0.05, 0.05, 'triangle')
+}
+
+/** The landing chord: three notes up, one held. */
+export function landChord(): void {
+  blip(523.25, 0.5, 0.11)
+  window.setTimeout(() => blip(659.25, 0.5, 0.1), 90)
+  window.setTimeout(() => blip(783.99, 0.7, 0.1), 180)
+  window.setTimeout(() => blip(1046.5, 1.1, 0.07), 300)
+}
+
+/** A short low buzz for a sentence that is not the one. */
+export function nudge(): void {
+  blip(220, 0.12, 0.05, 'triangle', 180)
+}

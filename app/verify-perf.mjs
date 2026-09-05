@@ -41,9 +41,11 @@ const BUDGETS = {
   motion: { calls: 250, triangles: 600_000 },
   atoms: { calls: 300, triangles: 200_000 },
   rivers: { calls: 250, triangles: 300_000 },
+  // First Physics: the Yard's meadow plus one object and a shelf. Budgeted like the Yard.
+  physics: { calls: 250, triangles: 600_000 },
 }
 
-const ENTER = ['Start measuring', 'Start experimenting', 'Start forging', 'Start the fieldwork', 'Start in the lungs']
+const ENTER = ['Start measuring', 'Start experimenting', 'Start forging', 'Start the fieldwork', 'Start in the lungs', 'Start with one Ploob']
 const DISMISS = ['Skip intro', 'Skip']
 
 const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] })

@@ -101,6 +101,7 @@ function watch(page, sink) {
 const CABS = [
   ['photosynthesis', /The Sugar Line/i],
   ['blood', /Blood Voyage/i],
+  ['physics', /First Physics/i],
   ['motion', /Motion Yard/i],
   ['atoms', /Atom Foundry|Foundry/i],
   ['rivers', /River Basin|River & Flood/i],

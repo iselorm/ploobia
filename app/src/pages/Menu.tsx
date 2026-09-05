@@ -180,7 +180,7 @@ export default function Menu() {
   const [attract, setAttract] = useState<string | null>(null)
   useEffect(() => {
     let idle = 0
-    const live = CABINETS.filter((c) => c.status === 'live')
+    const live = CABINETS.filter((c) => c.status === 'live' && !c.hidden)
     const tick = window.setInterval(() => {
       idle += 1
       if (idle >= 6) setAttract(live[Math.floor((idle - 6) / 4) % live.length].id)
@@ -258,7 +258,7 @@ export default function Menu() {
 
       {/* Cabinet row */}
       <div className="relative z-10 mt-8 flex snap-x snap-mandatory gap-6 overflow-x-auto px-6 pb-8 sm:justify-center sm:px-10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {CABINETS.map((c) => (
+        {CABINETS.filter((c) => !c.hidden).map((c) => (
           <Cabinet key={c.id} c={c} attract={attract === c.id} />
         ))}
       </div>
