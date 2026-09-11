@@ -121,10 +121,13 @@ function PlantBody({
   sim,
   specimen,
   rig,
+  closed = false,
 }: {
   sim: SugarSim
   specimen: Specimen
   rig: SugarRig
+  /** Close the cutaway — the gather round wants a plant, not a drawing of one. */
+  closed?: boolean
 }) {
   const swayRef = useRef<THREE.Group>(null)
   const leafRefs = useRef<Array<THREE.Group | null>>([])
@@ -196,7 +199,7 @@ function PlantBody({
         <mesh geometry={rig.pithGeometry}>
           <meshStandardMaterial color="#B7CF9C" roughness={0.86} metalness={0} side={THREE.DoubleSide} />
         </mesh>
-        <mesh geometry={rig.stemGeometry} material={stemMaterial} castShadow />
+        <mesh geometry={closed ? rig.stemClosedGeometry : rig.stemGeometry} material={stemMaterial} castShadow />
 
         {/* Xylem strands: dead open vessels, pale and glassy. */}
         {rig.xylem.map((curve, i) => (
@@ -1304,7 +1307,7 @@ export default function PlantStage({
    * which is the whole promise of the opt-in mode: with no challenge, not one
    * line of this file behaves differently.
    */
-  gather?: { seed: number; running: boolean; onCatch: (kind: SugarResource, amount: number) => void } | null
+  gather?: { seed: number; running: boolean; kinds?: SugarResource[]; onCatch: (kind: SugarResource, amount: number) => void } | null
 }) {
   const specimen = useMemo(
     () => SPECIMEN_BY_ID[specimenId] ?? SPECIMEN_BY_ID[DEFAULT_SPECIMEN],
@@ -1339,7 +1342,7 @@ export default function PlantStage({
       <group name="subject">
         {!outdoors && <GroundLine radius={Math.max(0.9, specimen.build.rootSpread * 1.3)} />}
         <SoilMound radius={soilRadius} outdoors={outdoors} />
-        <PlantBody sim={sim} specimen={specimen} rig={rig} />
+        <PlantBody sim={sim} specimen={specimen} rig={rig} closed={!!gather?.running} />
         <Girdle sim={sim} specimen={specimen} rig={rig} />
         <Sinks sim={sim} specimen={specimen} rig={rig} />
         <WaterFlow sim={sim} specimen={specimen} rig={rig} />
@@ -1359,6 +1362,7 @@ export default function PlantStage({
           elevation={sun.elevation}
           azimuth={sun.azimuth}
           running={gather.running}
+          kinds={gather.kinds}
           onCatch={gather.onCatch}
         />
       )}

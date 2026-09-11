@@ -51,8 +51,10 @@ function Ticker({ sim }: { sim: SugarSim }) {
  * on black to graphite on cream and pushed back until it reads as the squared
  * paper a field sketch is drawn on rather than as an effect in its own right.
  */
-function Backdrop({ tint }: { tint?: string }) {
+function Backdrop({ tint, sim, stage }: { tint?: string; sim: SugarSim; stage: StageId }) {
   const materialRef = useRef<THREE.ShaderMaterial>(null)
+  const domeRef = useRef<THREE.MeshBasicMaterial>(null)
+  const floorRef = useRef<THREE.MeshBasicMaterial>(null)
   const uniforms = useMemo(
     () => ({
       uTime: { value: 0 },
@@ -74,8 +76,22 @@ function Backdrop({ tint }: { tint?: string }) {
     return c
   }, [tint])
 
+  // The night shift is played on the microscope stages with the sun off, and
+  // a slide lit like noon would say otherwise. The paper goes to a dusk blue
+  // — never black; a dark hall reads as unfriendly — and the gold parcels'
+  // own glow carries the picture. The whole-plant stage keeps its habitat
+  // sky, which already knows about night.
+  const night = useMemo(() => new THREE.Color('#3F4A70'), [])
+  const nightFloor = useMemo(() => new THREE.Color('#2E365A'), [])
+  const floorDay = useMemo(() => new THREE.Color(ATLAS.paperDeep), [])
   useFrame((_, rawDt) => {
-    uniforms.uTime.value += Math.min(rawDt, 0.05)
+    const dt = Math.min(rawDt, 0.05)
+    uniforms.uTime.value += dt
+    const dark = sim.night && stage !== 'plant'
+    const k = 1 - Math.exp(-dt * 2.2)
+    if (domeRef.current) domeRef.current.color.lerp(dark ? night : dome, k)
+    if (floorRef.current) floorRef.current.color.lerp(dark ? nightFloor : floorDay, k)
+    uniforms.uOpacity.value += ((dark ? 0.06 : 0.17) - uniforms.uOpacity.value) * k
   })
 
   return (
@@ -84,7 +100,7 @@ function Backdrop({ tint }: { tint?: string }) {
           when the camera swings past the backdrop plane. */}
       <mesh>
         <sphereGeometry args={[80, 24, 16]} />
-        <meshBasicMaterial color={dome} side={THREE.BackSide} fog={false} />
+        <meshBasicMaterial ref={domeRef} color={dome} side={THREE.BackSide} fog={false} />
       </mesh>
       <mesh position={[0, 2.2, -9]}>
         <planeGeometry args={[34, 22]} />
@@ -101,7 +117,7 @@ function Backdrop({ tint }: { tint?: string }) {
           never slices through the soil section. */}
       <mesh position={[0, -2.6, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <circleGeometry args={[13, 48]} />
-        <meshBasicMaterial color={ATLAS.paperDeep} fog={false} />
+        <meshBasicMaterial ref={floorRef} color={ATLAS.paperDeep} fog={false} />
       </mesh>
     </group>
   )
@@ -134,24 +150,59 @@ function AtlasEnv() {
   return null
 }
 
-function Lights({ stage }: { stage: StageId }) {
+function Lights({ stage, sim }: { stage: StageId; sim: SugarSim }) {
   const accentRef = useRef<THREE.PointLight>(null)
+  const keyRef = useRef<THREE.DirectionalLight>(null)
+  const hemiRef = useRef<THREE.HemisphereLight>(null)
+  const fillARef = useRef<THREE.DirectionalLight>(null)
+  const fillBRef = useRef<THREE.DirectionalLight>(null)
+  const scene = useThree((s) => s.scene)
   const quality = getQualityCaps()
 
   const accent =
     stage === 'leaf' ? '#8FD07A' : stage === 'hatches' ? '#BFE0A0' : stage === 'stem' ? '#F3C05A' : '#FFE7A8'
+  const keyDay = useMemo(() => new THREE.Color('#FFF2D2'), [])
+  const keyNight = useMemo(() => new THREE.Color('#C9D4F2'), [])
+  const keyPosDay = useMemo(() => new THREE.Vector3(5.2, 8.4, 4.6), [])
+  // Behind and to the side at night: a cool rim, so the pipes keep an edge.
+  const keyPosNight = useMemo(() => new THREE.Vector3(-4, 3, -5), [])
+  const sugarLamp = useMemo(() => new THREE.Color('#F3C05A'), [])
+  const accentPosDay = useMemo(() => new THREE.Vector3(1.4, 2.6, 2.4), [])
+  // The leaf end of the laid-flat section: the line glows from its source.
+  const accentPosNight = useMemo(() => new THREE.Vector3(-1.6, 2.3, 1.4), [])
 
   useFrame((_, rawDt) => {
+    const dt = Math.min(rawDt, 0.05)
+    const k = 1 - Math.exp(-dt * 3)
+    // The sun is off on the microscope stages at night: the key light drops
+    // to moonlight and cools, the sky fill dims, the accent turns silver.
+    const dark = sim.night && stage !== 'plant'
     const light = accentRef.current
-    if (!light) return
-    const target = new THREE.Color(accent)
-    light.color.lerp(target, 1 - Math.exp(-Math.min(rawDt, 0.05) * 3))
+    if (light) {
+      light.color.lerp(dark ? sugarLamp : new THREE.Color(accent), k)
+      light.intensity += ((dark ? 4.5 : 6) - light.intensity) * k
+      light.distance += ((dark ? 4 : 11) - light.distance) * k
+      light.position.lerp(dark ? accentPosNight : accentPosDay, k)
+    }
+    if (keyRef.current) {
+      keyRef.current.intensity += ((dark ? 0.4 : 2.1) - keyRef.current.intensity) * k
+      keyRef.current.color.lerp(dark ? keyNight : keyDay, k)
+      keyRef.current.position.lerp(dark ? keyPosNight : keyPosDay, k)
+    }
+    if (hemiRef.current) hemiRef.current.intensity += ((dark ? 0.32 : 0.75) - hemiRef.current.intensity) * k
+    if (fillARef.current) fillARef.current.intensity += ((dark ? 0.15 : 0.6) - fillARef.current.intensity) * k
+    if (fillBRef.current) fillBRef.current.intensity += ((dark ? 0.15 : 0.85) - fillBRef.current.intensity) * k
+    // The environment map is most of what lights a matte cream surface: with
+    // it left at daytime strength the tissue stayed three-quarters bright with
+    // every lamp off. It goes down with the sun, so the sugar can be the lamp.
+    scene.environmentIntensity += ((dark ? 0.1 : 0.75) - scene.environmentIntensity) * k
   })
 
   return (
     <group>
-      <hemisphereLight args={['#FFF6E2', '#C8C2AC', 0.75]} />
+      <hemisphereLight ref={hemiRef} args={['#FFF6E2', '#C8C2AC', 0.75]} />
       <directionalLight
+        ref={keyRef}
         position={[5.2, 8.4, 4.6]}
         intensity={2.1}
         color="#FFF2D2"
@@ -165,8 +216,8 @@ function Lights({ stage }: { stage: StageId }) {
         shadow-camera-bottom={-4}
         shadow-bias={-0.0012}
       />
-      <directionalLight position={[-5.4, 3.2, -2.6]} intensity={0.6} color="#D7E4F2" />
-      <directionalLight position={[0.4, 2.2, -6.5]} intensity={0.85} color="#FFD9A8" />
+      <directionalLight ref={fillARef} position={[-5.4, 3.2, -2.6]} intensity={0.6} color="#D7E4F2" />
+      <directionalLight ref={fillBRef} position={[0.4, 2.2, -6.5]} intensity={0.85} color="#FFD9A8" />
       <pointLight ref={accentRef} position={[1.4, 2.6, 2.4]} intensity={6} distance={11} decay={2} />
     </group>
   )
@@ -250,6 +301,12 @@ function SugarCamera({ sim, frame, orbit = true }: { sim: SugarSim; frame: numbe
     const wide = THREE.MathUtils.clamp((size.width / size.height - 0.75) / 0.55, 0, 1)
     flyPos.set(v.position[0] * wide, v.position[1] * k, v.position[2] * k)
     flyTarget.set(v.target[0] * wide, v.target[1] * k, v.target[2])
+    // The phone tier (a short, very wide frame) sits closer to the microscope
+    // stages: at 46° vertical the section was a strip a quarter of the width.
+    // The whole plant keeps its distance — it is tall, and the lift handles it.
+    if (v.stage !== 'plant' && size.height <= 520) {
+      flyPos.sub(flyTarget).multiplyScalar(0.72).add(flyTarget)
+    }
   }
 
   const startFlight = (seconds: number, arc = 0.55) => {
@@ -373,6 +430,7 @@ interface Props {
   gather?: {
     seed: number
     running: boolean
+    kinds?: SugarResource[]
     onCatch: (kind: SugarResource, amount: number) => void
   } | null
   onContextLost: () => void
@@ -559,8 +617,8 @@ export default function SugarScene({
         <Habitat sim={sim} specimenId={specimenId} />
       ) : (
         <>
-          <Backdrop tint={habitat ? place.sky[3] : undefined} />
-          <Lights stage={stage} />
+          <Backdrop tint={habitat ? place.sky[3] : undefined} sim={sim} stage={stage} />
+          <Lights stage={stage} sim={sim} />
         </>
       )}
       <SugarCamera sim={sim} frame={frame} orbit={!gather?.running} />

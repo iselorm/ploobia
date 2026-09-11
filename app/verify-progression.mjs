@@ -24,7 +24,8 @@ const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable
     await page.screenshot({ path: out('p3-01-hall') })
     check('hall shows four cabinets', (await page.getByText(/Sugar Line|Blood Voyage|Motion Yard|River|Atom Foundry|Circuit/).count()) >= 4)
     // The hall grows: assert that *some* cabinet is still under the mist, not an exact count.
-    check('locked cabinets marked coming soon', (await page.getByText('Coming soon').count()) >= 1)
+    check('undiscovered cabinets say so (never "coming soon")', (await page.getByText(/Undiscovered/).count()) >= 1)
+    check('nothing in the hall says coming soon', !(await page.evaluate(() => /coming soon/i.test(document.body.innerText))))
     check('sponsor plaques present', (await page.getByText(/Sponsor this cabinet/).count()) >= 2)
     check('progress chip in hall header', (await page.getByLabel(/Your progress/).count()) === 1)
     // attract mode after idle

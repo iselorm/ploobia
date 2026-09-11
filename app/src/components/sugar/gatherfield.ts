@@ -78,6 +78,8 @@ export function buildGatherField(
   elevation: number,
   azimuth: number,
   count: number,
+  /** Which resources fall. A night shift banks light alone. */
+  kinds: SugarResource[] = ['light', 'co2', 'water'],
 ): GatherField {
   const travel = sunTravel(elevation, azimuth)
   const next = rngFor(seed)
@@ -88,7 +90,10 @@ export function buildGatherField(
 
   for (let i = 0; i < count; i++) {
     const roll = next()
-    const kind: SugarResource = roll < 0.5 ? 'light' : roll < 0.82 ? 'co2' : 'water'
+    const rolled: SugarResource = roll < 0.5 ? 'light' : roll < 0.82 ? 'co2' : 'water'
+    // The roll keeps the sky's proportions; a kind the round does not bank
+    // becomes the first kind it does, so a light-only night is all light.
+    const kind: SugarResource = kinds.includes(rolled) ? rolled : kinds[0]
     const leaf = leaves[i % Math.max(1, leaves.length)]
     const to = leaf ? leaf.source.clone() : new THREE.Vector3(0, canopy, 0)
     let from: THREE.Vector3

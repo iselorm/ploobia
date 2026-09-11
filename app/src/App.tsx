@@ -7,6 +7,7 @@ import MotionLab from './pages/MotionLab'
 import FirstPhysics from './pages/FirstPhysics'
 import AtomFoundry from './pages/AtomFoundry'
 import RiverBasin from './pages/RiverBasin'
+import Numberworks from './pages/Numberworks'
 import Brand from './pages/Brand'
 import PilotReport from './components/hud/PilotReport'
 
@@ -22,6 +23,7 @@ export default function App() {
         <Route path="/motion" element={<MotionLab />} />
         <Route path="/atoms" element={<AtomFoundry />} />
         <Route path="/rivers" element={<RiverBasin />} />
+        <Route path="/numberworks" element={<Numberworks />} />
         <Route path="/home" element={<Home />} />
         <Route path="/brand" element={<Brand />} />
       </Routes>

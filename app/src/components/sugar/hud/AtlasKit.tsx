@@ -330,7 +330,7 @@ export function Meter({
       role="presentation"
     >
       <div
-        className="h-full rounded-full transition-[width] duration-300"
+        className="h-full rounded-full transition-[width] duration-700 ease-out"
         style={{ width: `${Math.max(0, Math.min(1, value)) * 100}%`, background: color }}
       />
     </div>

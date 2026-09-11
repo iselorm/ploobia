@@ -105,6 +105,7 @@ const CABS = [
   ['motion', /Motion Yard/i],
   ['atoms', /Atom Foundry|Foundry/i],
   ['rivers', /River Basin|River & Flood/i],
+  ['numberworks', /The Numberworks/i],
 ]
 {
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 880 } })

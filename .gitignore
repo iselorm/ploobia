@@ -14,3 +14,8 @@ dist-offline/
 shots-bundle/
 dist-namecheap/
 ploobia-public_html.zip
+
+# Cowork session staging and holding folders — never source.
+.cowork-stage/
+_stage/
+_to_delete/

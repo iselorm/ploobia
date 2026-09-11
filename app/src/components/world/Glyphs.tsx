@@ -38,7 +38,9 @@ export function glyphTexture(
   if (cached) return cached
 
   // Wider formulas get a wider canvas so the glyphs never squash.
-  const aspect = Math.max(1, Math.min(9, text.length * 0.56))
+  // A tag like "PHLOEM — sugar, to the roots ▶" is thirty characters; capped at
+  // nine widths it squashed into a smear. Twenty is a 2560 px canvas, once.
+  const aspect = Math.max(1, Math.min(20, text.length * 0.56))
   const height = 128
   const width = Math.round(height * aspect)
   const canvas = document.createElement('canvas')

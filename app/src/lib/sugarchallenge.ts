@@ -47,6 +47,18 @@ export const SUGAR_RESOURCES: Array<{
   { id: 'water', label: 'Water', unit: '%', tint: '#2E6DA8' },
 ]
 
+/**
+ * Everything a bank can hold, for the jars: the three the sky drops, plus
+ * what a stage-3 brief grants outright. A tracer parcel is not caught; it is
+ * counted.
+ */
+export const BANK_META: Record<string, { label: string; unit: string; tint: string }> = {
+  light: { label: 'Light', unit: 'µmol', tint: '#E8A33D' },
+  co2: { label: 'Carbon', unit: 'ppm', tint: '#6C7480' },
+  water: { label: 'Water', unit: '%', tint: '#2E6DA8' },
+  parcels: { label: 'Parcels', unit: '', tint: '#D9A441' },
+}
+
 /* ------------------------------------------------------------------ */
 /* What a banked resource buys                                         */
 /* ------------------------------------------------------------------ */
@@ -184,6 +196,8 @@ export function metricValue(solve: SugarSolve, metric: string): number {
 export const DAY_METRICS: Record<string, { label: string; unit: string; read: (t: DayTally) => number }> = {
   sugarDay: { label: 'Sugar banked', unit: 'mg', read: (t) => t.sugarMg },
   mgPerMl: { label: 'Sugar per water', unit: 'mg mL⁻¹', read: (t) => t.mgPerMl },
+  /** The night shift's number: what went down the line with the sun off. */
+  sugarNight: { label: 'Sugar sent down the line', unit: 'mg', read: (t) => t.exportedMg },
 }
 
 export function dayMetricValue(tally: DayTally, metric: string): number {
@@ -198,14 +212,48 @@ export function metricLabel(metric: string): string {
   return MEASURES[metric as MeasureId]?.label ?? DAY_METRICS[metric]?.label ?? metric
 }
 
-/** The day a keep-round challenge asks for, read off its `world` ("desert:24"). */
-export function dayWorldOf(c: Challenge): { habitat: BiomeId; hours: number } {
+/**
+ * The span a keep-round challenge asks for, read off its `world`:
+ * "desert:24" is a desert day and the night after; "night:10" is the ten
+ * hours after dusk, in the specimen's own habitat, with no sun at all.
+ */
+export function dayWorldOf(c: Challenge): { habitat: BiomeId; hours: number; night: boolean } {
   const [h, n] = (c.world ?? '').split(':')
+  const night = h === 'night'
   const habitat = (['rainforest', 'temperate', 'savanna', 'desert', 'boreal'] as BiomeId[]).includes(h as BiomeId)
     ? (h as BiomeId)
     : 'temperate'
   const hours = Number(n)
-  return { habitat, hours: Number.isFinite(hours) && hours > 0 ? hours : 12 }
+  return { habitat, hours: Number.isFinite(hours) && hours > 0 ? hours : night ? 10 : 12, night }
+}
+
+/**
+ * What a night's gather round puts away.
+ *
+ * The bank is starch, in milligrams, and it is what the night shift spends.
+ * A full grant of light — the same 1400 µmol the leaf-stage briefs offer —
+ * banks 60 mg in a bean, about two-thirds of what its leaf can hold
+ * (`starchMax` 95); a plant that caught half the light banks half. The
+ * mapping is linear on purpose: a jar that reads 60% must become a bank
+ * that reads 60%, or the handover has to explain a curve.
+ */
+export const STARCH_PER_FULL_GRANT_MG = 60
+export const NIGHT_LIGHT_GRANT = 1400
+
+export function bankFromLight(lightCaught: number): number {
+  return round2(Math.max(0, lightCaught) * (STARCH_PER_FULL_GRANT_MG / NIGHT_LIGHT_GRANT))
+}
+
+/**
+ * Conditions a lab reading can be held to, checked at the moment the trial
+ * ends. The day's conditions above are read off a tally; these are read off
+ * the sim, because a gather round has no tally — it has readings.
+ */
+export const LAB_CONDITIONS: Record<string, { label: string; failLine: string }> = {
+  leafFirm: {
+    label: 'leaves still firm',
+    failLine: 'That reading does not count: the leaves are limp. A leaf with no water cannot hold its pressure — heal the wood (and water the pot if it is dry), then read again.',
+  },
 }
 
 /** The one condition a Sugar Line challenge can ask for, in the learner's words. */
@@ -229,7 +277,7 @@ export interface SugarChallengePreset {
    * band picks their level and the stage is never built three times. Presets
    * with no level are the extra briefs offered under "other challenges".
    */
-  stage?: 1 | 2
+  stage?: 1 | 2 | 3
   level?: 1 | 2 | 3
   build: (seed: number) => Challenge
   /**
@@ -238,10 +286,25 @@ export interface SugarChallengePreset {
    * day and the night after). Absent for a gather round.
    */
   day?: { habitat: BiomeId; hours: number }
+  /**
+   * The hook: a number to commit to before the brief says anything. The
+   * answer is the first thing Ploob says, and the miss is drawn. A brief that
+   * opens on a caption is read; one that opens on a guess is played.
+   */
+  guess?: {
+    question: string
+    min: number
+    max: number
+    step: number
+    unit: string
+    /** The honest answer, and the line that delivers it. */
+    answer: number
+    reveal: string
+  }
 }
 
 /** The campaign stage a preset belongs to, for the brief's eyebrow. */
-export const STAGE_NAMES: Record<1 | 2, string> = { 1: 'The Factory', 2: 'The Hatches' }
+export const STAGE_NAMES: Record<1 | 2 | 3, string> = { 1: 'The Factory', 2: 'The Hatches', 3: 'The Line' }
 
 const CABINET = 'photosynthesis'
 
@@ -385,6 +448,91 @@ export const SUGAR_CHALLENGES: SugarChallengePreset[] = [
       }),
   },
 
+  /* ---- Stage 3 · The Line — route it ------------------------------------ */
+  {
+    id: 'night-shift',
+    title: 'The night shift',
+    brief:
+      'Bank daylight for forty seconds — every catch is starch the leaf puts away. Then the sun goes down and the line has to run on what you banked. Send 45 mg down the phloem before dawn. Your one lever in the dark is the temperature: a cool night burns less of the bank.',
+    band: 'explorer',
+    stage: 3,
+    level: 1,
+    day: { habitat: 'temperate', hours: 10 },
+    guess: {
+      question: 'When the sun goes down, how much of the sugar traffic keeps going?',
+      min: 0,
+      max: 100,
+      step: 5,
+      unit: '%',
+      answer: 60,
+      reveal: 'Most of it. The leaf banked the day’s surplus as starch, and the line runs on that all night — which is why a leaf weighs most at dusk and least at dawn.',
+    },
+    build: (seed) =>
+      make({
+        seed,
+        band: 'explorer',
+        loop: 'keep',
+        gatherSeconds: 40,
+        world: 'night:10',
+        goal: { metric: 'sugarNight', direction: 'atLeast', target: 45, tolerance: 1, unit: 'mg' },
+        // Light only: the night is paid for out of the day.
+        budget: { light: NIGHT_LIGHT_GRANT },
+      }),
+  },
+  {
+    id: 'cut-the-ring',
+    title: 'Cut the ring',
+    brief:
+      'Two pipes run the stem: the wood carries water up, the bark ring carries sugar down. The knife has two blades. Stop the sugar reaching the roots — sugar leaving the leaf at 0.5 mg an hour or less — with the leaves still firm. Cut the wrong pipe and the leaves will tell you within a plant hour.',
+    band: 'scientist',
+    stage: 3,
+    level: 2,
+    guess: {
+      question: 'Cut the bark ring all the way round the stem. How much of the sugar still gets past?',
+      min: 0,
+      max: 100,
+      step: 5,
+      unit: '%',
+      answer: 0,
+      reveal: 'None. The sugar pipes are in the bark; the wood carries water. Ring-bark a tree and the leaves stay green for weeks while the roots starve.',
+    },
+    build: (seed) =>
+      make({
+        seed,
+        band: 'scientist',
+        gatherSeconds: 0,
+        condition: 'leafFirm',
+        goal: { metric: 'export', direction: 'atMost', target: 0.5, tolerance: 0.1, unit: 'mg h⁻¹' },
+        budget: { light: 1400, co2: 300, water: 40 },
+      }),
+  },
+  {
+    id: 'time-the-sugar',
+    title: 'Time the sugar',
+    brief:
+      'Release a labelled parcel of sugar and time it between the two marks — your watch, your reaction time. Land the sap at three-quarters of a metre an hour, give or take five centimetres. Three parcels; the sap gets thicker as it gets colder, and that is the whole clue.',
+    band: 'analyst',
+    stage: 3,
+    level: 3,
+    guess: {
+      question: 'How fast does sugar travel down a stem, in centimetres an hour?',
+      min: 0,
+      max: 300,
+      step: 10,
+      unit: 'cm h⁻¹',
+      answer: 100,
+      reveal: 'About a metre an hour — a slow walk for a molecule. Tracer studies with labelled carbon put most crops between 0.5 and 1.5 m h⁻¹; the sieve plates are what hold it back.',
+    },
+    build: (seed) =>
+      make({
+        seed,
+        band: 'analyst',
+        gatherSeconds: 0,
+        goal: { metric: 'velocity', direction: 'near', target: 0.75, tolerance: 0.05, unit: 'm h⁻¹' },
+        budget: { parcels: 3, light: 1500, co2: 300, water: 45 },
+      }),
+  },
+
   {
     id: 'thin-air',
     title: 'Thin air',
@@ -465,7 +613,7 @@ export function challengesForBand(band: Band): SugarChallengePreset[] {
  * with the rest one link away. Falls back to the easiest thing offered so a
  * band with no level of its own still has a door.
  */
-export function levelForBand(band: Band, stage: 1 | 2 = 1): SugarChallengePreset {
+export function levelForBand(band: Band, stage: 1 | 2 | 3 = 1): SugarChallengePreset {
   const offered = challengesForBand(band)
   return (
     offered.find((c) => c.stage === stage && c.band === band) ??
@@ -508,12 +656,12 @@ function sameBudget(a: ResourceBudget, b: ResourceBudget): boolean {
 }
 
 /** The campaign stage a preset sits on, or undefined for the extra briefs. */
-export function stageOfPresetId(id: string): 1 | 2 | undefined {
+export function stageOfPresetId(id: string): 1 | 2 | 3 | undefined {
   return SUGAR_CHALLENGE_BY_ID[id]?.stage
 }
 
 /** The presets of one campaign stage, in level order. */
-export function levelsOfStage(stage: 1 | 2): SugarChallengePreset[] {
+export function levelsOfStage(stage: 1 | 2 | 3): SugarChallengePreset[] {
   return SUGAR_CHALLENGES.filter((c) => c.stage === stage).sort((a, b) => (a.level ?? 0) - (b.level ?? 0))
 }
 

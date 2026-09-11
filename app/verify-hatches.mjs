@@ -144,7 +144,7 @@ async function setCeiling(page, percent) {
 /* A day, played with a finger                                        */
 /* ================================================================== */
 {
-  const page = await open(390, 844, true, 'explorer')
+  const page = await open(844, 390, true, 'explorer')
   await start(page)
   await startLevel(page, 'Open the hatches')
 

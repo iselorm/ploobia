@@ -18,7 +18,12 @@ interface Toast {
  * quiet "logged". Sits low-centre in the HUD (never over the 3D scene as a
  * floating label — it is HUD chrome, like the demo narration).
  */
-export default function ProgressToasts() {
+/**
+ * @param clearLeft  Keep the toasts out of a plate pinned at the top-left —
+ *   the Sugar Line's target plate during a round. Given as a Tailwind left
+ *   class (e.g. `left-[38rem]`); the toasts then centre in what is left.
+ */
+export default function ProgressToasts({ clearLeft }: { clearLeft?: string | null } = {}) {
   const [toasts, setToasts] = useState<Toast[]>([])
 
   useEffect(
@@ -40,7 +45,7 @@ export default function ProgressToasts() {
   if (!toasts.length) return null
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 top-[4.25rem] z-30 flex flex-col items-center gap-1.5 sm:top-16"
+      className={`pointer-events-none fixed top-[4.25rem] right-0 z-30 flex flex-col items-center gap-1.5 sm:top-16 ${clearLeft ?? 'left-0'}`}
       aria-live="polite"
     >
       {toasts.map((t) => (

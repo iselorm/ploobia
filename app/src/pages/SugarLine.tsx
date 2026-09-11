@@ -1,19 +1,8 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import {
-  ArrowLeft,
-  Clock,
-  LineChart,
-  RotateCcw,
-  SlidersHorizontal,
-  Sprout,
-  Swords,
-  Trophy,
-} from 'lucide-react'
+import { ArrowLeft, Clock, RotateCcw, Sprout, Swords } from 'lucide-react'
 import SceneErrorBoundary from '@/components/SceneErrorBoundary'
 import BandSwitch from '@/components/hud/BandSwitch'
-import HudDrawer from '@/components/hud/HudDrawer'
-import RotateHint from '@/components/hud/RotateHint'
 import InputHints from '@/components/hud/InputHints'
 import ProgressChip from '@/components/hud/ProgressChip'
 import ProgressToasts from '@/components/hud/ProgressToasts'
@@ -22,8 +11,10 @@ import { Tile } from '@/components/ui/tile'
 import { cn } from '@/lib/utils'
 import { BAND_CAPS, getBand, useBand } from '@/lib/bands'
 import { logEvent } from '@/lib/events'
+import { checkpointBlip, landChord, loadClick, nudge, startAudio } from '@/lib/audio'
 import { useBackHandler, useInputAction } from '@/lib/input'
-import { useLayoutMode } from '@/hooks/use-layout'
+import { useLayoutTier, usePortraitPhone } from '@/hooks/use-layout'
+import TurnCard from '@/components/game/TurnCard'
 import {
   narrationAvailable,
   narrationOn,
@@ -50,6 +41,7 @@ import {
 import {
   CLOCK_LIVE_MULTIPLIER,
   CLOCK_TRACER_MULTIPLIER,
+  bankStarch,
   createSugarSim,
   loadSpecimen,
   makeReading,
@@ -58,6 +50,7 @@ import {
   simEnv,
   simSolve,
   snapshotTrial,
+  stepSim,
   SUGAR_DEMO,
   SUGAR_VARS,
   STAGE_BY_ID,
@@ -88,15 +81,17 @@ import {
   Handover,
   ScoreCard,
   TargetGauge,
+  TargetStrip,
   metricPhrase,
   playChallengeFor,
   shortfall,
 } from '@/components/sugar/hud/Challenge'
 import { DayHud, DayTallyBlock, HatchPlate, type HatchState } from '@/components/sugar/hud/Hatches'
-import { buildDay, dayTally, endDay, startDay, weatherAt, type DayRun, type DayTally, type Weather } from '@/lib/hatches'
+import { buildDay, buildNight, dayTally, endDay, FIRM_TURGOR, startDay, weatherAt, type DayRun, type DayTally, type Weather } from '@/lib/hatches'
+import { NightHud, NightTallyBlock, ThermostatPlate, type NightState } from '@/components/sugar/hud/Night'
 import { cactusDay, safestCeiling } from '@/lib/hatchesReplay'
 import { poreOpening, stomatalGates } from '@/lib/ratelab'
-import { CONDITIONS, dayMetricValue, dayWorldOf, levelForBand, presetIdFor, stageOfPresetId } from '@/lib/sugarchallenge'
+import { bankFromLight, CONDITIONS, dayMetricValue, dayWorldOf, LAB_CONDITIONS, levelForBand, presetIdFor, stageOfPresetId } from '@/lib/sugarchallenge'
 import { CAMPAIGN_BY_ID, isStageOpen, recordHandIn, type CampaignStage } from '@/lib/campaign'
 import { soloChallenge } from '@/components/sugar/hud/Challenge'
 import { useSugarChallenge } from '@/hooks/use-sugar-challenge'
@@ -212,8 +207,12 @@ export default function SugarLine() {
   const sim = useMemo(() => createSugarSim(), [])
   const [band] = useBand()
   const caps = BAND_CAPS[band]
-  const layout = useLayoutMode()
-  const compact = layout === 'compact'
+  const tier = useLayoutTier()
+  /** The phone tier: the scene owns the frame, panels slide in from the edges. */
+  const compact = tier === 'phone'
+  const portraitPhone = usePortraitPhone()
+  /** Which edge sheet is open on the phone tier, if any. */
+  const [sheet, setSheet] = useState<'conditions' | 'data' | null>(null)
   const stereo = useStereo()
 
   const [started, setStarted] = useState(false)
@@ -223,7 +222,10 @@ export default function SugarLine() {
    * shifts its projection up by half of it, so the specimen stays visible
    * while a control that changes it is open. 0 on desktop and when closed.
    */
-  const [sheetPx, setSheetPx] = useState(0)
+  // The phone tier's sheets come in from the sides, so nothing covers the
+  // bottom of the scene any more; the lift stays wired for the day the
+  // whole-plant stage grows a bottom strip again.
+  const [sheetPx] = useState(0)
   const [stage, setStage] = useState<StageId>('plant')
   const [specimenId, setSpecimenId] = useState(sim.specimenId)
   const [conditions, setConditions] = useState<Conditions>({
@@ -233,6 +235,7 @@ export default function SugarLine() {
     soilWater: sim.soilWater,
     night: sim.night,
     girdled: sim.girdled,
+    xylemCut: sim.xylemCut,
   })
   const [measure, setMeasure] = useState<MeasureId>(sim.measure)
   const [xVar, setXVar] = useState<SugarVarId>(sim.xVar)
@@ -269,16 +272,24 @@ export default function SugarLine() {
   const [caught, setCaught] = useState<{ kind: SugarResource; n: number } | null>(null)
   const catchCount = useRef(0)
   const keep = run.challenge?.loop === 'keep'
+  /** Whether this round opens on the collector — a keep round can (the night shift banks the daylight first). */
+  const opensOnGather = (run.challenge?.gatherSeconds ?? 0) > 0
   /** The collector is live through the get-ready beat and the round itself. */
-  const gathering = !keep && (run.phase === 'ready' || run.phase === 'gather')
+  const gathering = opensOnGather && (run.phase === 'ready' || run.phase === 'gather')
   const inLab = run.phase === 'lab'
-  /** A keep round's day: the countdown and the day itself. */
-  const inDay = keep && (run.phase === 'ready' || run.phase === 'day')
+  /** A keep round's span: the countdown (when nothing is gathered first) and the span itself. */
+  const inDay = keep && ((run.phase === 'ready' && !opensOnGather) || run.phase === 'day')
+  /** The span is a night: the sun is off and the thermostat is the learner's. */
+  const isNight = !!run.challenge && dayWorldOf(run.challenge).night
   const inChallenge = gathering || run.phase === 'handover' || inLab || inDay
   /* ---- the Hatches' day, mirrored for the HUD ---- */
   const [dayRun, setDayRun] = useState<DayRun | null>(null)
   const [dayWeather, setDayWeather] = useState<Weather | null>(null)
   const [hatchState, setHatchState] = useState<HatchState>({ ceiling: 1, pore: 0, plant: 0, turgor: 1 })
+  /* ---- the night shift, mirrored for its HUD ---- */
+  const [nightState, setNightState] = useState<NightState>({ bankMg: 0, bankStartMg: 0, sugarMg: 0, totalStartMg: 0, exportRate: 0, velocity: 0, tempC: 20 })
+  /** The leaf's whole store at dusk: starch banked plus the free sugar it held. */
+  const nightStart = useRef({ starch: 0, total: 0 })
   /** The replay's answers for the tally card, computed once at the end of a day. */
   const [dayExtras, setDayExtras] = useState<{
     safest: { ceiling: number; sugarMg: number } | null
@@ -311,6 +322,7 @@ export default function SugarLine() {
   const lastCompleted = useRef(0)
   const lastAborted = useRef(0)
   const lastTracer = useRef(0)
+  const markPassed = useRef(0)
   const predictionRef = useRef<number | null>(null)
   predictionRef.current = prediction
   // Same reason as `predictionRef`: the frame-sync effect below is keyed on
@@ -337,9 +349,16 @@ export default function SugarLine() {
     const w = window as unknown as Record<string, unknown>
     w.__sugarSim = sim
     w.__sugarSolve = () => simSolve(sim)
+    // Fast-forward: a suite on a software renderer cannot wait for a night
+    // that advances by frame time. Steps the real `stepSim`, so nothing is
+    // faked — only hurried.
+    w.__sugarStep = (rawDt = 0.25, times = 1) => {
+      for (let i = 0; i < times; i++) stepSim(sim, rawDt)
+    }
     return () => {
       delete w.__sugarSim
       delete w.__sugarSolve
+      delete w.__sugarStep
     }
   }, [sim])
 
@@ -371,6 +390,18 @@ export default function SugarLine() {
             turgor: sim.turgor,
           })
         }
+        if (d && d.spec.night) {
+          const so = sim.solve ?? simSolve(sim)
+          setNightState({
+            bankMg: sim.carbon.leafStarch,
+            bankStartMg: nightStart.current.starch,
+            sugarMg: sim.carbon.leafSugar,
+            totalStartMg: nightStart.current.total,
+            exportRate: so.exportRate,
+            velocity: so.velocity,
+            tempC: sim.tempC,
+          })
+        }
         if (d) {
           setDayWeather(weatherAt(d.spec, d.hour))
           // A fresh object each tick so React sees the change; the run
@@ -392,8 +423,23 @@ export default function SugarLine() {
             sim.humidity = 0.55
             sim.tempC = 24
             sim.paused = false
-            setConditions((prev) => ({ ...prev, light: 0.6, night: false, soilWater: sim.soilWater }))
-            r.finishDay(tally, dayMetricValue(tally, r.challenge.goal.metric), cond ? cond.met(tally) : true, tally.waterMl)
+            setConditions((prev) => ({ ...prev, light: 0.6, night: false, tempC: 24, soilWater: sim.soilWater }))
+            // A day spends water; a night spends nothing it was granted — the
+            // bank it ran on is the score's own story, not a thrift term.
+            const spentNow: Record<string, number> = d.spec.night
+              ? {
+                  // Thrift on a night is the share of the leaf's store that
+                  // was burnt rather than sent: a cooler night scores
+                  // thriftier, a hit is not automatically three stars.
+                  light: Math.round(
+                    ((r.granted.light ?? r.challenge.budget.light ?? 0) *
+                      Math.max(0, nightStart.current.total - (sim.carbon.leafStarch + sim.carbon.leafSugar) - tally.exportedMg)) /
+                      Math.max(1e-6, nightStart.current.total) *
+                      100,
+                  ) / 100,
+                }
+              : { water: Math.round(tally.waterMl * 100) / 100 }
+            r.finishDay(tally, dayMetricValue(tally, r.challenge.goal.metric), cond ? cond.met(tally) : true, spentNow)
           }
         }
       }
@@ -414,7 +460,10 @@ export default function SugarLine() {
              charging for it would punish the correction the cabinet spent all
              its effort teaching. */
           const r = runRef.current
-          if (r.phase === 'lab' && r.challenge && !sim.demoMode) {
+          // The tracer brief is scored on the learner's own timing: a rate
+          // trial neither spends a parcel nor offers the gauge a speed it
+          // never timed (Run measurement stays available for a rate reading).
+          if (r.phase === 'lab' && r.challenge && !sim.demoMode && r.challenge.budget.parcels === undefined) {
             r.spend(
               trialCost({
                 // `snap.light` is already in PAR units with night applied, and
@@ -426,7 +475,11 @@ export default function SugarLine() {
               }),
             )
             const v = metricValue(simSolve(sim), r.challenge.goal.metric)
-            r.offer(v)
+            // A condition is read off the sim at the moment the trial ends:
+            // "leaves still firm" is the leaf's turgor now, not a tally.
+            const ok = !r.challenge.condition || (r.challenge.condition === 'leafFirm' ? sim.turgor >= FIRM_TURGOR : true)
+            if (!ok) nudge()
+            r.offer(v, ok)
             setGoalPrev(goalLastRef.current)
             setGoalLast(v)
             goalLastRef.current = v
@@ -445,6 +498,7 @@ export default function SugarLine() {
               solve: simSolve(sim),
               bottleneck: findBottleneck(live, simEnv(sim), sim.carbon, {
                 girdled: sim.girdled,
+                xylemCut: sim.xylemCut,
               }),
               measure: sim.measure,
               xVar: sim.xVar,
@@ -480,6 +534,12 @@ export default function SugarLine() {
         window.setTimeout(() => setAbortNotice(false), 4000)
       }
 
+      {
+        // The split, heard: one blip per mark as the parcel crosses it.
+        const past = sim.tracerActive ? (sim.tracerDistance >= sim.tracerMarkB ? 2 : sim.tracerDistance >= sim.tracerMarkA ? 1 : 0) : 0
+        if (past > markPassed.current) checkpointBlip()
+        markPassed.current = sim.tracerActive ? past : 0
+      }
       if (sim.tracerCompleted !== lastTracer.current) {
         lastTracer.current = sim.tracerCompleted
         setTracerWatch(0)
@@ -496,6 +556,17 @@ export default function SugarLine() {
           reading.repeats = [reading.y]
           reading.uncertainty = Number(Math.abs(speed - truth).toFixed(2))
           setReadings((prev) => [...prev, reading])
+          {
+            // A timed parcel is a trial of the tracer brief: it was paid for
+            // at release, and its speed is what the gauge reads.
+            const r = runRef.current
+            if (r.phase === 'lab' && r.challenge && r.challenge.goal.metric === 'velocity' && !sim.demoMode) {
+              r.offer(reading.y)
+              setGoalPrev(goalLastRef.current)
+              setGoalLast(reading.y)
+              goalLastRef.current = reading.y
+            }
+          }
           if (!sim.demoMode) {
             logEvent('photosynthesis', band, 'reading.recorded', {
               variable: reading.xVar,
@@ -595,7 +666,25 @@ export default function SugarLine() {
       if (patch.tempC !== undefined) sim.tempC = patch.tempC
       if (patch.soilWater !== undefined) sim.soilWater = patch.soilWater
       if (patch.night !== undefined) sim.night = patch.night
-      if (patch.girdled !== undefined) sim.girdled = patch.girdled
+      // One knife, two blades, one cut: choosing either blade heals the other.
+      if (patch.girdled !== undefined) {
+        sim.girdled = patch.girdled
+        if (patch.girdled) {
+          loadClick()
+          sim.xylemCut = false
+          patch = { ...patch, xylemCut: false }
+        }
+      }
+      if (patch.xylemCut !== undefined) {
+        sim.xylemCut = patch.xylemCut
+        if (patch.xylemCut) {
+          loadClick()
+          sim.girdled = false
+          patch = { ...patch, girdled: false }
+        }
+        // Healing the wood lets the leaf drink again; it recovers at the
+        // roots' pace, not instantly, so nothing is reset here.
+      }
       setConditions((prev) => ({ ...prev, ...patch }))
     },
     [sim, abortTrial],
@@ -608,7 +697,7 @@ export default function SugarLine() {
       loadSpecimen(sim, id)
       setSpecimenId(id)
       setTracerResult(null)
-      setConditions((prev) => ({ ...prev, girdled: false }))
+      setConditions((prev) => ({ ...prev, girdled: false, xylemCut: false }))
     },
     [sim, abortTrial],
   )
@@ -666,7 +755,10 @@ export default function SugarLine() {
     () => trialCost({ light: conditions.light, co2: conditions.co2, night: conditions.night }),
     [conditions.light, conditions.co2, conditions.night],
   )
-  const affordable = run.phase !== 'lab' || canAfford(run.bank, pendingCost)
+  // In the tracer brief the parcels are the budget that runs out; when the
+  // last one is spent the round is over and the honest move is to hand in.
+  const parcelsLeft = run.challenge?.budget.parcels === undefined || (run.bank.parcels ?? 0) >= 1
+  const affordable = run.phase !== 'lab' || (canAfford(run.bank, pendingCost) && parcelsLeft)
   const affordableRef = useRef(affordable)
   affordableRef.current = affordable
 
@@ -692,6 +784,15 @@ export default function SugarLine() {
 
   const handleTracer = useCallback(() => {
     if (sim.tracerActive) return
+    {
+      // The tracer brief grants parcels, and a release spends one: it is the
+      // trial the economy term counts, and the one thing the round can run out of.
+      const r = runRef.current
+      if (r.phase === 'lab' && r.challenge && r.challenge.budget.parcels !== undefined && !sim.demoMode) {
+        if (!canAfford(r.bank, { parcels: 1 })) return
+        r.spend({ parcels: 1 })
+      }
+    }
     sim.tracerActive = true
     sim.tracerDistance = 0
     sim.tracerWatch = 0
@@ -733,12 +834,13 @@ export default function SugarLine() {
       r.draw({ water: POUR_DRAW })
       const next = Math.min(1, sim.soilWater + WATER_PER_POUR / 100)
       sim.soilWater = next
-      sim.turgor = Math.max(sim.turgor, next)
+      // Water in the pot reaches the leaf only up the wood.
+      if (!sim.xylemCut) sim.turgor = Math.max(sim.turgor, next)
       setConditions((prev) => ({ ...prev, soilWater: next }))
       return
     }
     sim.soilWater = 1
-    sim.turgor = 1
+    if (!sim.xylemCut) sim.turgor = 1
     setConditions((prev) => ({ ...prev, soilWater: 1 }))
   }, [sim, abortTrial])
 
@@ -911,6 +1013,7 @@ export default function SugarLine() {
       sim.soilWater = BASE_SOIL_WATER
       sim.night = false
       sim.girdled = false
+      sim.xylemCut = false
       setConditions((prev) => ({
         ...prev,
         light: 0,
@@ -918,12 +1021,38 @@ export default function SugarLine() {
         soilWater: BASE_SOIL_WATER,
         night: false,
         girdled: false,
+        xylemCut: false,
       }))
-      if (c.loop === 'keep') {
+      const door = stageOfPresetId(presetIdFor(c) ?? '')
+      const night = dayWorldOf(c).night
+      if (c.loop !== 'keep' && c.gatherSeconds === 0) {
+        // Nothing to gather: the whole grant is handed over, so the pot
+        // starts as wet as the grant allows rather than at the dry base a
+        // gather round begins from — a leaf that goes limp for want of a
+        // watering can would fail a brief about a knife.
+        const full = capsFor(c.budget)
+        sim.soilWater = full.water
+        sim.turgor = 1
+        sim.light = full.light
+        setConditions((prev) => ({ ...prev, soilWater: full.water, light: full.light }))
+      }
+      if (c.goal.metric === 'velocity') {
+        // The tracer brief is played on the speed instrument, whose
+        // apparatus the tracer is.
+        sim.measure = 'velocity'
+        setMeasure('velocity')
+      }
+      if (c.loop === 'keep' && !night) {
         // A day is played on the stoma; the weather script sets the sky.
         sim.hatch = 1
         sim.paused = false
         if (sim.stage !== 'hatches') handleStage('hatches')
+      } else if (night || door === 3) {
+        // Door 3 is played on the cut stem — but a night that opens on the
+        // collector is gathered in the field first; the handover flies down.
+        if (c.gatherSeconds > 0) {
+          if (sim.stage !== 'plant') handleStage('plant')
+        } else if (sim.stage !== 'stem') handleStage('stem')
       } else if (sim.stage !== 'plant') handleStage('plant')
       run.begin(c)
     },
@@ -946,7 +1075,8 @@ export default function SugarLine() {
       sim.started = true
       setStarted(true)
       startNarration()
-      const stageId = stage?.id === 2 ? 2 : 1
+      startAudio()
+      const stageId = (stage?.id === 2 || stage?.id === 3 ? stage.id : 1) as 1 | 2 | 3
       if (band === 'explorer') beginChallenge(stage ? soloChallenge(levelForBand(band, stageId)) : playChallengeFor(band))
       else run.open(null, stageId)
     },
@@ -966,6 +1096,7 @@ export default function SugarLine() {
     const stage = stageOfPresetId(presetId)
     const opened = recordHandIn(presetId, stage, run.score.total)
     setDoorOpened(opened && stage ? (CAMPAIGN_BY_ID[stage + 1] ?? null) : null)
+    if (run.score.hit) landChord()
     logEvent('photosynthesis', getBand(), 'challenge.handedIn', {
       presetId,
       stage: stage ?? null,
@@ -983,6 +1114,32 @@ export default function SugarLine() {
   useEffect(() => {
     if (run.phase !== 'day' || !run.challenge || sim.day) return
     const world = dayWorldOf(run.challenge)
+    if (world.night) {
+      // The night shift: the bank is what the gather round put away (or the
+      // whole grant, for a band that skipped it), the stem is the stage, and
+      // the thermostat starts at a mild evening the learner may move.
+      const habitat = SPECIMEN_BY_ID[sim.specimenId]?.leaf.nativeBiome ?? 'temperate'
+      const spec = buildNight(run.challenge.seed, habitat, world.hours)
+      bankStarch(sim, bankFromLight(run.granted.light ?? run.challenge.budget.light ?? 0))
+      nightStart.current = { starch: sim.carbon.leafStarch, total: sim.carbon.leafStarch + sim.carbon.leafSugar }
+      setNightState({
+        bankMg: sim.carbon.leafStarch,
+        bankStartMg: sim.carbon.leafStarch,
+        sugarMg: sim.carbon.leafSugar,
+        totalStartMg: sim.carbon.leafStarch + sim.carbon.leafSugar,
+        exportRate: 0,
+        velocity: 0,
+        tempC: 20,
+      })
+      sim.tempC = 20
+      setConditions((prev) => ({ ...prev, tempC: 20, night: true, light: 0 }))
+      startDay(sim, spec, 1)
+      if (sim.stage !== 'stem') handleStage('stem')
+      setDayRun({ ...sim.day! })
+      setDayWeather(weatherAt(spec, spec.from))
+      setDayExtras({ safest: null, cactus: null })
+      return
+    }
     const spec = buildDay(run.challenge.seed, world.habitat, world.hours)
     startDay(sim, spec, 1)
     setDayRun({ ...sim.day! })
@@ -998,6 +1155,9 @@ export default function SugarLine() {
       endDay(sim)
       sim.night = false
       sim.paused = false
+      sim.light = 0.6
+      sim.tempC = 24
+      setConditions((prev) => ({ ...prev, night: false, light: 0.6, tempC: 24, soilWater: sim.soilWater }))
       setDayRun(null)
     }
   }, [run.phase, sim])
@@ -1033,10 +1193,24 @@ export default function SugarLine() {
     [run],
   )
 
+  // The suite banks catches through the same handler the collector uses.
+  useEffect(() => {
+    const w = window as unknown as Record<string, unknown>
+    w.__catch = handleCatch
+    return () => {
+      delete w.__catch
+    }
+  }, [handleCatch])
+
   const gatherProps = useMemo(
     () =>
       gathering && run.challenge
-        ? { seed: run.challenge.seed, running: true, onCatch: handleCatch }
+        ? {
+            seed: run.challenge.seed,
+            running: true,
+            kinds: (['light', 'co2', 'water'] as SugarResource[]).filter((k) => run.challenge!.budget[k] !== undefined),
+            onCatch: handleCatch,
+          }
         : null,
     [gathering, run.challenge, handleCatch],
   )
@@ -1162,7 +1336,7 @@ export default function SugarLine() {
   const lastReading = readings.length ? readings[readings.length - 1] : null
   const predictionPending = caps.prediction !== 'none' && prediction === null
   const bottleneck = useMemo(
-    () => findBottleneck(specimen, simEnv(sim), sim.carbon, { girdled: conditions.girdled }),
+    () => findBottleneck(specimen, simEnv(sim), sim.carbon, { girdled: conditions.girdled, xylemCut: conditions.xylemCut }),
     // The solve is cheap and the conditions are the only thing that moves it.
     [specimen, sim, conditions],
   )
@@ -1212,6 +1386,32 @@ export default function SugarLine() {
     return `Nothing is at its ceiling yet. Turn ${list(room)} up and run again.`
   }, [dialCeilings, run.challenge, run.hit, conditions])
 
+  /**
+   * The result card's line for the door-3 briefs, where the jars are not
+   * the story: the knife brief answers "which pipe?" and the tracer brief
+   * answers "how fast, and why".
+   */
+  const briefWhy = useMemo(() => {
+    const c = run.challenge
+    if (!c || run.phase !== 'lab' || goalLast === null) return null
+    if (c.condition === 'leafFirm' && c.goal.direction === 'atMost') {
+      if (conditions.girdled && !run.lastRefused && goalLast <= c.goal.target + c.goal.tolerance)
+        return 'None. The sugar piles up above the ring; the water still climbs the wood, so the leaves stay green — and the roots below the cut starve.'
+      if (conditions.xylemCut)
+        return 'The wood is cut: nothing reaches the leaves, so they go limp and the line stalls from the top. Sugar stopped for the wrong reason — that reading does not count.'
+      if (!conditions.girdled && !conditions.xylemCut) return 'Nothing is cut yet, so the line is running. Choose a blade.'
+      return null
+    }
+    if (c.goal.metric === 'velocity' && c.budget.parcels !== undefined) {
+      const d = goalLast - c.goal.target
+      if (Math.abs(d) <= c.goal.tolerance) return `${goalLast.toFixed(2)} m h⁻¹ at ${Math.round(conditions.tempC)} °C — in the band. That is the sap's own speed at this temperature, timed by you.`
+      return d > 0
+        ? `${goalLast.toFixed(2)} m h⁻¹: too fast. Warmer sap is thinner sap, and the same push moves it further — cool it and release another parcel.`
+        : `${goalLast.toFixed(2)} m h⁻¹: too slow. Cold sap is thick sap — warm it a little and release another parcel.`
+    }
+    return null
+  }, [run.challenge, run.phase, run.lastRefused, goalLast, conditions.girdled, conditions.xylemCut, conditions.tempC])
+
   /** One line naming the single next action. */
   const coach = useMemo(() => {
     if (!started) return null
@@ -1220,8 +1420,33 @@ export default function SugarLine() {
     // chip is the one voice the learner is trained to look for, and a round
     // with nobody talking in it was the whole feature's worst fault.
     if (run.phase === 'lab' && run.challenge) {
-      const target = `Target: ${run.challenge.goal.target} ${run.challenge.goal.unit} · ${metricPhrase(run.challenge.goal.metric)}`
+      const g = run.challenge.goal
+      const target = `Target: ${g.target} ${g.unit} · ${metricPhrase(g.metric)}`
       if (trialRunning) return { text: 'Measuring…', hint: target }
+      // The tracer brief: the parcel and the thermometer, not the jars.
+      if (g.metric === 'velocity' && run.challenge.budget.parcels !== undefined) {
+        if (tracerActive && tracerWatch === 0) return { text: 'Start the stopwatch as the parcel crosses A.', hint: target }
+        if (tracerActive && tracerWatch === 1) return { text: 'Stop it on B. The watch counts plant seconds.', hint: target }
+        if (tracerActive) return { text: 'Let the parcel run off the end; the reading lands on the gauge.', hint: target }
+        const left = run.bank.parcels ?? 0
+        if (run.hit) return { text: `On the mark, with ${left} ${left === 1 ? 'parcel' : 'parcels'} left. Hand it in.`, hint: target }
+        if (run.trials === 0) return { text: 'Set the temperature, then release a parcel and time it between the marks.', hint: target }
+        if (left === 0) return { text: 'No parcels left. Hand in the best run.', hint: target }
+        const last = goalLast
+        if (last !== null && last > g.target + g.tolerance)
+          return { text: `Too fast: ${last.toFixed(2)} m h⁻¹. Colder sap is thicker sap — turn the temperature down and release another.`, hint: target }
+        if (last !== null && last < g.target - g.tolerance)
+          return { text: `Too slow: ${last.toFixed(2)} m h⁻¹. Warm it a little and release another.`, hint: target }
+        return { text: 'Release another parcel.', hint: target }
+      }
+      // The knife brief: which pipe, and what the leaves say about it.
+      if (run.challenge.condition === 'leafFirm' && g.direction === 'atMost') {
+        if (conditions.xylemCut) return { text: 'The wood is cut. Watch the leaves — a reading with limp leaves will not count.', hint: target }
+        if (run.hit) return { text: 'Sugar stopped, leaves still firm — that is the right pipe. Hand it in, or try the other blade to see the difference.', hint: target }
+        if (run.trials === 0) return { text: 'Choose a blade, cut, then press Run measurement.', hint: target }
+        if (!conditions.girdled) return { text: 'Nothing is cut. Cut the bark ring and measure below it.', hint: target }
+        return { text: ceilingWhy ?? 'Run again.', hint: target }
+      }
       if (run.trials === 0)
         return { text: 'Set the dials, then press Run measurement.', hint: target }
       return { text: ceilingWhy ?? 'Run again.', hint: target }
@@ -1240,6 +1465,11 @@ export default function SugarLine() {
       return {
         text: 'The ring is cut. Record the export rate now, then heal it.',
         hint: 'Water still climbs the xylem — only the sugar has stopped.',
+      }
+    if (conditions.xylemCut)
+      return {
+        text: 'The wood is cut. Watch the leaves — nothing is coming up to them.',
+        hint: 'The sugar pipe is whole, but a leaf with no water cannot hold its pressure. Heal the wood when you have seen it.',
       }
     if (tracerActive && tracerWatch === 0)
       return { text: 'Start the stopwatch as the parcel crosses the green mark.', hint: undefined }
@@ -1261,7 +1491,7 @@ export default function SugarLine() {
     const next = missions.find((m) => !m.check(readings))
     if (next) return { text: next.title, hint: next.brief }
     return { text: 'Every mission is done. Try another specimen.', hint: undefined }
-  }, [started, demoStep, active, conditions.girdled, tracerActive, tracerWatch, predictionPending, readings, band, run.phase, run.challenge, run.trials, trialRunning, ceilingWhy])
+  }, [started, demoStep, active, conditions.girdled, conditions.xylemCut, tracerActive, tracerWatch, predictionPending, readings, band, run.phase, run.challenge, run.trials, run.hit, run.bank, goalLast, trialRunning, ceilingWhy])
 
   const stageMeta = STAGE_BY_ID[stage]
   const missionList = missionsForBand(band)
@@ -1309,6 +1539,7 @@ export default function SugarLine() {
         specimen={specimen}
         onChange={patchConditions}
         onGirdle={(on) => patchConditions({ girdled: on })}
+                  onXylem={(on) => patchConditions({ xylemCut: on })}
         onNight={(on) => patchConditions({ night: on })}
       onWater={handleWater}
       embedded={compact}
@@ -1353,24 +1584,6 @@ export default function SugarLine() {
    * height to show all three at once and keeps the reading order it was
    * designed with.
    */
-  const controlsPanel = (
-    <div className="flex flex-col gap-2">
-      {compact ? (
-        <>
-          {conditionsPlate}
-          {instrumentPlate}
-          {specimenRail}
-        </>
-      ) : (
-        <>
-          {specimenRail}
-          {conditionsPlate}
-          {instrumentPlate}
-        </>
-      )}
-    </div>
-  )
-
   const dataPanel = (
     <DataPlate
       readings={readings}
@@ -1428,6 +1641,10 @@ export default function SugarLine() {
 
   /* ---- render ---------------------------------------------------------- */
 
+  // Held upright: one card, and no Canvas behind it — nothing is spent on a
+  // scene nobody can use, and the cabinet mounts the moment the phone turns.
+  if (portraitPhone) return <TurnCard line="The Sugar Line runs left to right. It needs the wide way round." />
+
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#F6F2E8]">
       <SceneErrorBoundary>
@@ -1466,32 +1683,22 @@ export default function SugarLine() {
           in the way of the eye. */}
       {!stereo.on && compact && !gathering && (
         <div className="hud pointer-events-none fixed inset-0 z-20">
-          {/* One strip that scrolls sideways rather than a wrapping row: on a
-              390 px phone the chips wrapped onto a second line and the stage
-              tabs sat straight on top of them. */}
+          {/* The phone tier (landscape, ≤ ~520 px tall). The scene owns the
+              frame: one strip along the top, one toolbar along the bottom,
+              and the panels slide in from the edges as sheets — never from
+              the bottom, because height is the scarce thing here. The old
+              bottom drawer is gone from this cabinet (2026-09-06). */}
           {!inDay && (
           <div
-            className={`pointer-events-auto absolute top-3 right-0 left-0 flex items-center gap-2 overflow-x-auto px-3 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
-              demoStep >= 0 ? 'pointer-events-none opacity-70' : ''
-            }`}
+            className={`pointer-events-auto absolute top-2 right-0 left-0 z-30 flex items-center gap-1.5 px-2 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+              inLab && run.challenge ? 'overflow-visible' : 'overflow-x-auto'
+            } ${demoStep >= 0 ? 'pointer-events-none opacity-70' : ''}`}
           >
             <BackToMenu />
             <BandSwitch />
             <ClockChip hours={plantHours} rate={clockRate} />
-            <ProgressChip compact />
-            {!inChallenge && (
-              <ChallengeChip invite={readings.length > 0 && !challengeSeen.current} onClick={() => run.open(null)} />
-            )}
-          </div>
-          )}
-
-          {!inDay && (
-          <div className="absolute top-[4.4rem] right-3 left-3 flex flex-col items-stretch gap-2">
-            {/* During a challenge the gauge takes the stage tabs' strip. A
-                deliberate trade: the target and the reading must never be
-                behind a tab, and the round is played on the whole-plant stage. */}
             {inLab && run.challenge ? (
-              <TargetGauge
+              <TargetStrip
                 challenge={run.challenge}
                 bank={run.bank}
                 best={run.best}
@@ -1500,75 +1707,148 @@ export default function SugarLine() {
                 trials={run.trials}
                 affordable={affordable}
                 compact
+                refused={run.lastRefused && run.challenge.condition ? LAB_CONDITIONS[run.challenge.condition]?.failLine ?? null : null}
                 onFinish={run.finish}
                 onQuit={run.close}
               />
             ) : (
               <StageTabs aim={highlight} stage={stage} onStage={handleStage} compact />
             )}
-            <div className="flex justify-end">{rail}</div>
+            <ProgressChip compact />
+            {!inChallenge && (
+              <ChallengeChip invite={readings.length > 0 && !challengeSeen.current} onClick={() => run.open(null)} />
+            )}
           </div>
           )}
 
-          {/* A hint, not a rotate button — see RotateHint for why one cannot be
-              built honestly. Only once, only on a phone, only in portrait. */}
-          {started && demoStep < 0 && !inChallenge && <RotateHint />}
+          {/* The edge tabs: one sheet at a time. */}
+          {!inDay && (
+            <>
+              <Tile
+                onClick={() => setSheet((v) => (v === 'conditions' ? null : 'conditions'))}
+                aria-label="Conditions"
+                aria-expanded={sheet === 'conditions'}
+                className={cn(
+                  'pointer-events-auto absolute top-1/2 z-40 -translate-y-1/2 rounded-r-xl border border-l-0 border-[#E4DCC9] bg-[#FCFAF4]/94 px-1.5 py-3 text-[9.5px] font-black tracking-[0.08em] text-[#5F5A4E] uppercase [writing-mode:vertical-rl] [text-orientation:mixed] transition-[left] duration-200',
+                  // The tab rides the sheet's outer edge while it is open, so
+                  // the thing that opened it is the thing that closes it.
+                  sheet === 'conditions' ? 'left-[16.5rem]' : 'left-0',
+                )}
+              >
+                Conditions
+              </Tile>
+              <Tile
+                onClick={() => setSheet((v) => (v === 'data' ? null : 'data'))}
+                aria-label="Data"
+                aria-expanded={sheet === 'data'}
+                className={cn(
+                  'pointer-events-auto absolute top-1/2 z-40 -translate-y-1/2 rotate-180 rounded-r-xl border border-l-0 border-[#E4DCC9] bg-[#FCFAF4]/94 px-1.5 py-3 text-[9.5px] font-black tracking-[0.08em] text-[#5F5A4E] uppercase [writing-mode:vertical-rl] [text-orientation:mixed] transition-[right] duration-200',
+                  sheet === 'data' ? 'right-[16.5rem]' : 'right-0',
+                )}
+              >
+                Data{readings.length ? ` · ${readings.length}` : ''}
+              </Tile>
+              {sheet === 'conditions' && (
+                <div
+                  data-testid="sheet-conditions"
+                  className="pointer-events-auto absolute top-[2.9rem] bottom-[2.9rem] left-2 flex w-[16rem] flex-col gap-2 overflow-y-auto pr-1"
+                >
+                  {conditionsPlate}
+                  {specimenRail}
+                </div>
+              )}
+              {sheet === 'data' && (
+                <div
+                  data-testid="sheet-data"
+                  className="pointer-events-auto absolute top-[2.9rem] right-2 bottom-[2.9rem] flex w-[16rem] flex-col gap-2 overflow-y-auto pl-1"
+                >
+                  {instrumentPlate}
+                  {dataPanel}
+                  {missionPanel}
+                  <LedgerPlate sim={sim} specimen={specimen} caps={caps} embedded />
+                  <SpecimenPlate specimen={specimen} caps={caps} bottleneck={bottleneck} embedded />
+                </div>
+              )}
+            </>
+          )}
 
-          {/* The scale bar and the coach chip live in the strip the sheet
-              covers when it opens, so they ride up on top of it. Without this
-              the mission's current instruction disappears at exactly the
-              moment the learner opens the panel it is telling them to use. */}
-          <div
-            className="absolute right-3 transition-[bottom] duration-200"
-            style={{ bottom: `calc(9.5rem + ${sheetPx}px)` }}
-          >
+          {/* The scale bar, tucked above the toolbar. */}
+          <div className="absolute right-2 bottom-[3.1rem]">
             <ScaleBar label={stageMeta.scale.label} />
           </div>
 
+          {/* The one toolbar: the parts this door needs, Run wearing the aim
+              ring, and Hand in when a round is on. */}
           {!inDay && (
-          <HudDrawer
-            muted={demoStep >= 0}
-            onObstructHeight={setSheetPx}
-            tabs={[
-              {
-                id: 'controls',
-                label: 'Controls',
-                icon: <SlidersHorizontal className="h-4 w-4" />,
-                content: controlsPanel,
-              },
-              {
-                id: 'data',
-                label: 'Data',
-                icon: <LineChart className="h-4 w-4" />,
-                badge: predictionPending && readings.length ? 'predict!' : readings.length ? String(readings.length) : undefined,
-                badgeTone: (predictionPending && readings.length ? 'warn' : 'good') as 'warn' | 'good',
-                content: (
-                  <div className="flex flex-col gap-2">
-                    {dataPanel}
-                    <LedgerPlate sim={sim} specimen={specimen} caps={caps} embedded />
-                  </div>
-                ),
-              },
-              {
-                id: 'missions',
-                label: 'Missions',
-                icon: <Trophy className="h-4 w-4" />,
-                content: (
-                  <div className="flex flex-col gap-2">
-                    {missionPanel}
-                    <SpecimenPlate specimen={specimen} caps={caps} bottleneck={bottleneck} embedded />
-                  </div>
-                ),
-              },
-            ]}
-          />
+          <div
+            data-testid="toolbar"
+            className={`pointer-events-auto absolute right-2 bottom-2 left-2 flex h-[2.5rem] items-center gap-1 overflow-x-auto rounded-full border border-[#E4DCC9] bg-[#FCFAF4]/94 px-2 backdrop-blur-md [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+              demoStep >= 0 ? 'pointer-events-none opacity-70' : ''
+            }`}
+          >
+            <Tile
+              onClick={() => patchConditions({ night: !conditions.night })}
+              aria-label={conditions.night ? 'Switch to day' : 'Switch to night'}
+              aria-pressed={conditions.night}
+              className={cn('shrink-0 rounded-full border px-2.5 py-1 text-[10.5px] font-black', conditions.night ? 'border-[#3A4466] bg-[#232C46] text-[#EDE7D9]' : 'border-[#E4DCC9] bg-[#F6F2E8] text-[#5F5A4E]')}
+            >
+              {conditions.night ? '☾ Night' : '☀ Day'}
+            </Tile>
+            <Tile
+              onClick={() => patchConditions({ girdled: !conditions.girdled })}
+              aria-label={conditions.girdled ? 'Heal the phloem ring' : 'Cut the phloem ring'}
+              className={cn('shrink-0 rounded-full border px-2.5 py-1 text-[10.5px] font-black', conditions.girdled ? 'border-[#EDC2BC] bg-[#F7E3E0] text-[#9A302A]' : 'border-[#E4DCC9] bg-[#F6F2E8] text-[#5F5A4E]')}
+            >
+              ✂ {conditions.girdled ? 'Heal ring' : 'Bark ring'}
+            </Tile>
+            <Tile
+              onClick={() => patchConditions({ xylemCut: !conditions.xylemCut })}
+              aria-label={conditions.xylemCut ? 'Heal the wood' : 'Cut the wood'}
+              className={cn('shrink-0 rounded-full border px-2.5 py-1 text-[10.5px] font-black', conditions.xylemCut ? 'border-[#EDC2BC] bg-[#F7E3E0] text-[#9A302A]' : 'border-[#E4DCC9] bg-[#F6F2E8] text-[#5F5A4E]')}
+            >
+              ✂ {conditions.xylemCut ? 'Heal wood' : 'Wood'}
+            </Tile>
+            <Tile
+              onClick={handleTracer}
+              aria-label="Release the tracer"
+              disabled={tracerActive}
+              className="shrink-0 rounded-full border border-[#E4DCC9] bg-[#F6F2E8] px-2.5 py-1 text-[10.5px] font-black text-[#5F5A4E] disabled:opacity-50"
+            >
+              ◉ {tracerActive ? 'Running…' : 'Tracer'}
+            </Tile>
+            {tracerActive && (
+              <Tile
+                onClick={handleWatch}
+                aria-label="Stopwatch"
+                className="shrink-0 rounded-full border border-[#2A2823] bg-[#2A2823] px-2.5 py-1 text-[10.5px] font-black text-[#FBF5EA]"
+              >
+                {tracerWatch === 0 ? '▶ Start at A' : tracerWatch === 1 ? `■ Stop at B · ${tracerSeconds.toFixed(0)} s` : '↺ Reset'}
+              </Tile>
+            )}
+            <span className="flex-1" />
+            <Tile
+              onClick={handleRunTrial}
+              aria-label="Run measurement"
+              disabled={trialRunning || !affordable}
+              className={cn('atlas-aim-ring shrink-0 rounded-full bg-[#2F6134] px-3 py-1 text-[11px] font-black text-[#FBF5EA] disabled:opacity-50')}
+            >
+              {trialRunning ? `Measuring ${Math.round(trialProgress * 100)}%` : '▶ Run measurement'}
+            </Tile>
+            {inLab && run.challenge && (
+              <Tile
+                onClick={run.finish}
+                aria-label="Hand it in"
+                disabled={run.trials === 0}
+                className="shrink-0 rounded-full border border-[#2F6134] bg-[#E7F1E3] px-2.5 py-1 text-[10.5px] font-black text-[#2F6134] disabled:opacity-50"
+              >
+                ⚑ Hand in
+              </Tile>
+            )}
+          </div>
           )}
 
           {coach && !reveal && !gathering && !inDay && run.phase !== 'handover' && (
-            <div
-              className="pointer-events-none absolute inset-x-0 flex justify-center px-3 transition-[bottom] duration-200"
-              style={{ bottom: `calc(4.2rem + ${sheetPx}px)` }}
-            >
+            <div className="pointer-events-none absolute right-12 bottom-[3.1rem] left-12 flex justify-center">
               <Coach text={coach.text} hint={coach.hint} />
             </div>
           )}
@@ -1579,8 +1859,8 @@ export default function SugarLine() {
         <div className="hud pointer-events-none fixed inset-0 z-20">
           {/* Left column. */}
           <div
-            className={`absolute top-4 bottom-4 left-4 flex w-[19.5rem] flex-col gap-2 transition-opacity duration-300 ${
-              demoStep >= 0 ? 'pointer-events-none opacity-70' : ''
+            className={`absolute top-4 bottom-4 left-4 flex ${tier === 'tablet' ? 'w-[16.5rem]' : 'w-[19.5rem]'} flex-col gap-2 transition-opacity duration-300 ${
+              demoStep >= 0 ? 'pointer-events-none opacity-70' : inDay ? 'pointer-events-none opacity-35' : ''
             }`}
           >
             <div className="pointer-events-auto flex flex-wrap items-center gap-2">
@@ -1604,6 +1884,7 @@ export default function SugarLine() {
                   specimen={specimen}
                   onChange={patchConditions}
                   onGirdle={(on) => patchConditions({ girdled: on })}
+                  onXylem={(on) => patchConditions({ xylemCut: on })}
                   onNight={(on) => patchConditions({ night: on })}
                   onWater={handleWater}
                   ceilings={dialCeilings}
@@ -1614,42 +1895,76 @@ export default function SugarLine() {
 
           {/* Top centre: the three stages, then the tool rail — or, inside a
               challenge, the target gauge in the stages' place. */}
-          <div className="pointer-events-none absolute top-4 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2">
+          {/* The top strip steps aside for a span (a day on the hatches, a
+              night on the stem): the span's own HUD owns the top, and a
+              learner mid-night has no business changing stage. */}
+          {!inDay && (
+          <div
+            className={cn(
+              'pointer-events-none absolute top-4 flex flex-col items-center gap-2',
+              // With the target plate up, the centre stack moves right of it and
+              // the tabs shrink to pills: plate, tabs and rail share the band
+              // between the columns instead of stacking on one another.
+              inLab && run.challenge
+                ? tier === 'tablet'
+                  ? 'right-[18rem] left-[34.5rem]'
+                  : 'right-[21rem] left-[39.5rem]'
+                : 'left-1/2 -translate-x-1/2',
+            )}
+          >
             <div className="pointer-events-auto">
-              {inLab && run.challenge ? (
-                <TargetGauge
-                  challenge={run.challenge}
-                  bank={run.bank}
-                  best={run.best}
-                  last={goalLast}
-                  hit={run.hit}
-                  trials={run.trials}
-                  affordable={affordable}
-                  compact={false}
-                  onFinish={run.finish}
-                  onQuit={run.close}
-                />
-              ) : (
-                <StageTabs aim={highlight} stage={stage} onStage={handleStage} />
-              )}
+              <StageTabs aim={highlight} stage={stage} onStage={handleStage} compact={!!(inLab && run.challenge)} />
             </div>
             <div className="pointer-events-auto">{rail}</div>
             <p className="atlas-serif max-w-[26rem] text-center text-[11.5px] leading-snug text-[#8B8471] italic">
               {stageMeta.hint}
             </p>
           </div>
+          )}
+
+          {/* The target plate: top-left of the scene, beside the conditions
+              that move it, for the length of the round. The tabs stay — a
+              learner mid-round can still see where they are. (Chosen over the
+              gauge-in-the-strip of doors 1–2 on 2026-09-06; the Foundry uses
+              the same slot.) */}
+          {inLab && run.challenge && (
+            <div className={cn('pointer-events-auto absolute top-4', tier === 'tablet' ? 'left-[18rem] w-[15rem]' : 'left-[21rem] w-[16rem]')}>
+              <TargetGauge
+                challenge={run.challenge}
+                bank={run.bank}
+                best={run.best}
+                last={goalLast}
+                hit={run.hit}
+                trials={run.trials}
+                affordable={affordable}
+                compact
+                fold={false}
+                refused={run.lastRefused && run.challenge.condition ? LAB_CONDITIONS[run.challenge.condition]?.failLine ?? null : null}
+                onFinish={run.finish}
+                onQuit={run.close}
+              />
+            </div>
+          )}
 
           {/* Right column.
               The instruments stay pinned at the top and everything else takes
               turns underneath. Stacked, the five plates ran a thousand pixels
               tall and pushed "Run measurement" — the one control the whole
               cabinet is built around — below the fold on a 900 px screen. */}
-          <div className="pointer-events-auto absolute top-4 right-4 bottom-4 flex w-[19.5rem] flex-col gap-2 pl-1">
+          {/* During a span the lab steps back: the game owns the frame, and a
+              column at full strength was the lab fighting it for attention. */}
+          <div
+            className={cn(
+              'pointer-events-auto absolute top-4 right-4 bottom-4 flex flex-col gap-2 pl-1 transition-opacity duration-300',
+              tier === 'tablet' ? 'w-[16.5rem]' : 'w-[19.5rem]',
+              inDay && 'pointer-events-none opacity-35',
+            )}
+          >
             {/* The instruments are pinned, but capped: they grow as bands and
                 readings add rows, and an uncapped pinned block pushes the tab
                 below it clean off the screen — which is exactly how "Run
                 measurement" ended up at y≈934 on a 900px display once already. */}
-            <div className="max-h-[58%] shrink-0 overflow-y-auto pr-0.5">
+            <div className="max-h-[calc(100%-9.5rem)] shrink-0 overflow-y-auto pr-0.5">
               <InstrumentPlate
                 aim={highlight}
                 sim={sim}
@@ -1698,8 +2013,8 @@ export default function SugarLine() {
           </div>
 
           {/* Tip, bottom-left of the stage rather than over the specimen. */}
-          {tipOpen && (
-            <div className="absolute bottom-4 left-[21rem]">
+          {tipOpen && !inDay && !inLab && (
+            <div className={cn('absolute bottom-4', tier === 'tablet' ? 'left-[18rem]' : 'left-[21rem]')}>
               <TipCard stage={stage} onClose={() => setTipOpen(false)} />
             </div>
           )}
@@ -1741,7 +2056,7 @@ export default function SugarLine() {
                     hit: shortfall(run.challenge, goalLast).hit,
                     gap: shortfall(run.challenge, goalLast).text,
                     previous: goalPrev,
-                    why: ceilingWhy ?? '',
+                    why: briefWhy ?? ceilingWhy ?? '',
                     trials: run.trials,
                     onHandIn: () => {
                       setReveal(null)
@@ -1820,6 +2135,7 @@ export default function SugarLine() {
           bank={run.bank}
           budget={run.challenge.budget}
           caught={caught}
+          challenge={run.challenge}
           onDone={run.endGather}
         />
       )}
@@ -1829,7 +2145,36 @@ export default function SugarLine() {
       )}
 
       {/* ---- the Hatches' day ---- */}
-      {!stereo.on && inDay && run.challenge && (
+      {!stereo.on && inDay && run.challenge && isNight && (
+        <>
+          <NightHud
+            challenge={run.challenge}
+            run={dayRun}
+            state={nightState}
+            ready={run.phase === 'ready'}
+            readyLeft={run.readyLeft}
+            band={band}
+            compact={compact}
+            onQuit={run.close}
+          />
+          <div
+            className={cn(
+              'pointer-events-none fixed inset-x-0 z-30 flex justify-center px-3',
+              compact ? 'bottom-3' : 'bottom-5',
+            )}
+          >
+            <ThermostatPlate
+              tempC={conditions.tempC}
+              canHold={band === 'explorer'}
+              onChange={(t) => patchConditions({ tempC: t })}
+              onHold={handleHold}
+              compact={compact}
+            />
+          </div>
+        </>
+      )}
+
+      {!stereo.on && inDay && run.challenge && !isNight && (
         <>
           <DayHud
             challenge={run.challenge}
@@ -1875,7 +2220,7 @@ export default function SugarLine() {
             const next = doorOpened
             if (!next || !isStageOpen(next.id)) return
             setDoorOpened(null)
-            const stageId = next.id === 2 ? 2 : 1
+            const stageId = (next.id === 2 || next.id === 3 ? next.id : 1) as 1 | 2 | 3
             if (band === 'explorer') beginChallenge(soloChallenge(levelForBand(band, stageId)))
             else {
               run.close()
@@ -1884,14 +2229,27 @@ export default function SugarLine() {
           }}
           tally={
             run.tally ? (
-              <DayTallyBlock challenge={run.challenge} tally={run.tally} safest={dayExtras.safest} cactus={dayExtras.cactus} />
+              isNight ? (
+                <NightTallyBlock
+                  challenge={run.challenge}
+                  tally={run.tally}
+                  bankStartMg={nightState.bankStartMg}
+                  totalStartMg={nightState.totalStartMg}
+                  totalEndMg={nightState.bankMg + nightState.sugarMg}
+                  tempC={nightState.tempC}
+                />
+              ) : (
+                <DayTallyBlock challenge={run.challenge} tally={run.tally} safest={dayExtras.safest} cactus={dayExtras.cactus} />
+              )
             ) : null
           }
         />
       )}
 
       {!stereo.on && <InputHints extra={[['LB/RB', 'Plant / leaf / stem']]} />}
-      {!stereo.on && <ProgressToasts />}
+      {!stereo.on && (
+        <ProgressToasts clearLeft={!compact && inLab && run.challenge ? (tier === 'tablet' ? 'left-[33rem]' : 'left-[37rem]') : null} />
+      )}
       {contextLost && <WebglFallback />}
     </div>
   )

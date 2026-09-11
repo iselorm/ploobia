@@ -322,13 +322,15 @@ export function stemSectionTexture(): THREE.CanvasTexture {
     // Cortex cells.
     ctx.strokeStyle = 'rgba(90, 110, 70, 0.25)'
     ctx.lineWidth = 1.4
-    for (let ring = 0; ring < 4; ring++) {
-      const rr = R * (0.58 + ring * 0.08)
-      const n = 22 + ring * 6
+    // Two rings of cells the size of the trough's, so the face and the wall
+    // read as one tissue at one scale.
+    for (let ring = 0; ring < 2; ring++) {
+      const rr = R * (0.62 + ring * 0.15)
+      const n = 14 + ring * 4
       for (let i = 0; i < n; i++) {
         const a = (i / n) * Math.PI * 2
         ctx.beginPath()
-        ctx.arc(c + Math.cos(a) * rr, c + Math.sin(a) * rr, R * 0.035, 0, Math.PI * 2)
+        ctx.arc(c + Math.cos(a) * rr, c + Math.sin(a) * rr, R * 0.07, 0, Math.PI * 2)
         ctx.stroke()
       }
     }
@@ -518,6 +520,67 @@ export function pulseStrength(height01: number, pulse: number, width = 0.11): nu
   return Math.max(0, 1 - d / width)
 }
 
+/**
+ * Parenchyma, as the inside of the opened stem: a jittered field of rounded
+ * cells in the same creams and sages as the cut face, so the trough and its
+ * two end faces read as one tissue rather than a green tin. Drawn once to a
+ * canvas; a greyscale copy makes a bump map. Costs nothing per frame.
+ */
+export function cortexTexture(): THREE.CanvasTexture {
+  return make(
+    'cortex',
+    512,
+    512,
+    (ctx, w, h) => {
+      ctx.fillStyle = '#EDE7D2'
+      ctx.fillRect(0, 0, w, h)
+      const cols = 12
+      const rows = 12
+      const cw = w / cols
+      const ch = h / rows
+      let seed = 7
+      const rnd = () => {
+        seed = (seed * 16807) % 2147483647
+        return seed / 2147483647
+      }
+      for (let r = -1; r <= rows; r++) {
+        for (let c = -1; c <= cols; c++) {
+          // Odd rows stagger by half a pitch and every cell overreaches its
+          // neighbours a little, so the strokes become shared walls rather
+          // than a field of bubbles.
+          const cx = (c + 0.5 + (r % 2 ? 0.5 : 0)) * cw + (rnd() - 0.5) * cw * 0.25
+          const cy = (r + 0.5) * ch + (rnd() - 0.5) * ch * 0.25
+          const rx = cw * (0.52 + rnd() * 0.1)
+          const ry = ch * (0.5 + rnd() * 0.1)
+          const t = rnd()
+          const fill = new THREE.Color('#F3EEDC').lerp(new THREE.Color('#DCE8CC'), t)
+          ctx.fillStyle = `#${fill.getHexString()}`
+          ctx.strokeStyle = 'rgba(90, 110, 70, 0.32)'
+          ctx.lineWidth = 3
+          ctx.beginPath()
+          ctx.ellipse(cx, cy, rx, ry, (rnd() - 0.5) * 0.6, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.stroke()
+          // A few starch grains, where the cortex stores what the phloem drops.
+          if (rnd() < 0.35) {
+            ctx.fillStyle = 'rgba(217, 155, 43, 0.35)'
+            for (let k = 0; k < 3; k++) {
+              ctx.beginPath()
+              ctx.arc(cx + (rnd() - 0.5) * rx, cy + (rnd() - 0.5) * ry, 2 + rnd() * 2.5, 0, Math.PI * 2)
+              ctx.fill()
+            }
+          }
+        }
+      }
+    },
+    (t) => {
+      t.wrapS = THREE.RepeatWrapping
+      t.wrapT = THREE.RepeatWrapping
+      t.repeat.set(3, 1)
+    },
+  )
+}
+
 /* ------------------------------------------------------------------ */
 /* Lighting                                                           */
 /* ------------------------------------------------------------------ */
@@ -537,15 +600,22 @@ export function atlasEnvironment(renderer: THREE.WebGLRenderer): THREE.Texture {
   const mid = new THREE.Color('#F6F2E8')
   const bottom = new THREE.Color('#D9D2BF')
   const c = new THREE.Color()
+  const window = new THREE.Color('#FFFDF4')
   for (let y = 0; y < height; y++) {
     const t = y / (height - 1)
     if (t < 0.5) c.copy(top).lerp(mid, t * 2)
     else c.copy(mid).lerp(bottom, (t - 0.5) * 2)
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 4
-      data[i] = Math.round(c.r * 255)
-      data[i + 1] = Math.round(c.g * 255)
-      data[i + 2] = Math.round(c.b * 255)
+      // A soft bright window, upper left: a featureless gradient gives a
+      // clearcoat or a sheen nothing to reflect, and every glossy surface
+      // reads as flat. This is the studio's one softbox.
+      const inWindow = x >= 2 && x <= 6 && y >= 6 && y <= 13
+      const edge = x === 2 || x === 6 || y === 6 || y === 13
+      const px = inWindow ? (edge ? c.clone().lerp(window, 0.5) : window) : c
+      data[i] = Math.round(px.r * 255)
+      data[i + 1] = Math.round(px.g * 255)
+      data[i + 2] = Math.round(px.b * 255)
       data[i + 3] = 255
     }
   }

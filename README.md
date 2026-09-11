@@ -1,7 +1,7 @@
 # Ploobia
 
 The school arcade — interactive 3D cabinets where nothing works until you find
-out why. Ages 10–17, IGCSE-compatible.
+out why. Ages 10–18, IGCSE- and A Level-compatible.
 
 This repository holds both halves of the public product and the script that
 puts them together:

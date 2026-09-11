@@ -459,7 +459,7 @@ function SponsorsCard() {
                 <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: c.tint }} />
                 {c.title}
               </span>
-              <span className="text-[10.5px] font-bold text-[#7A5252]">{s ? s.name : c.status === 'live' ? 'Looking for a sponsor' : 'Not yet open'}</span>
+              <span className="text-[10.5px] font-bold text-[#7A5252]">{s ? s.name : c.status === 'live' ? 'Looking for a sponsor' : 'Not yet discovered'}</span>
             </li>
           )
         })}

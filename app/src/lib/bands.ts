@@ -48,7 +48,7 @@ export const BANDS: BandMeta[] = [
   {
     id: 'analyst',
     label: 'Analyst',
-    ages: '16–17',
+    ages: '16–18',
     question: 'Can I model it and defend a conclusion?',
     blurb:
       'Repeat readings, quantify uncertainty, spot anomalies, compare competing explanations, write it up.',

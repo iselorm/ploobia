@@ -52,6 +52,10 @@ export type ChallengePhase =
  * `day` is the scripted span the sim runs on its own; the page owns the sim,
  * so the page starts the day when this hook enters the phase and calls
  * `finishDay` with the tally when the sim reports the span done.
+ *
+ * A keep round may also open with a gather (door 3's night shift banks the
+ * daylight first): then it runs ready → gather → handover → day, and the
+ * handover's "into the lab" enters the day instead.
  */
 
 /** How long the get-ready beat lasts before the clock starts on its own. */
@@ -82,9 +86,9 @@ export interface SugarChallengeRun {
   tally: DayTally | null
 
   /** Open the brief — on a rival's score, and/or on a campaign stage's level. */
-  open: (rival?: number | null, stage?: 1 | 2) => void
+  open: (rival?: number | null, stage?: 1 | 2 | 3) => void
   /** Which stage the brief was opened for, so it can pick the right level. */
-  stage: 1 | 2
+  stage: 1 | 2 | 3
   close: () => void
   begin: (c: Challenge) => void
   /** Fired by the gather round on every interception. */
@@ -102,11 +106,17 @@ export interface SugarChallengeRun {
    * run four experiments.
    */
   draw: (cost: ResourceBudget) => void
-  /** Offer a value of the goal metric; kept only if it is better. */
-  offer: (value: number) => void
+  /**
+   * Offer a value of the goal metric; kept only if it is better. `ok` says
+   * whether the challenge's condition held when the reading was taken — a
+   * reading taken with limp leaves is shown, but it never becomes the best.
+   */
+  offer: (value: number, ok?: boolean) => void
+  /** Whether the last offer was refused for its condition — for the gauge to say so. */
+  lastRefused: boolean
   finish: () => void
-  /** Score a keep round from its tally: the goal metric's value and whether the condition held. */
-  finishDay: (tally: DayTally, value: number, conditionMet: boolean, waterMl: number) => void
+  /** Score a keep round from its tally: the goal metric's value, whether the condition held, and what it spent. */
+  finishDay: (tally: DayTally, value: number, conditionMet: boolean, spent: ResourceBudget) => void
   attempt: () => ChallengeAttempt | null
 }
 
@@ -122,10 +132,15 @@ export function useSugarChallenge(): SugarChallengeRun {
   const [score, setScore] = useState<ChallengeScore | null>(null)
   const [rival, setRival] = useState<number | null>(null)
   const [tally, setTally] = useState<DayTally | null>(null)
+  /** A gather round's condition: seen true on at least one accepted reading. */
+  const [conditionSeen, setConditionSeen] = useState(false)
+  const [lastRefused, setLastRefused] = useState(false)
 
   const labStartedAt = useRef(0)
   /** Whether the current challenge is a keep round — read from the tick, which cannot see state. */
   const keepRef = useRef(false)
+  /** Whether the current challenge opens with a gather round. */
+  const gatherRef = useRef(false)
   /**
    * The bank, mirrored where the render loop can read it.
    *
@@ -149,7 +164,7 @@ export function useSugarChallenge(): SugarChallengeRun {
       setReadyLeft(next)
       // The tick that reaches zero is the one that starts the clock — done
       // here rather than in a second effect so the transition is one event.
-      if (next <= 0) setPhase((p) => (p === 'ready' ? (keepRef.current ? 'day' : 'gather') : p))
+      if (next <= 0) setPhase((p) => (p === 'ready' ? (keepRef.current && !gatherRef.current ? 'day' : 'gather') : p))
     }, TICK_MS)
     return () => window.clearInterval(t)
   }, [phase])
@@ -177,11 +192,11 @@ export function useSugarChallenge(): SugarChallengeRun {
   const enterLab = useCallback(() => {
     if (phase !== 'handover') return
     labStartedAt.current = performance.now()
-    setPhase('lab')
+    setPhase(keepRef.current ? 'day' : 'lab')
   }, [phase])
 
-  const [stage, setStage] = useState<1 | 2>(1)
-  const open = useCallback((r: number | null = null, s: 1 | 2 = 1) => {
+  const [stage, setStage] = useState<1 | 2 | 3>(1)
+  const open = useCallback((r: number | null = null, s: 1 | 2 | 3 = 1) => {
     setRival(r ?? null)
     setStage(s)
     setPhase('brief')
@@ -194,6 +209,8 @@ export function useSugarChallenge(): SugarChallengeRun {
     setTally(null)
     setBest(null)
     setTrials(0)
+    setConditionSeen(false)
+    setLastRefused(false)
     setBank({})
     bankRef.current = {}
     setGranted({})
@@ -205,13 +222,21 @@ export function useSugarChallenge(): SugarChallengeRun {
     setTally(null)
     setBest(null)
     setTrials(0)
+    setConditionSeen(false)
+    setLastRefused(false)
     keepRef.current = c.loop === 'keep'
+    gatherRef.current = c.gatherSeconds > 0
     const empty: ResourceBudget = {}
     for (const k of Object.keys(c.budget)) empty[k] = 0
     setBank(empty)
     bankRef.current = empty
     setGranted(empty)
-    if (c.loop === 'keep') {
+    if (c.loop === 'keep' && c.gatherSeconds > 0) {
+      // A night shift: bank the daylight, then the night runs on it.
+      setSecondsLeft(c.gatherSeconds)
+      setReadyLeft(READY_SECONDS)
+      setPhase('ready')
+    } else if (c.loop === 'keep') {
       // The day is the trial. The budget is the water a wide-open leaf would
       // lose, which thrift is measured against; nothing is gathered.
       setGranted({ ...c.budget })
@@ -282,9 +307,15 @@ export function useSugarChallenge(): SugarChallengeRun {
   )
 
   const offer = useCallback(
-    (value: number) => {
+    (value: number, ok = true) => {
       const c = challenge
       if (!c || !Number.isFinite(value)) return
+      if (c.condition && !ok) {
+        setLastRefused(true)
+        return
+      }
+      setLastRefused(false)
+      if (c.condition) setConditionSeen(true)
       setBest((prev) => {
         if (prev === null) return value
         // "Best" depends on which way the goal points: on an `atMost` target,
@@ -306,17 +337,18 @@ export function useSugarChallenge(): SugarChallengeRun {
   const attempt = useCallback((): ChallengeAttempt | null => {
     const c = challenge
     if (!c) return null
+    const conditionMet = c.condition ? (keepRef.current ? tally?.leafFirm === true : conditionSeen) : undefined
     return {
       challengeId: challengeId(c),
       best: best ?? 0,
-      hit: best !== null && meetsGoal(c.goal, best) && (!c.condition || tally?.leafFirm === true),
+      hit: best !== null && meetsGoal(c.goal, best) && (!c.condition || conditionMet === true),
       trials,
       spent,
       gathered: granted,
       seconds: Math.max(0, (performance.now() - labStartedAt.current) / 1000),
-      conditionMet: c.condition ? tally?.leafFirm === true : undefined,
+      conditionMet,
     }
-  }, [challenge, best, trials, spent, granted, tally])
+  }, [challenge, best, trials, spent, granted, tally, conditionSeen])
 
   const finish = useCallback(() => {
     const c = challenge
@@ -327,10 +359,9 @@ export function useSugarChallenge(): SugarChallengeRun {
   }, [challenge, attempt])
 
   const finishDay = useCallback(
-    (t: DayTally, value: number, conditionMet: boolean, waterMl: number) => {
+    (t: DayTally, value: number, conditionMet: boolean, spentNow: ResourceBudget) => {
       const c = challenge
       if (!c) return
-      const spentNow: ResourceBudget = { water: Math.round(waterMl * 100) / 100 }
       const a: ChallengeAttempt = {
         challengeId: challengeId(c),
         best: value,
@@ -343,7 +374,12 @@ export function useSugarChallenge(): SugarChallengeRun {
       }
       setBest(value)
       setTrials(1)
-      const left = drawDown({ ...c.budget }, spentNow)
+      // What the round was granted is what it gathered, or the budget when
+      // nothing was gathered; thrift is measured against that.
+      const grantedNow = Object.keys(bankRef.current).length ? { ...bankRef.current } : { ...c.budget }
+      a.gathered = grantedNow
+      setGranted(grantedNow)
+      const left = drawDown(grantedNow, spentNow)
       setBank(left)
       bankRef.current = left
       setTally(t)
@@ -357,7 +393,7 @@ export function useSugarChallenge(): SugarChallengeRun {
     challenge !== null &&
     best !== null &&
     meetsGoal(challenge.goal, best) &&
-    (!challenge.condition || tally?.leafFirm === true)
+    (!challenge.condition || (keepRef.current ? tally?.leafFirm === true : conditionSeen))
 
   return {
     phase,
@@ -373,6 +409,7 @@ export function useSugarChallenge(): SugarChallengeRun {
     score,
     rival,
     tally,
+    lastRefused,
     stage,
     open,
     close,

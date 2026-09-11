@@ -63,7 +63,7 @@ export const CAMPAIGN: CampaignStage[] = [
     name: 'The Line',
     where: 'xylem & phloem',
     question: 'Two pipes, opposite directions. Which carries what, and what pushes it?',
-    built: false,
+    built: true,
     tab: 'stem',
   },
   {

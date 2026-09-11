@@ -197,13 +197,31 @@ function sugarPerHour(umolPerM2PerSecond: number, leafAreaM2: number): number {
  * Solve the whole plant at one instant. Pure — safe inside a render loop, and
  * the same call the instruments, the graph and the animation all read.
  */
+/**
+ * The two blades of the knife.
+ *
+ * `girdled` cuts the bark ring — the phloem — so no sugar passes the cut while
+ * the wood carries water up as before. `xylemCut` cuts the wood: the leaf's
+ * water supply is gone, so the solve sees a dry root zone and the leaf loses
+ * turgor at the rate it transpires (the sim owns that clock). Sugar transport
+ * then fails from the top rather than at the cut — the stomata shut, production
+ * falls, and the sieve tubes cannot hold their pressure. Two pipes, two
+ * failures, and they are not the same failure — which is the whole of door 3.
+ */
+export interface SurgeryOptions {
+  girdled: boolean
+  xylemCut?: boolean
+}
+
 export function solveSugarLine(
   specimen: Specimen,
   env: LabEnv,
   state: CarbonState,
-  options: { girdled: boolean },
+  options: SurgeryOptions,
 ): SugarSolve {
-  const leaf = solveLeaf(specimen.leaf, env)
+  // A cut xylem is, to the leaf, a root zone with nothing in it.
+  const leafEnv: LabEnv = options.xylemCut ? { ...env, soilWater: 0 } : env
+  const leaf = solveLeaf(specimen.leaf, leafEnv)
   const area = specimen.leafAreaM2
 
   const production = sugarPerHour(leaf.gross, area)
@@ -388,7 +406,7 @@ export function stepCarbon(
 /* What is holding the line back?                                     */
 /* ------------------------------------------------------------------ */
 
-export type Bottleneck = 'light' | 'co2' | 'temp' | 'water' | 'loading' | 'sink' | 'girdle' | 'none'
+export type Bottleneck = 'light' | 'co2' | 'temp' | 'water' | 'loading' | 'sink' | 'girdle' | 'xylem' | 'none'
 
 export interface BottleneckReading {
   id: Bottleneck
@@ -431,6 +449,11 @@ const BOTTLENECK_COPY: Record<Bottleneck, { label: string; because: string }> = 
     because:
       'The phloem is severed. Water still climbs the xylem, but no sugar can get past the cut — everything below it is starving.',
   },
+  xylem: {
+    label: 'The cut wood',
+    because:
+      'The xylem is severed. No water reaches the leaf, so the stomata shut, the sieve tubes lose their pressure, and the line stalls from the top — the leaves go limp first.',
+  },
   none: { label: 'Nothing', because: 'Every stage is keeping up with the one before it.' },
 }
 
@@ -444,9 +467,10 @@ export function findBottleneck(
   specimen: Specimen,
   env: LabEnv,
   state: CarbonState,
-  options: { girdled: boolean },
+  options: SurgeryOptions,
 ): BottleneckReading {
   if (options.girdled) return { id: 'girdle', ...BOTTLENECK_COPY.girdle }
+  if (options.xylemCut) return { id: 'xylem', ...BOTTLENECK_COPY.xylem }
 
   const base = solveSugarLine(specimen, env, state, options)
   if (base.sinkLimited) return { id: 'sink', ...BOTTLENECK_COPY.sink }
@@ -604,6 +628,8 @@ export interface SugarReading {
   anomalous: boolean
   specimenId: string
   girdled: boolean
+  /** The wood was cut when this was taken. */
+  xylemCut?: boolean
   controls: { light: number; co2: number; temp: number; water: number }
   predicted: number | null
   /** The carbon audit at the moment of the reading, mg h⁻¹. */

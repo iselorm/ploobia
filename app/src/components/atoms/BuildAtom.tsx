@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import GlyphInstances, { glyphTexture, hideGlyph, writeGlyph } from '@/components/photo/Glyphs'
-import { glowTexture } from '@/components/photo/Sprites'
+import { glowTexture, shadowTexture } from '@/components/photo/Sprites'
 import {
   ELEMENT_BY_Z,
   PLACE_SECONDS,
@@ -98,6 +98,9 @@ export default function BuildAtom({ sim, protons, neutrons, electrons, cloudView
   const v = useMemo(() => new THREE.Vector3(), [])
   const v2 = useMemo(() => new THREE.Vector3(), [])
   const stagePos = useMemo(() => new THREE.Vector3(...STAGE_POS), [])
+  // a feathered dark blob, not a card: the nameplate needs to sit on bright
+  // plaster without a rectangle appearing behind the atom
+  const plateShade = useMemo(() => shadowTexture(), [])
   const slotPos = useMemo(() => new THREE.Vector3(), [])
   const cloudMap = useMemo(() => glowTexture('rgba(96, 205, 235, 0.9)', 'rgba(96, 205, 235, 0)', 'e-cloud'), [])
   const flashMap = useMemo(() => glowTexture('rgba(255, 240, 200, 0.95)', 'rgba(255, 210, 120, 0)', 'complete-flash'), [])
@@ -344,23 +347,38 @@ export default function BuildAtom({ sim, protons, neutrons, electrons, cloudView
 
   return (
     <group>
-      {/* plinth */}
+      {/* The stage mark.
+          This was a waist-high plinth, then a low pad, and both were wrong for
+          the same reason: whatever stands at the origin sits in the middle of
+          the frame, directly in front of the middle launcher, and the middle
+          launcher is a control the player has to be able to see and press. The
+          atom does not need a pedestal — it needs a *place*, and a lit ring
+          painted flat on the bench says "here" without occupying a single
+          pixel of the column the element is forged in. */}
       <group>
-        <mesh position={[0, 0.42, 0]} castShadow receiveShadow>
-          <cylinderGeometry args={[0.5, 0.6, 0.84, 28]} />
-          <meshStandardMaterial color="#4E3A2A" roughness={0.6} metalness={0.25} />
+        <mesh position={[0, 0.014, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.5, 0.58, 44]} />
+          <meshBasicMaterial color="#E8A33D" toneMapped={false} transparent opacity={0.75} depthWrite={false} />
         </mesh>
-        <mesh position={[0, 0.855, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[0.42, 0.5, 40]} />
-          <meshBasicMaterial color="#E8A33D" toneMapped={false} transparent opacity={0.9} />
+        <mesh position={[0, 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[0.5, 36]} />
+          <meshBasicMaterial color="#8A6437" toneMapped={false} transparent opacity={0.16} depthWrite={false} />
         </mesh>
-        <ContactShadow position={[0, 0, 0]} radius={1.0} />
+        <ContactShadow position={[0, 0, 0]} radius={0.95} opacity={0.3} />
       </group>
 
-      {/* nameplate — in the world, in front of the plinth */}
+      {/* nameplate — in the world, in front of the atom */}
       {el && (
         <Billboard position={[0, 1.14, 0.8]}>
-          <GlyphPlane text={el.symbol} color={tint} size={0.34} position={[0, 0.06, 0]} />
+          {/* A card behind the name. The plate was drawn for a dark board; with
+              the table gone the wall behind it is bright plaster, and unbacked
+              glyphs on plaster are the one thing in this room that stopped
+              being readable. */}
+          <mesh position={[0, -0.19, -0.01]}>
+            <planeGeometry args={[2.1, 1.25]} />
+            <meshBasicMaterial map={plateShade} transparent opacity={0.5} depthWrite={false} toneMapped={false} />
+          </mesh>
+          <GlyphPlane text={el.symbol} color={tint} size={0.34} position={[0, 0.06, 0]} stroke={CRISP} />
           <GlyphPlane text={el.name} color="#FFF6E8" size={0.13} position={[0, -0.17, 0]} stroke={CRISP} />
           {chargeText && <GlyphPlane text={chargeText} color={charge > 0 ? '#FF8A66' : '#7FD8F5'} size={0.16} position={[0.42, 0.1, 0]} stroke={CRISP} />}
           {showMass && <GlyphPlane text={`A ${protons + neutrons}`} color="#F3E4CE" size={0.11} position={[0, -0.31, 0]} stroke={CRISP} />}

@@ -396,7 +396,7 @@ export function SegueCard({ onClose }: { onClose: () => void }) {
           <Tile onClick={onClose} data-testid="segue-close" className="flex items-center gap-2 rounded-full bg-[#2E6DA8] px-5 py-2.5 text-[13px] font-black text-[#FBF5EA] shadow hover:bg-[#245685]">
             Back to the yard
           </Tile>
-          <span className="rounded-full bg-[#F3E9D7] px-3 py-2 text-[11px] font-extrabold text-[#7A5252]">Next cabinet: the Pendulum Practical · coming soon</span>
+          <span className="rounded-full bg-[#F3E9D7] px-3 py-2 text-[11px] font-extrabold text-[#7A5252]">Next cabinet: the Pendulum Practical · nobody has been in yet</span>
         </div>
       </div>
     </div>

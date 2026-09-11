@@ -43,9 +43,13 @@ const BUDGETS = {
   rivers: { calls: 250, triangles: 300_000 },
   // First Physics: the Yard's meadow plus one object and a shelf. Budgeted like the Yard.
   physics: { calls: 250, triangles: 600_000 },
+  // The Numberworks: six generated props at ≤ 9k tris each, forty cutout
+  // shoppers, the stall and two neighbours. Measured against the stand-ins
+  // first; the props are loaded on demand and are budgeted here in full.
+  numberworks: { calls: 250, triangles: 200_000 },
 }
 
-const ENTER = ['Start measuring', 'Start experimenting', 'Start forging', 'Start the fieldwork', 'Start in the lungs', 'Start with one Ploob']
+const ENTER = ['Start measuring', 'Start experimenting', 'Start forging', 'Explore the Foundry on your own', 'Start the fieldwork', 'Start in the lungs', 'Start with one Ploob', 'Run a stall on your own']
 const DISMISS = ['Skip intro', 'Skip']
 
 const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] })

@@ -202,6 +202,8 @@ export interface Conditions {
   soilWater: number
   night: boolean
   girdled: boolean
+  /** The other blade: the wood is cut. Never true with `girdled`. */
+  xylemCut: boolean
 }
 
 export function ConditionsPlate({
@@ -210,6 +212,7 @@ export function ConditionsPlate({
   specimen,
   onChange,
   onGirdle,
+  onXylem,
   onNight,
   onWater,
   aim = null,
@@ -221,6 +224,8 @@ export function ConditionsPlate({
   specimen: Specimen
   onChange: (patch: Partial<Conditions>) => void
   onGirdle: (on: boolean) => void
+  /** The second blade. Present only where the stem is open (door 3 and after). */
+  onXylem?: (on: boolean) => void
   onNight: (on: boolean) => void
   onWater: () => void
   /** The control the active mission step is pointing at. */
@@ -343,13 +348,28 @@ export function ConditionsPlate({
           ariaLabel={conditions.girdled ? 'Heal the phloem ring' : 'Cut the phloem ring'}
         >
           <Scissors className="h-3.5 w-3.5" />
-          {conditions.girdled ? 'Heal the ring' : 'Cut the ring'}
+          {conditions.girdled ? 'Heal the ring' : onXylem ? 'Cut the bark ring' : 'Cut the ring'}
         </AtlasButton>
         </Aim>
+        {onXylem && (
+          <AtlasButton
+            onClick={() => onXylem(!conditions.xylemCut)}
+            tone={conditions.xylemCut ? 'danger' : 'quiet'}
+            ariaLabel={conditions.xylemCut ? 'Heal the wood' : 'Cut the wood'}
+          >
+            <Scissors className="h-3.5 w-3.5" />
+            {conditions.xylemCut ? 'Heal the wood' : 'Cut the wood'}
+          </AtlasButton>
+        )}
       </div>
       {conditions.girdled && (
         <p className="mt-2 text-[10.5px] leading-snug font-semibold text-[#9A302A]">
           The phloem is severed. Water still climbs the xylem — sugar stops at the cut.
+        </p>
+      )}
+      {conditions.xylemCut && (
+        <p className="mt-2 text-[10.5px] leading-snug font-semibold text-[#9A302A]">
+          The wood is severed. No water reaches the leaf: it is spending what it holds, and the line will stall from the top.
         </p>
       )}
     </Plate>
@@ -431,7 +451,12 @@ export function InstrumentPlate({
           <span className="ml-1 text-[11px] font-bold text-[#8B8471]">{meta.unit}</span>
         </span>
       </div>
-      <p className="mt-1 text-[10.5px] leading-snug font-semibold text-[#9A9482]">{meta.instrument}</p>
+      {/* The instrument's story lives in the tooltip and the atlas; four lines
+          of it here pushed Run measurement out of the pinned plate at every
+          desktop size a Scientist uses (2026-09-06). */}
+      <p className="mt-1 truncate text-[10.5px] leading-snug font-semibold text-[#9A9482]" title={meta.instrument}>
+        {meta.instrument.split('.')[0]}.
+      </p>
 
       {caps.controlledVariables && (
         <>
@@ -452,7 +477,7 @@ export function InstrumentPlate({
             </Aim>
           </div>
           <p
-            className="mt-1 text-[10.5px] leading-snug font-semibold text-[#9A9482]"
+            className="mt-1 text-[10.5px] leading-snug font-semibold text-[#9A9482] max-[1279px]:hidden"
             title="Change a control mid-trial and the average would not belong to any one set of conditions, so the reading is discarded."
           >
             Everything else is a control — hold them still.
@@ -559,34 +584,51 @@ export function InstrumentPlate({
         </div>
       )}
 
-      <Rule />
-      <div className="flex items-baseline justify-between">
-        <span className="atlas-eyebrow">Tracer run</span>
-        <Chip tone="sugar">{(sim.tracerMarkB - sim.tracerMarkA).toFixed(2)} m between marks</Chip>
-      </div>
-      <p
-        className="mt-1 text-[10.5px] leading-snug font-semibold text-[#9A9482]"
-        title="Release a labelled parcel and time it from the green mark to the red one. The stopwatch counts plant seconds, so speed is just distance ÷ time — no hidden conversion."
-      >
-        Time a labelled parcel between the two marks. The watch counts plant seconds.
-      </p>
-      <div className="mt-1.5 flex items-center gap-1.5">
-        <Aim on={aim === 'tracer'} inline>
-        <AtlasButton onClick={onTracer} disabled={tracerActive} ariaLabel="Release the tracer" className="flex-1">
-          <CircleDot className="h-3.5 w-3.5" />
-          {tracerActive ? 'Running…' : 'Release tracer'}
-        </AtlasButton>
-        </Aim>
-        <AtlasButton
-          onClick={onWatch}
-          tone={tracerWatch === 1 ? 'danger' : 'quiet'}
-          ariaLabel="Stopwatch"
-          className="min-w-[6.2rem]"
-        >
-          <Timer className="h-3.5 w-3.5" />
-          <span className="tabular-nums">{tracerWatchSeconds.toFixed(0)} s</span>
-        </AtlasButton>
-      </div>
+      {/* The tracer is the speed instrument's own apparatus, so its full
+          apparatus — the marks, the plant-seconds note — only unfolds when
+          that instrument is selected or a parcel is already in flight. The
+          two buttons stay at every instrument: the ride is the first thing
+          most learners release in the plain lab, and it must not hide behind
+          a menu they have not found yet. */}
+      {(() => {
+        const unfolded = measure === 'velocity' || tracerActive || aim === 'tracer'
+        return (
+          <>
+            <Rule />
+            {unfolded && (
+              <>
+                <div className="flex items-baseline justify-between">
+                  <span className="atlas-eyebrow">Tracer run</span>
+                  <Chip tone="sugar">{(sim.tracerMarkB - sim.tracerMarkA).toFixed(2)} m between marks</Chip>
+                </div>
+                <p
+                  className="mt-1 text-[10.5px] leading-snug font-semibold text-[#9A9482]"
+                  title="Release a labelled parcel and time it from the green mark to the red one. The stopwatch counts plant seconds, so speed is just distance ÷ time — no hidden conversion."
+                >
+                  Time a labelled parcel between the two marks. The watch counts plant seconds.
+                </p>
+              </>
+            )}
+            <div className={cn('flex items-center gap-1.5', unfolded && 'mt-1.5')}>
+              <Aim on={aim === 'tracer'} inline>
+                <AtlasButton onClick={onTracer} disabled={tracerActive} ariaLabel="Release the tracer" className="flex-1">
+                  <CircleDot className="h-3.5 w-3.5" />
+                  {tracerActive ? 'Running…' : 'Release tracer'}
+                </AtlasButton>
+              </Aim>
+              <AtlasButton
+                onClick={onWatch}
+                tone={tracerWatch === 1 ? 'danger' : 'quiet'}
+                ariaLabel="Stopwatch"
+                className="min-w-[6.2rem]"
+              >
+                <Timer className="h-3.5 w-3.5" />
+                <span className="tabular-nums">{tracerWatchSeconds.toFixed(0)} s</span>
+              </AtlasButton>
+            </div>
+          </>
+        )
+      })()}
     </Plate>
   )
 }

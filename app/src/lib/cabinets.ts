@@ -14,7 +14,12 @@ export interface CabinetMeta {
   cta: string
   tint: string
   tintSoft: string
-  status: 'live' | 'soon'
+  /**
+   * `undiscovered` — built nowhere yet. The hall shows it dashed and says
+   * "nobody has discovered what is behind it yet"; never "coming soon"
+   * (house rule, same as a campaign door — see lib/campaign.ts).
+   */
+  status: 'live' | 'undiscovered'
   /** Live and routable, but not shown in the hall (reached from another cabinet). */
   hidden?: boolean
   /** Whether the cabinet ships a guided demo the hall can launch. */
@@ -87,15 +92,15 @@ export const CABINETS: CabinetMeta[] = [
   {
     id: 'atoms',
     route: '/atoms',
-    title: 'Atom Foundry',
+    title: 'The Foundry',
     subject: 'Chemistry',
-    tagline: 'Stack protons, pour electrons, watch the shells fill — and forge the periodic table onto a dark wall, one atom at a time.',
+    tagline: 'Catch protons, neutrons and electrons, forge an atom to order, and light its tile on the wall — then send the link and say "beat that".',
     cta: 'Enter the foundry',
     tint: '#B97D10',
     tintSoft: '#FBEBD2',
     status: 'live',
-    hasDemo: true,
-    topics: ['Atomic structure', 'Periodic table & trends', 'Isotopes & ions', 'Ionisation energy'],
+    hasDemo: false,
+    topics: ['Atomic structure', 'Isotopes & ions', 'Element identity', 'Periodic table'],
   },
   {
     id: 'rivers',
@@ -111,15 +116,28 @@ export const CABINETS: CabinetMeta[] = [
     topics: ['River processes', 'Flood hydrographs', 'Erosion & deposition', 'Fieldwork skills', 'Flood management'],
   },
   {
+    id: 'numberworks',
+    route: '/numberworks',
+    title: 'The Numberworks',
+    subject: 'Mathematics',
+    tagline: 'A stall at Kejetia. Put a price on the board, open the stall, and count the till — ratio and percentage the way the market has always taught them.',
+    cta: 'Set out the stall',
+    tint: '#B5541C',
+    tintSoft: '#F6E3D7',
+    status: 'live',
+    hasDemo: false,
+    topics: ['Ratio & proportion', 'Percentage change', 'Sequences', 'Bounds & accuracy', 'Money'],
+  },
+  {
     id: 'circuits',
     route: '/circuits',
     title: 'Circuit Workshop',
     subject: 'Physics',
     tagline: 'Build it, measure it, break it. Ohm’s law you can hold.',
-    cta: 'Coming soon',
+    cta: 'Nobody has been in yet',
     tint: '#E8A33D',
     tintSoft: '#FBEBD2',
-    status: 'soon',
+    status: 'undiscovered',
     hasDemo: false,
     topics: ['Current & voltage', 'Resistance', 'Series & parallel'],
   },

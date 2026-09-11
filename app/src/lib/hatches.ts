@@ -74,6 +74,12 @@ export interface DaySpec {
   humidity: number
   wind: DryWind | null
   cloud: Cloud | null
+  /**
+   * A night run: the sun is off for the whole span and the temperature is
+   * the learner's dial, not the weather's — a cool night is the one lever
+   * the night shift has. Absent for an ordinary day.
+   */
+  night?: boolean
 }
 
 /** A day in ninety seconds; a day-and-night in three minutes. */
@@ -137,6 +143,34 @@ export function buildDay(seed: number, habitat: BiomeId, hours = DUSK - DAWN): D
   }
 }
 
+/**
+ * The night after a day, for door 3's night shift.
+ *
+ * Dusk to dawn: ten plant hours in the time a day takes, no sun, the leaf
+ * living off the starch it banked. The seed keeps the shape for room codes
+ * (the same night on thirty phones), but there is no wind to seed — the
+ * variable that matters is what the learner banked, and the temperature
+ * they hold the night at.
+ */
+export function buildNight(seed: number, habitat: BiomeId, hours = 10): DaySpec {
+  const b = BIOME_BY_ID[habitat] ?? BIOME_BY_ID.temperate
+  const swing = 6 + (1 - b.humidity) * 10
+  return {
+    seed,
+    habitat,
+    from: DUSK,
+    to: DUSK + hours,
+    hoursPerSecond: (DUSK - DAWN) / DAY_SECONDS,
+    peakLight: 0,
+    tempLow: b.temp - swing,
+    tempHigh: b.temp,
+    humidity: b.humidity,
+    wind: null,
+    cloud: null,
+    night: true,
+  }
+}
+
 export interface Weather {
   /** Light as a fraction of full sun. Zero at night. */
   light: number
@@ -152,7 +186,7 @@ export interface Weather {
 /** The weather at a plant hour (0–24, wrapping). */
 export function weatherAt(spec: DaySpec, hour: number): Weather {
   const h = ((hour % 24) + 24) % 24
-  const night = h < DAWN || h >= DUSK
+  const night = spec.night || h < DAWN || h >= DUSK
   // The sun: a half-sine from dawn to dusk.
   const sun = night ? 0 : Math.sin(((h - DAWN) / (DUSK - DAWN)) * Math.PI)
   const cloudOn = !!spec.cloud && h >= spec.cloud.start && h < spec.cloud.start + spec.cloud.hours
@@ -210,6 +244,8 @@ export interface DayRun {
   leafDeficitMl: number
   /** The day's total sugar made by the leaf, mg. */
   sugarMg: number
+  /** The span's total sugar sent down the phloem, mg — what a night shift scores. */
+  exportedMg: number
   /** The day's total water lost through the stomata, mL. */
   waterMl: number
   /** Whether the leaf is wilted right now. */
@@ -294,6 +330,7 @@ export function startDay(sim: SugarSim, spec: DaySpec, hatch = 1): DayRun {
     leafMl: round2(area * WATER_TUNE.LEAF_ML_PER_M2),
     leafDeficitMl: 0,
     sugarMg: 0,
+    exportedMg: 0,
     waterMl: 0,
     wilted: false,
     wiltHours: 0,
@@ -307,14 +344,16 @@ export function startDay(sim: SugarSim, spec: DaySpec, hatch = 1): DayRun {
   sim.soilWater = DAY_SOIL_WATER
   sim.turgor = 1
   sim.girdled = false
+  sim.xylemCut = false
   sim.tracerActive = false
-  applyWeather(sim, weatherAt(spec, spec.from))
+  applyWeather(sim, weatherAt(spec, spec.from), spec)
   return run
 }
 
-function applyWeather(sim: SugarSim, w: Weather): void {
+function applyWeather(sim: SugarSim, w: Weather, spec: DaySpec): void {
   sim.light = w.light
-  sim.tempC = w.tempC
+  // A night run leaves the thermostat in the learner's hand.
+  if (!spec.night) sim.tempC = w.tempC
   sim.humidity = w.humidity
   sim.night = w.night
 }
@@ -351,6 +390,7 @@ export function stepDay(sim: SugarSim, solve: SugarSolve, dtHours: number): void
   const leak = transpirationMlPerHour(1, w.vpdKpa, area) * WATER_TUNE.CUTICLE_LEAK
   const waterRate = stomatal + leak
   run.sugarMg += sugarRate * dtHours
+  run.exportedMg += Math.max(0, solve.exportRate) * dtHours
   run.waterMl += waterRate * dtHours
 
   /* -- the water balance, in millilitres --
@@ -398,7 +438,7 @@ export function stepDay(sim: SugarSim, solve: SugarSolve, dtHours: number): void
     run.done = true
     return
   }
-  applyWeather(sim, weatherAt(run.spec, run.hour))
+  applyWeather(sim, weatherAt(run.spec, run.hour), run.spec)
 }
 
 function simEnvLite(sim: SugarSim) {
@@ -426,6 +466,8 @@ export function endDay(sim: SugarSim): void {
 
 export interface DayTally {
   sugarMg: number
+  /** Sugar sent down the line over the span, mg. */
+  exportedMg: number
   waterMl: number
   /** Sugar per water, mg mL⁻¹ — the number level 2 scores. */
   mgPerMl: number
@@ -474,8 +516,14 @@ export function dayTally(run: DayRun, turgorAtEnd: number): DayTally {
     advice = `The leaf never came near wilting. If the sugar came up short, the hatches could have stood more open through the mild hours.`
   }
 
+  if (run.spec.night) {
+    // The night has no wind and no wilt to explain; the story is the bank.
+    advice = `The line ran all night on starch. ${round2(run.exportedMg)} mg went down the phloem with the sun off — a cooler night burns less of the bank, but sap that is too cold thickens and slows.`
+  }
+
   return {
     sugarMg: round2(run.sugarMg),
+    exportedMg: round2(run.exportedMg),
     waterMl: round2(run.waterMl),
     mgPerMl: round3(mgPerMl),
     leafFirm,

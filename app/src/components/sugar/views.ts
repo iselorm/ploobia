@@ -103,17 +103,19 @@ export const VIEWPOINTS: Viewpoint[] = [
     id: 'section',
     label: 'Section',
     stage: 'stem',
-    hint: 'One xylem vessel and one sieve tube, at working scale.',
-    position: [0.2, 2.05, 7.6],
-    target: [0.1, 2.0, 0],
+    hint: 'The slide, laid flat: leaf end left, roots right. Water goes one way, sugar the other.',
+    // Slightly above and to the left, so the sieve plates read as ribs along
+    // the track and the leaf end is nearest. The subject is the door-3 shot.
+    position: [-0.7, 3.0, 8.3],
+    target: [0.05, 1.95, 0],
   },
   {
     id: 'plate',
     label: 'Sieve plate',
     stage: 'stem',
     hint: 'The perforated end wall every parcel has to squeeze through.',
-    position: [1.45, 3.5, 2.75],
-    target: [0.42, 3.32, 0],
+    position: [-1.0, 3.2, 2.6],
+    target: [-1.3, 2.45, 0],
   },
 ]
 

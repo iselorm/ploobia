@@ -94,6 +94,7 @@ export default function GatherRound({
   elevation,
   azimuth,
   running,
+  kinds,
   onCatch,
 }: {
   rig: SugarRig
@@ -101,6 +102,7 @@ export default function GatherRound({
   elevation: number
   azimuth: number
   running: boolean
+  kinds?: SugarResource[]
   /** Fired for each catch, so the HUD can bank it and celebrate. */
   onCatch: (kind: SugarResource, amount: number) => void
 }) {
@@ -135,8 +137,8 @@ export default function GatherRound({
    * answer — see that module for why one definition matters here.
    */
   const field = useMemo(
-    () => buildGatherField(rig, seed, elevation, azimuth, fieldSize),
-    [rig, seed, elevation, azimuth, fieldSize],
+    () => buildGatherField(rig, seed, elevation, azimuth, fieldSize, kinds),
+    [rig, seed, elevation, azimuth, fieldSize, kinds],
   )
   const items = field.items
 

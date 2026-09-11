@@ -733,30 +733,37 @@ async function start(page) {
 }
 
 /* ================================================================== */
-/* Compact                                                            */
+/* Compact — landscape only (2026-09-06)                                */
 /* ================================================================== */
+/* The phone no longer gets a bottom drawer. Portrait gets the turn-your-
+   phone card and nothing else; landscape gets the phone tier: a strip
+   along the top, a toolbar along the bottom, and Conditions / Data as
+   sheets that slide in from the edges. Height is the scarce thing, so
+   nothing may come up from the bottom. */
 {
   const page = await open(390, 844, true)
+  const body = await page.evaluate(() => document.body.innerText)
+  check('portrait shows the turn-your-phone card', /Turn your phone/i.test(body), body.slice(0, 80))
+  check('and mounts no canvas behind it', (await page.locator('canvas').count()) === 0)
+  await page.close()
+}
+{
+  const page = await open(844, 390, true)
   // One real tap first, so the input model switches to touch sizing.
-  await page.touchscreen.tap(195, 700)
+  await page.touchscreen.tap(422, 300)
   await page.waitForTimeout(200)
   await start(page)
-  check(
-    'the phone gets the drawer',
-    (await page.getByRole('button', { name: 'Controls', exact: true }).count()) === 1,
-  )
-  await tap(page, 'Controls')
   await page.waitForTimeout(600)
   check(
-    'the drawer opens onto the specimen library',
-    await page.getByText('Specimen library').first().isVisible(),
+    'the phone gets the two edge tabs',
+    (await page.getByRole('button', { name: 'Conditions', exact: true }).count()) === 1 &&
+      (await page.getByRole('button', { name: /^Data/ }).count()) === 1,
   )
-  await tap(page, 'Data')
-  await page.waitForTimeout(500)
-  check('the data tab shows the graph', (await page.getByRole('button', { name: 'Graph' }).count()) >= 1)
-  await tap(page, 'Missions')
-  await page.waitForTimeout(500)
-  check('the missions tab lists missions', (await page.getByText('Wake the line up').count()) >= 1)
+  check('and the toolbar', (await page.locator('[data-testid="toolbar"]').count()) === 1)
+  check(
+    'and no bottom drawer',
+    (await page.getByRole('button', { name: 'Controls', exact: true }).count()) === 0,
+  )
 
   const boxes = await page.evaluate(() => {
     const r = (sel) => {
@@ -807,35 +814,31 @@ async function start(page) {
   )
 
   /* ---- and every control can actually be touched ----
-     The check above, and the two overlap checks before it, all passed while
-     stage navigation was completely dead on every phone: the tabs were the
-     right size, in the right place, overlapping nothing — and had no pointer
-     events, because the HUD root is `pointer-events-none` and the compact
-     branch forgot to opt them back in. Geometry cannot catch that. Hit-testing
-     can: whatever is at a control's own centre must be that control. */
-  const unreachable = await page.evaluate(() => {
-    const out = []
-    for (const el of document.querySelectorAll('.hud button, .hud a')) {
-      const r = el.getBoundingClientRect()
-      if (r.width < 2 || r.height < 2) continue
-      const cx = r.x + r.width / 2
-      const cy = r.y + r.height / 2
-      if (cx < 0 || cy < 0 || cx > window.innerWidth || cy > window.innerHeight) continue
-      const hit = document.elementFromPoint(cx, cy)
-      if (!hit || !(el.contains(hit) || hit.contains(el)))
-        out.push((el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 24))
-    }
-    return out
-  })
+     Geometry cannot catch a control with no pointer events; hit-testing can:
+     whatever is at a control's own centre must be that control. */
+  const hitTest = () =>
+    page.evaluate(() => {
+      const out = []
+      for (const el of document.querySelectorAll('.hud button, .hud a')) {
+        const r = el.getBoundingClientRect()
+        if (r.width < 2 || r.height < 2) continue
+        const cx = r.x + r.width / 2
+        const cy = r.y + r.height / 2
+        if (cx < 0 || cy < 0 || cx > window.innerWidth || cy > window.innerHeight) continue
+        const hit = document.elementFromPoint(cx, cy)
+        if (!hit || !(el.contains(hit) || hit.contains(el)))
+          out.push((el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 24))
+      }
+      return out
+    })
+  const unreachable = await hitTest()
   check(
     'every control on a phone is hit-testable, not just well placed',
     unreachable.length === 0,
     unreachable.slice(0, 6).join(', '),
   )
 
-  /* ---- the stages are reachable on a phone ----
-     Stated as the behaviour rather than the mechanism: tapping the tab must
-     change the stage. This is the check that would have caught the bug. */
+  /* ---- the stages are reachable on a phone ---- */
   for (const [label, want] of [
     ['Inside a leaf', 'leaf'],
     ['The stem, cut', 'stem'],
@@ -846,21 +849,18 @@ async function start(page) {
     check(`on a phone, "${label}" switches the stage`, await sim(page, `s.stage === '${want}'`))
   }
 
-  /* ---- the controls sheet leaves the specimen visible ---- */
-  await tap(page, 'Controls')
+  /* ---- the conditions sheet slides in from the left and leaves the plant ---- */
+  await tap(page, 'Conditions')
   await page.waitForTimeout(800)
   const sheet = await page.evaluate(() => {
     const cam = window.__sugarCam
-    const closer = document.querySelector('[aria-label="Close panel"]')
-    const panel = closer?.closest('div[class*="rounded-t-"]')
+    const panel = document.querySelector('[data-testid="sheet-conditions"]')
     const box = panel?.getBoundingClientRect()
-    // Project the specimen's own bounding box, so "visible" is measured rather
-    // than assumed.
-    let top = null
+    let left = null
+    let right = null
     const subject = window.__sugarScene?.getObjectByName('subject')
     if (subject && cam) {
       const pts = []
-      const b = { min: subject.position.clone(), max: subject.position.clone() }
       subject.traverse((o) => {
         if (!o.geometry) return
         if (!o.geometry.boundingBox) o.geometry.computeBoundingBox()
@@ -874,29 +874,30 @@ async function start(page) {
               pts.push(v)
             }
       })
-      void b
-      let best = Infinity
+      let lo = Infinity
+      let hi = -Infinity
       for (const v of pts) {
         const p = v.clone().project(cam)
-        best = Math.min(best, ((1 - p.y) / 2) * window.innerHeight)
+        const sx = ((p.x + 1) / 2) * window.innerWidth
+        lo = Math.min(lo, sx)
+        hi = Math.max(hi, sx)
       }
-      top = pts.length ? Math.round(best) : null
+      if (pts.length) {
+        left = Math.round(lo)
+        right = Math.round(hi)
+      }
     }
     return {
-      hasCloseButton: !!closer,
-      hasGrabHandle: !!document.querySelector('.cursor-grab'),
+      open: !!panel,
+      sheetRight: box ? Math.round(box.right) : null,
       sheetTop: box ? Math.round(box.top) : null,
+      sheetBottom: box ? Math.round(box.bottom) : null,
+      viewportW: window.innerWidth,
       viewportH: window.innerHeight,
-      lifted: cam?.view?.enabled === true,
-      subjectTop: top,
+      subjectLeft: left,
+      subjectRight: right,
     }
   })
-  /* ---- the tab opens on what you opened it for ----
-     The controls sheet used to lead with the five-row specimen library, which
-     put the light dial's track at y = 861 on an 844 px screen: present,
-     correctly sized, and reachable only by scrolling a panel that had just
-     appeared. A panel whose primary control is off screen on open is the same
-     failure as the desktop column that pushed "Run measurement" to y ≈ 934. */
   const firstControl = await page.evaluate(() => {
     const track = document.querySelector('[data-slot="slider-track"]')
     if (!track) return null
@@ -911,8 +912,9 @@ async function start(page) {
       label: track.closest('[aria-label]')?.getAttribute('aria-label') ?? null,
     }
   })
+  check('the conditions sheet opens', sheet.open)
   check(
-    'the controls sheet opens with a condition dial already on screen',
+    'with a condition dial already on screen',
     firstControl && firstControl.y > 0 && firstControl.y < firstControl.viewportH,
     JSON.stringify(firstControl),
   )
@@ -921,28 +923,39 @@ async function start(page) {
     firstControl?.reachable === true,
     `${firstControl?.label} at y ${firstControl?.y}`,
   )
-
-  check('the controls sheet offers an explicit close', sheet.hasCloseButton)
-  check('and a grab handle to swipe it away', sheet.hasGrabHandle)
   check(
-    'the sheet leaves at least a third of the screen to the scene',
-    sheet.sheetTop !== null && sheet.sheetTop > sheet.viewportH * 0.33,
-    `top ${sheet.sheetTop} of ${sheet.viewportH}`,
+    'the sheet comes in from the edge and leaves most of the width to the scene',
+    sheet.sheetRight !== null && sheet.sheetRight < sheet.viewportW * 0.4,
+    `sheet right ${sheet.sheetRight} of ${sheet.viewportW}`,
   )
-  check('opening the sheet lifts the scene', sheet.lifted)
   check(
-    'and the specimen is still on screen with the sheet open',
-    sheet.subjectTop !== null && sheet.subjectTop >= 0 && sheet.subjectTop < sheet.sheetTop,
-    `subject top ${sheet.subjectTop}, sheet top ${sheet.sheetTop}`,
+    'and clears the top strip and the toolbar',
+    sheet.sheetTop !== null && sheet.sheetTop > 30 && sheet.sheetBottom < sheet.viewportH - 30,
+    `${sheet.sheetTop}–${sheet.sheetBottom} of ${sheet.viewportH}`,
   )
+  check(
+    'the specimen is still on screen beside the open sheet',
+    sheet.subjectRight !== null && sheet.subjectRight > sheet.sheetRight + 40 && sheet.subjectLeft < sheet.viewportW,
+    `subject ${sheet.subjectLeft}–${sheet.subjectRight}, sheet right ${sheet.sheetRight}`,
+  )
+  const deadWithSheet = await hitTest()
+  check('every control is still hit-testable with the sheet open', deadWithSheet.length === 0, deadWithSheet.slice(0, 6).join(', '))
 
-  await tap(page, 'Close panel')
+  await tap(page, 'Conditions')
+  await page.waitForTimeout(400)
+  check('tapping the tab again closes it', (await page.locator('[data-testid="sheet-conditions"]').count()) === 0)
+
+  /* ---- the data sheet carries the instrument, the graph and the missions ---- */
+  await page.getByRole('button', { name: /^Data/ }).first().click({ force: true })
   await page.waitForTimeout(600)
+  check('the data sheet opens', (await page.locator('[data-testid="sheet-data"]').count()) === 1)
+  check('with the graph', (await page.getByRole('button', { name: 'Graph' }).count()) >= 1)
+  check('and the missions', (await page.getByText('Wake the line up').count()) >= 1)
   check(
-    'closing it puts the scene back',
-    (await page.evaluate(() => window.__sugarCam?.view?.enabled)) !== true,
+    'only one sheet at a time',
+    (await page.locator('[data-testid="sheet-conditions"]').count()) === 0,
   )
-
+  await page.screenshot({ path: 'shots/sugar-phone-data.png' }).catch(() => {})
   await page.close()
 }
 

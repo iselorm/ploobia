@@ -7,9 +7,10 @@ import {
   FlaskConical,
   Heart,
   Leaf,
-  Lock,
+  Compass,
   Play,
   Sparkles,
+  Store,
   Sun,
   Ticket,
   Waves,
@@ -38,6 +39,7 @@ const ICONS: Record<string, React.ReactNode> = {
   motion: <Timer className="h-9 w-9" />,
   rivers: <Waves className="h-9 w-9" />,
   circuits: <Zap className="h-9 w-9" />,
+  numberworks: <Store className="h-9 w-9" />,
 }
 
 /* ------------------------------------------------------------------ */
@@ -51,7 +53,7 @@ function Cabinet({ c, attract }: { c: CabinetMeta; attract: boolean }) {
   return (
     <div
       className={`group relative flex w-[17rem] shrink-0 snap-center flex-col rounded-[26px] border border-white/10 bg-[#25201B] shadow-[0_30px_60px_rgba(0,0,0,0.45)] transition-all duration-300 ${
-        live ? 'hover:-translate-y-2' : 'opacity-70'
+        live ? 'hover:-translate-y-2' : 'border-dashed border-white/25 opacity-85'
       }`}
       style={
         attract
@@ -89,7 +91,7 @@ function Cabinet({ c, attract }: { c: CabinetMeta; attract: boolean }) {
         {!live && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/45">
             <span className="flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1 text-[11px] font-black text-white/85">
-              <Lock className="h-3.5 w-3.5" /> Coming soon
+              <Compass className="h-3.5 w-3.5" /> Undiscovered
             </span>
           </div>
         )}
@@ -135,8 +137,8 @@ function Cabinet({ c, attract }: { c: CabinetMeta; attract: boolean }) {
             )}
           </>
         ) : (
-          <div className="rounded-full border border-white/10 px-4 py-2 text-center text-[12px] font-extrabold text-white/50">
-            In the workshop
+          <div className="rounded-full border border-dashed border-white/20 px-4 py-2 text-center text-[11px] leading-snug font-extrabold text-white/55">
+            Nobody has discovered what is behind it yet
           </div>
         )}
       </div>

@@ -1,347 +1,209 @@
 # PLOOBIA — Project Instructions
 
-> **Name (decided 2026-08-18):** the product and world is **Ploobia** (ploobia.com / ploobia.app). Learners *enter* Ploobia; "the school arcade" is the descriptor for adults. Use "Ploobia" in all user-facing copy, titles and metadata; regions/cabinets inside it carry the serious names.
+> **Name (decided 2026-08-18):** the product and world is **Ploobia** (ploobia.com). Learners *enter* Ploobia; "the school arcade" is the descriptor for adults. Use "Ploobia" in all user-facing copy, titles and metadata; regions and cabinets inside it carry their own serious names. **Ploob** (2.0, the amber figure) is the only companion — no other mascot, no folklore framing.
 
-> Drop this file in the repo root (as `CLAUDE.md`, `AGENTS.md`, or your agent's equivalent).
-> It is the single source of truth for how this project is built, extended, and delivered.
+> This file is the single source of truth for how the app is built, extended and delivered. Drop it in the repo root as `CLAUDE.md` / `AGENTS.md` or your agent's equivalent. Strategy and decisions live in the Obsidian vault (`Roadmap/*.md`, hub `School Arcade Roadmap.md`, append to `Decision Log.md`); this file is the code-facing distillation. **Rewritten 2026-09-06** for two decisions: every cabinet is a game on one grammar, and everything is landscape.
 
 ## 1. Vision
 
-**Ploobia** (formerly School Arcade) is a growing collection of interactive 3D science experiences for
-middle-school kids (primary tester: one 8th grader). Each subject is an "arcade cabinet":
-a full-screen, playful, scientifically accurate simulation you open in a browser —
-no installs, no accounts, no explanation needed. Kids learn by *playing scientist*:
-poking things, cranking sliders, breaking experiments, and collecting fun facts.
+**Ploobia** is an interactive 3D learning platform for ages **10–18** (lower secondary through 6th form), IGCSE- and A Level-compatible and mapped to Ghana's NaCCA curriculum, built from Ghana for learners in price-sensitive markets. The principle:
 
-Current cabinets:
-| Route | Cabinet | Status |
-|---|---|---|
-| `#/` | Menu — adventure picker + band selector | ✅ |
-| `#/blood` | Blood Voyage — ride the bloodstream, click cells for facts | ✅ |
-| `#/photosynthesis` (leaf lab) | Photosynthesis **Rate Lab** — measurable rate experiment across five leaves and five climates, | ✅ |
-| `#/photosynthesis` (membrane bench) | **Membrane Lab** — pick a membrane, watch diffusion and osmosis with net-flow arrows, timers and a live graph | ✅ |
-| `#/motion` | **Motion Yard** (Physics, Mechanics strand I) — an outdoor yard on the Cinematic Lab meadow (venue layer: Outdoors / Workshop hangar); the gravity dial retunes the whole world. Toy car on a racing lane, slingshot/catapult/trebuchet launch family, Scout the drone for drops; Physics Vision AR layer (telemetry tags, strobe trails, ghost runs, vectors, v–t curtain, timing-gate splits); placed landing-ring predictions; measured reaction-time calibration, learner-plotted graphs, equations earned onto the holo-board, segue to the pendulum | ✅ |
-| `#/atoms` | **Atom Foundry** (Chemistry strand I) — a warm foundry at night: three crucibles (p⁺/n⁰/e⁻) feed a luminous Bohr-model atom on a stage; shells ignite as they fill; a dark wall of sockets IS the periodic table (rows = shells, columns = outer electrons) with a ghost frame tracking the current build; forging (neutral + stable only) flies the atom into its one possible slot; the grip probe measures real first ionisation energies (kJ/mol, Z 1–20) into a grip-vs-Z graph — the Analyst sawtooth is the evidence shells exist; isotopes/ions via band caps `isotopes`/`electronCloud` | ✅ |
+> Don't teach the world as a textbook. Let the learner manipulate the world and discover why it works.
 
-## 2. Audience & tone
+Each subject area is an **arcade cabinet**: a full-screen, playful, scientifically honest simulation that opens in a browser — no installs, no accounts to start, no lecture first. Since 2026-09-06 every cabinet is also a **game** (§5) whose front door is *Play*, with the free lab one tap away.
 
-- **Age**: 10–17, served by the three-band system in §2b rather than by separate builds.
-  Any single band should read as though it were written for exactly that age.
-- **Science must be correct.** Facts are short, surprising, and true. If a number is
-  stated (e.g. "an RBC circles the body in ~60 seconds"), it must be real.
-- **Vocabulary is a feature, not a barrier**: use the real term ("limiting factor",
-  "semi-permeable"), then immediately explain it in kid language.
-- **Every concept gets an interaction.** No passive diagrams. If a kid can't change
-  something and watch the world react, it's not done.
-- Fun multipliers: counters that tick up, rare things to spot, zoom-ins, "did you know?" tickers.
+Live: **`https://ploobia.pages.dev/`** — `/` the site, `/app/` the arcade, `/app/#/<route>` a cabinet. Repo `github.com/iselorm/ploobia` (private); Selorm's clone is `C:\Users\iselo\ploobia_online`; every push to `main` deploys.
+
+Current cabinets (`app/src/lib/cabinets.ts` is the registry — add a card there for every new one):
+
+| Route | Cabinet | Subject | State |
+|---|---|---|---|
+| `#/` | The hall — machines, band select, attract mode | — | live |
+| `#/home` | Family home — parent-first profiles, support card | — | live |
+| `#/photosynthesis` | **The Sugar Line** — whole-plant source → phloem → sink; Münch pressure flow; five specimens in their habitats; the five-stage campaign (Factory · Hatches · Line · Roots · Stand) | Biology | live; campaign rounds A–B + map built, C next |
+| `#/atoms` | **The Foundry** (Atom Foundry) — crucibles feed a Bohr atom; the table assembles itself on a dark wall; real isotope stability and ionisation energies. *Cabinet Spec — The Foundry Game* is its next form | Chemistry | live; game round A next after the Sugar Line |
+| `#/rivers` | **The Long River** — a simulated meander planform (seed 8081), Manning + Hjulström, 13 checkpoints each with a live proof | Geography | live |
+| `#/physics` | **First Physics** — one growing room of one-idea episodes A1–A7, the Equation Card, the shelf | Physics | live |
+| `#/motion` | **Motion Yard** — hidden; reached through First Physics' shelf door; launchers, Physics Vision | Physics | live, hidden |
+| `#/blood` | **Blood Voyage** — the double circulation as a ride, the demand dial, the Delivery Lab | Biology | live |
+
+The Photosynthesis Rate Lab and the Membrane Lab were **replaced** by The Sugar Line at the same route. `lib/membrane.ts` and `lib/ratelab.ts` stay on disk (the Sugar Line still uses `solveLeaf`); the membrane bench is the seed of a future Cell Transport cabinet.
+
+## 2. Audience, tone, science
+
+- **Age 10–18**, served by the three-band system (§2b), never by separate builds.
+- **Range extended to 6th form on 2026-09-11** (Selorm): lower secondary through A Level, mapped to Cambridge (Lower Secondary → IGCSE → A Level) *and* Ghana NaCCA (B7–B9 → SHS 1–3). The Analyst band is the A Level home; depth still ramps by caps, never by separate builds. The reading layer (the Library / Enhanced Textbook — narrated, term-tappable chapters with each cabinet's doors as the workshop) and the mathematics cabinet (The Numberworks) are specified in the Ploobia vault: `Roadmap/The Library.md`, `Roadmap/Enhanced Textbook.md`, `Roadmap/StoryComet Reference.md`.
+- **Science must be correct.** Every stated number is real and sourced in code. Model the mechanism (saturating curves, an enzyme cliff, respiration subtracted, conservation that closes) — never `min(a, b, c)` or a lookup that happens to draw the right picture. Where the model has a boundary, say so on screen ("not in the model's table"), never fudge.
+- **Vocabulary is a feature**: the real term first ("limiting factor", "translocation"), then the explanation in kid language.
+- **Every concept gets an interaction.** If a learner cannot change something and watch the world react, it is not done.
+- **Never ask before orienting** (Selorm, 2026-08-29): before any prediction, the scene introduces the object, what the number or arrow means, and why the setup is the way it is. A prediction without context is a coin toss.
+- **The hook is a guess, never a caption**: open with a number to commit to, then the answer.
+- **Ghana-familiar**: the salt in your jollof, the Harmattan, a pot's aluminium — never willows and maple leaves.
+- If the kid tester says **"boring"**, that is a P0 bug.
 
 ## 2b. Learning bands (platform-wide)
 
-`src/lib/bands.ts` owns a tiny module store holding one of `explorer` (10–12),
-`scientist` (13–15) or `analyst` (16–17). It is chosen on the menu and on each
-cabinet's welcome card, and can be changed mid-session from the `BandSwitch`
-chip every cabinet carries. The choice survives hash navigation; it deliberately
-uses **no browser storage** (see §7.5).
+`lib/bands.ts` holds one of `explorer` (10–12, *what happens if I…?*), `scientist` (13–15, *why did that happen?*) or `analyst` (16–18, *can I model, explain and defend it?*). Chosen in the hall and on each welcome card, switchable from the `BandSwitch` chip. Cabinets **never branch on the band id**: they read `BAND_CAPS[band]` capability flags (vocabulary, which controls exist, prediction required, instrument noise, repeats, data table, conclusion builder, export, trial length, gather round). Adding a band-aware feature means adding a flag.
 
-Cabinets never branch on the band id. They read `BAND_CAPS[band]` — a flags
-object covering vocabulary level, which controls exist, whether a prediction is
-required, instrument noise, repeats, data table, conclusion builder, CSV export
-and trial length. Adding a band-aware feature means adding a flag, not an
-`if (band === ...)`.
+**The band changes academic depth, never visual quality.** A ten-year-old and a seventeen-year-old see the same world; difficulty rises through vocabulary, controls, mathematics, data, missions, evidence and assessment.
 
-**The band changes academic depth, never visual quality.** A ten-year-old and a
-seventeen-year-old see the same 3D world.
+## 2c. The measurement loop (every science cabinet)
 
-## 2b-ii. Labelling the world (no HTML overlays in a 3D scene)
+A sandbox is delightful at ten and boring at sixteen; measurement is what holds the older learner.
 
-**Rule: nothing in a 3D scene is labelled with a `<Html>` overlay.** Those
-captions float above everything, ignore depth, collide with each other and land
-on top of the HUD. Every label in the garden is now geometry:
+1. **One independent variable**, the others shown as controlled.
+2. **A prediction committed on a dial at every band** (Explorer's Higher / Same / Lower buttons *set the dial*; the plate says "not set" until something is committed).
+3. **A timed trial** against a visible instrument.
+4. **Record → table → live graph**, and the result comes to the learner the instant the trial ends (the Reveal card: what you said, what happened, the miss drawn on the axis, closer than last time or not).
+5. **Missions are jobs with ordered steps** that name the single next control (`MissionStep.target`, the amber aim ring); they complete on recorded evidence, never on a slider position.
+6. **Write it up** as claim / evidence / reasoning / limitations (sentence tiles on touch).
 
-- `components/photo/Glyphs.tsx` renders a formula once to a canvas texture and
-  draws it with an `InstancedMesh` of camera-facing quads. A hundred labels cost
-  one draw call instead of a hundred DOM nodes.
-- The identity goes **on the molecule**: the carbon says C, each oxygen says O,
-  the droplet says H₂O, the sugar says C₆H₁₂O₆. Oxygen leaves as a bonded pair,
-  because drawing it as a lone ball teaches the wrong thing.
-- **Label a subset, not everything** (`LABEL_EVERY_*`). Every molecule wearing a
-  formula turns the sky into a wall of text. Glucose gets exactly one label
-  because the cubes pile up in one small patch.
-- `writeGlyph(..., lift)` pushes each label along the line to the camera. Place
-  it at an atom's centre and the sphere's own front face hides it.
-- Single-object captions (the gas syringe, the chloroplast) are billboarded
-  planes with the same texture helper, positioned where traffic does not pass —
-  the syringe label sits *below* the tube, not above it.
+Rules learned the hard way: snapshot every control at trial start and **discard a trial whose conditions change mid-run**; a trial that was not performed is not recorded; the controlled variable is enforced, not explained. Trial and physics timing run on a loosely clamped `dt` (≤ 0.25 s); idle animation on a tight one (≤ 0.05 s); every user-visible clock on wall time. If a simulation speeds time up, **both multipliers are always on screen**.
 
-## 2b-iii. Camera rules
+## 2d. Labels, arrows, sound
 
-**Never lerp the camera toward a fixed viewpoint every frame.** The first
-version did, and it silently fought every drag: you could orbit, and the rig
-pulled you straight back. Scripted movement runs only for a short window after
-an explicit request; otherwise OrbitControls owns the camera outright.
+- **Nothing in a 3D scene is labelled with an `<Html>` overlay.** Labels are geometry (`Glyphs.tsx` — one canvas texture, one `InstancedMesh`), depth-tested, offset along the view ray so the object's own front face does not hide them, and applied to a **subset** (the leading five molecules of a stream, not eighteen). The dot carries the colour; the label carries the name, in dark ink on a cream halo.
+- **An unlabelled arrow is a puzzle.** Every arrow carries its own name or is pinned to something that does.
+- **Nothing audible or colour-only is load-bearing.** Audio is synthesised WebAudio (`lib/audio.ts`), zero download weight, started only from a user gesture, mute persisted.
 
-- Full sweep: `minPolarAngle 0.06` to `maxPolarAngle 0.86π`, unlimited azimuth,
-  `minDistance 1.6` to `maxDistance 36`.
-- HUD zoom/orbit/reset buttons talk to the rig through `sim` fields
-  (`viewZoom`, `autoOrbit`, `viewReset`), same mutable-sim pattern as everything else.
-- **Wait for `useThree(s => s.controls)` before marking the rig mounted.**
-  OrbitControls is not registered on frame one; flipping the flag early leaves
-  the orbit target at the world origin and aims the camera at the dirt.
+## 2e. Camera rules
 
-## 2b-iv. Visual language
+- **Never lerp the camera toward a fixed viewpoint every frame.** Scripted movement runs for a short window after an explicit request; otherwise OrbitControls owns the camera. Wait for `useThree(s => s.controls)` before marking the rig mounted.
+- Free zoom and full 360° orbit always. Scene objects never fight the thing being studied (the table wall retracts; the ground goes to glass when the camera drops below it).
+- **A door is a viewpoint** (§5): one composed shot per campaign door, off-centre, with the wall / habitat / table as a hint behind the subject.
+- **Measure the subject before framing it.** Name each stage's root group `subject`; shift the projection with `camera.setViewOffset` by the headroom found from its `Box3`, never by a fraction of the viewport.
+- Orbit and zoom from touch and pads feed OrbitControls through `registerCamera()` — queue deltas, apply once per frame.
 
-Gen Alpha judge a learning tool against games, so "tidy and deliberate" beats
-"lots happening". Concretely, in this cabinet:
+## 2f. Visual language
 
-- **Sunlight is orderly.** Sparks are grouped into fixed lanes from the sun to
-  the leaf, evenly spaced within each lane and moving at one steady speed — they
-  drop in columns like icicles. More light adds *lanes*, never turbulence, so
-  the scene stays readable at every setting. The first attempt scattered
-  stretched streaks at random and read as noise.
-- **Gradient sky dome + fog matched to the horizon.** A flat background colour
-  and a ground disc that stops in a hard circle are the two things that make a
-  3D scene look like a diagram. Both are ~20 lines to fix.
-- **Contact shadows.** A soft dark ellipse under anything standing on the floor.
-  Nothing else grounds objects as cheaply.
-- **Clean light sources.** A glowing disc with a soft halo beats spinning
-  geometry every time; rotating boxes around the sun read as clutter.
-- **Slow drifting motes** for depth, at very low opacity.
+Gen Alpha judge a learning tool against games, so *tidy and deliberate* beats *lots happening*. Warm, bright, a place: gradient sky dome with fog matched to the horizon, contact shadows, clean light sources, slow motes. **Sunlight is orderly** — more light adds *lanes*, never turbulence. **A place matters** (grass, sky, weather are part of the appeal) and it must not look like a copy of the reference (no subject on a plinth in an empty field; Ploob stands in the crop). Dark reads unfriendly — the one dark thing in a room is the thing that pops (the wall). Ceilings on dials are drawn as hard stops with a hatched dead zone, labelled "ceiling". Details: vault `Visual Style.md`, `Rendering Craft.md`.
 
-## 2c. The measurement loop (the pattern every science cabinet should copy)
+## 3. Tech stack (pinned)
 
-A sandbox is delightful at ten and boring at sixteen. What fixes that is not
-more graphics, it is *measurement*:
+- Node ≥ 20 · Vite 7 · React 19 + TypeScript · Tailwind 3.4 · shadcn/ui · three + @react-three/fiber + drei
+- **HashRouter** — mandatory (§7.1). **vite-plugin-singlefile** — mandatory; the arcade is ONE self-contained `dist/index.html`. `base: './'`.
+- Zustand-free: module-level stores (`lib/bands.ts`, `lib/input.ts`, the mutable-sim pattern). No physics engine, no post-processing chain (§7.14).
+- Playwright suites in `app/verify-*.mjs`; pure-model suites via esbuild + Node.
+- Hosting: Cloudflare **Pages** (not Workers — the feedback endpoint is a Pages Function), `wrangler.jsonc` in the repo, build command carries the `VITE_*` switches. See `DEPLOY.md`.
 
-1. **Choose one independent variable**, with the other three shown explicitly as
-   controlled variables.
-2. **Commit a prediction** before the trial runs (a point on the graph for
-   Scientist/Analyst, a direction for Explorer).
-3. **Run a timed trial** against a visible instrument — here a graduated tube
-   collecting O₂, the classic pondweed apparatus.
-4. **Record → table → live graph**, with band-appropriate uncertainty.
-5. **Missions complete on recorded evidence**, never on a slider position.
-6. **Write it up** as claim / evidence / reasoning / limitations.
-
-Two rules learned the hard way while building this:
-
-- A reading belongs to the conditions it was taken under. Snapshot every control
-  at trial *start* (`snapshotTrial`), and **discard the trial** if a condition
-  changes mid-run rather than quietly mislabelling the point.
-- Drive trial and physics timing from a loosely-clamped `dt` (≤0.25 s), not the
-  tight animation clamp (≤0.05 s). On a slow machine the tight clamp stretches a
-  "6 second" trial into twelve real seconds.
-
-## 2c-ii. The membrane bench pattern
-
-Abstract processes need three things before they teach anything:
-
-1. **A visible mechanism.** The membrane has pores of a chosen size; particles
-   have sizes; crossing happens if it fits. Swapping cling film for filter paper
-   changes the outcome for a reason a learner can see, not because a flag flipped.
-2. **Net movement drawn separately from movement.** An arrow scaled by the net
-   crossing rate, shrinking to nothing at equilibrium, is the only way "the
-   particles are still moving but there is no net movement" lands.
-3. **Time, counts and a graph.** Elapsed seconds, a live split bar, and a curve
-   flattening onto the 50% line.
-
-Two modelling notes worth keeping:
-
-- **Brownian motion must be ballistic, not per-frame jitter.** Re-randomising a
-  position every frame is technically a random walk but looks like vibration and
-  spreads about a hundred times too slowly. Give each particle a velocity and
-  scatter it on collision.
-- **Temperature has to be modelled as a diffusion coefficient, not a speed.**
-  Molecular speed rises only with √T — about 8% across a 2–50 °C slider, which
-  is invisible. Real liquids speed up because viscosity falls: D ∝ T/η roughly
-  triples over that range. Scale particle speed by √D so the *spreading rate*
-  tracks D.
-
-## 2d. The journey pattern (Blood Voyage — shipped 2026-08-20)
-
-Blood Voyage is no longer a plain endless ride: it is one full circuit of the
-circulation, expressed as *distance* along the infinite tunnel. `lib/journey.ts`
-owns the loop — six stages (lungs → heart → artery → capillary → tissue → vein,
-`LAP_LENGTH` world units per lap) with per-stage vessel radius, wall colour,
-translucent "window" fraction, flow pace, pulse gain, fog and light. Both the
-GLSL wall shader (`Vessel.tsx`, uniform arrays) and the JS cell sims blend
-stages with the same piecewise smoothstep, so what the learner sees and what
-the cells obey always agree. Key pieces:
-
-- **Hero cell** (`HeroCell.tsx`): one ringed RBC rides ahead of the camera with
-  4 haemoglobin sites; self-labelled O₂ docks in the lungs, leaves at the
-  tissue, CO₂ hitches the return ride. The crowd shows the trend (oxygenation
-  colours the instanced cells per-position); the hero shows the mechanism.
-- **Journey world** (`JourneyWorld.tsx`): alveoli breathe outside the lungs'
-  translucent wall, body cells wait outside the capillary/tissue wall, and
-  orderly radial gas lanes (O₂/CO₂) cross where exchange happens.
-- **Meet-the-cell story**: a once-per-run skippable beat at a featured body
-  cell (membrane / nucleus / mitochondria labelled in-world) — the ride slows,
-  the camera steers, one O₂ is walked into a mitochondrion and CO₂ comes back.
-  Narration/toasts run on wall-clock time (`nowS()`), never sim time, or the
-  0.05 s dt clamp stretches them on slow GPUs.
-- The journey map chip + O₂/CO₂ cargo dots live in `hud/JourneyChip.tsx`;
-  toasts + story narration in `hud/StoryCard.tsx` (low-centre, demo pattern).
-
-Copy this pattern for future "ride" cabinets (digestion tract, a river's
-course, a nerve impulse): stages as distance, a hero to carry the mechanism,
-windows in the wall wherever the interesting exchange happens.
-
-## 3. Tech stack (pinned — do not change casually)
-
-- Node.js 20 · Vite 7 · React 19 + TypeScript · Tailwind CSS 3.4 · shadcn/ui
-- three + @react-three/fiber + @react-three/drei for all 3D
-- **HashRouter** — MANDATORY, see §7 (never BrowserRouter)
-- **vite-plugin-singlefile** — MANDATORY; the build ships as ONE self-contained
-  `dist/index.html` that works from `file://`, USB sticks, and email attachments
-- `base: './'` in vite.config.ts — relative asset paths always
-
-## 4. Architecture conventions
+## 4. Architecture
 
 ```
-src/
-  pages/<Cabinet>.tsx          # one per route; composition only, no scene logic
-  components/<cabinet>/        # scene components (R3F), one concern per file
-  components/<cabinet>/hud/    # DOM overlay UI (panel, cards, ticker, welcome)
-  lib/<cabinet>.ts             # pure logic: rate models, fact lists, sim math
+app/src/
+  pages/<Cabinet>.tsx           one per route; composition and the beat machine only
+  components/<cabinet>/         R3F scene, one concern per file
+  components/<cabinet>/hud/     DOM overlay for that cabinet
+  components/hud/               shared HUD (BandSwitch, EquationCard, WelcomeOverlay, PilotReport…)
+  components/game/              the game kit (§5) — Welcome, CampaignMap, TargetGauge, Dial, Reveal, Handover, ScoreCard, JournalCard, ShareSheet
+  lib/<cabinet>.ts              the pure model — no React, no three; one solve drives visuals AND instruments
+  lib/campaign.ts               doors, gates, progress (generic over cabinet id)
+  lib/challenge.ts              seed + setup + goal + budget in a URL fragment; rank(); challengeLink()
+  lib/events.ts  progression.ts the learning-event log (the contract) and what is derived from it
+  lib/input.ts  quality.ts  perf.ts   input model, quality tiers, perf probe
+  hooks/use-layout.ts           desktop | tablet | phone (+ portrait flag) — §6
 ```
 
 Rules:
-- **Scene vs. HUD separation.** R3F canvas owns 3D; HTML/Tailwind overlay owns UI.
-  They communicate through a small state store/props — never by reaching into each other.
-- **Instancing for crowds.** Anything with hundreds of copies (cells, molecules,
-  particles) is an `InstancedMesh`. No per-frame allocations in the render loop.
-- **Every cabinet has a density/performance slider.** This is the escape hatch for
-  weak hardware — non-negotiable.
-- **WebGL failure degrades gracefully** via the shared `SceneErrorBoundary` +
-  a themed fallback card. A kid on an old Chromebook sees an apology card, not a crash.
-- **Routes are hash routes.** Add a card on the Menu page for every new cabinet.
 
-## 5. The Cabinet Recipe (every new module follows this)
+- **Scene vs HUD separation**; they talk through the mutable sim / small stores, never by reaching into each other. An interactive HUD island **owns its own `pointer-events-auto`**.
+- **One solve.** The pure model in `lib/<cabinet>.ts` drives the picture and the instruments so they cannot disagree; conservation laws close and are asserted in a Node suite.
+- **Instancing for crowds**; no per-frame allocations; pooled particles guard their indices (`if (!entry) { p.alive = false; continue }`).
+- **Quality tiers** (`lib/quality.ts`) chosen at boot, downgrade only, `?q=low|medium|high` to pin; `<PerfProbe>` in every Canvas is load-bearing (it resets frame sampling per cabinet).
+- **Perf budget per cabinet at the low tier**, asserted by `verify-perf`: draw calls and triangles transfer to real hardware, frame rate under SwiftShader does not.
+- **No browser storage for anything that matters**; the event log (`ploobia.events.v1`) and campaign progress are the exceptions, adapter-backed, memory fallback. Never store derived values.
+- WebGL failure degrades to a themed card via `SceneErrorBoundary`; the **boot guard** explains a failure to mount.
+- Content (facts, episodes, levels, missions) is **data in `lib/`**, editable by a non-programmer.
 
-1. **Welcome overlay** — title, one-sentence premise ("You're a leaf scientist…"),
-   a band picker, and TWO buttons: "Show me how it works" and "Start
-   experimenting". Dismisses into the scene.
-1a. **A membrane-style bench where relevant** — see §2c-ii.
-1b. **A guided demo** (`lib/demo.ts`) — the cabinet runs one complete
-   investigation by itself, driving the *real* handlers so the sliders visibly
-   move and real trials run, with narration low and centred and a skip button
-   throughout. Readings it produces are deleted when it ends, so the learner's
-   own data starts empty. Nothing is a video: if the demo can do it, the learner
-   can do it with the same controls.
-2. **The toy** — the core interactive 3D scene. Auto-motion so it's alive before
-   the kid touches anything.
-3. **Experiment controls** — 2–4 sliders/toggles with *visible* causal effect.
-   Prefer controls that teach a real principle (limiting factors, concentration
-   gradients, inverse-square law).
-4. **Click-for-facts** — important objects are tappable and pop a fact card.
-   8–12 facts per major object type, rotating.
-5. **"Did you know?" ticker** — cycles every ~12 s.
-6. **A live counter** — glucose made, cells passed, orbits completed. Silly, delightful.
-7. **About card** — collapsible, 2–3 short paragraphs, 8th-grade level, include the
-   real equation/formula where one exists.
-8. **Back-link chip** to `#/` menu.
+## 5. The Game Grammar (every cabinet)
 
-## 6. Design system
+**Decided 2026-09-06: every cabinet becomes a game, all on one grammar** — the one The Sugar Line's way-in found (5 Sep) and *Cabinet Spec — The Foundry Game* wrote out (6 Sep). It sits on top of the measurement loop; the game is the front door, the lab is one tap away and untouched. Vault note: `Game Grammar.md`.
 
-- **Palette**: warm and organic. Cream/ivory UI cards, deep warm neutrals, ONE accent
-  color per cabinet (blood = warm red, photosynthesis = leaf green, chemistry = amber,
-  physics = slate blue…). No blue-purple gradients, no neon saturation.
-- **Type**: Nunito (headings/UI) + clean sans for body. Rounded, friendly.
-- **UI shape**: rounded-2xl cards, soft shadows, generous whitespace, collapsible
-  panel on mobile. HUD never covers the center of the scene.
-- **Feel**: everything idles gently (bobbing, pulsing, drifting). Stillness = dead.
+**Order of work:** finish The Sugar Line (rounds C–E) → The Foundry (A–E) → The Long River → First Physics → Motion Yard → Blood Voyage. Each cabinet gets its landscape viewpoint pass (§6) in the same round.
 
-## 7. Hard-won lessons — DO NOT relearn these
+1. **Front door — Play first.** Welcome card: **Play — "<the open door's level, ≤ 7 words>"** (from `nextDoor()`) · **Explore on your own** · **Watch it first**. The campaign map above the tiles. A game reachable only through a chip does not exist for the learner.
+2. **Doors.** A cabinet is a campaign of ~five doors; a door is a **place in the room the camera moves to**. Three levels per door found by sweep (Explorer can hit it / needs the rule / needs the number) via caps, not builds. **One hand-in at any level opens the next door.** Locked doors visible and named; unbuilt doors dashed — *"nobody has discovered what is behind it yet"*, **never "coming soon"** (suites grep for it). Progress in `lib/campaign.ts`, key `ploobia.campaign.<cabinet>.v1`; it is not XP.
+3. **The round**: `off → brief → ready → gather → handover → lab → scored`. Brief opens on a **guess-the-number dial**; **Explorer skips the brief**. A 3-second **beat** with Ploob's ghost gesture. **Gather** is Explorer's arcade minute (catches count only after the pointer moved; the clock is a catch, not a countdown); Scientist may skip it, Analyst receives the inventory. A **handover** card says what was caught and what to do now. The **lab** is the real cabinet with ceilings drawn on the dials. **Scored** = hand in → journal card → a door opens.
+4. **Something talks to them in every phase.** The coach chip carries Ploob and is never suppressed in a game. Ploob points at what changed, offers one comparison, says "let's test it", never praises a click, celebrates a *formed thing*. Hint button after repeated failures; no automatic speech; narration derived from the model, off until switched on.
+5. **One pinned gauge**: target, last reading, best, shortfall — never behind a tab. One name for the measured quantity everywhere. Every Run answers on the gauge via the Reveal card.
+6. **Score = accuracy · economy · thrift**, three stars, computed **only at hand-in**. **Score ≠ XP**: XP comes only from recorded evidence, which the game produces as a side effect. **The game never touches the trial.**
+7. **Failure explains itself**: a lost round ends on the line that names where the process broke (the bottleneck finder on the score card). No "game over".
+8. **The link.** `Challenge.made` carries the creation; `challengeLink()` makes the URL; opening it lands on the same seed with the creation on the bench and the dare on the gauge — checkpoint, remix and challenge at once. `navigator.share` → WhatsApp, clipboard fallback, nickname only. A **share card** rendered from the live canvas. **Beat-that via `rank()`** — no global leaderboard, no timers as pressure, no streaks; ties break on fewer trials.
+9. **Moments built to be filmed**: one 3-second celebration per door, and the film's picture and the app's picture are one picture.
+10. **Storyboard before code, every round**: storyboard artifact → Selorm's review → code → suites → perf → look at the screenshots with your own eyes.
 
-1. **Never BrowserRouter.** The preview/file pipeline serves the app at paths like
-   `/index.html`; BrowserRouter matches no route → totally blank page, no error.
-   HashRouter renders under any path. (Cost us a full debugging round.)
-2. **Never multi-file builds.** Browsers block external ES-module scripts over
-   `file://`. The single-file inline build is the only reason kids can double-click
-   the game. Do not remove `vite-plugin-singlefile`.
-3. **The scene must be scientifically honest, not just plausible.** The first
-   version of the Rate Lab used `rate = min(light, CO₂, water)`. It is tidy, it
-   is what a lot of textbooks imply, and it is wrong: it draws straight lines and
-   hard corners where real photosynthesis gives saturating curves, and it can
-   never produce a negative net rate, which makes the compensation point
-   unreachable. Model the mechanism (saturating response curves, an asymmetric
-   temperature optimum with an enzyme cliff, respiration subtracted, C3/C4/CAM
-   pathways, VPD-driven water loss) and check the outputs against real numbers
-   before wiring any UI.
-4. **Never put a `scale` prop on an R3F `<mesh>` inside an animated subtree
-   here.** The succulent pad silently failed to draw — mounted, `visible: true`,
-   correct world position, simply never rendered — until the flattening was baked
-   into the geometry instead (`geo.scale(...)`). Cost an hour. Prefer baked
-   geometry or a `scale` on the wrapping `<group>`.
-5. **Never `inspectAttr()` in a production build.** It injects a `code-path`
-   attribute onto every JSX element; react-three-fiber forwards unknown props
-   onto the three.js object and throws `R3F: Cannot set "code-path"` on update,
-   dropping the whole scene into the error boundary. `vite.config.ts` now applies
-   it only when `command === 'serve'`.
-6. **A `<mesh>` label at an object's centre is invisible** — its own geometry
-   occludes it. Offset toward the camera.
-7. **No browser storage, ever.** `localStorage`/`sessionStorage` are unavailable
-   in the preview sandbox. Cross-route state uses a module-level store.
-8. **Sub-step particle physics on slow frames**, and drive any user-visible
-   clock from wall time. Otherwise a "20 second" experiment takes ninety.
-9. **Verify at the real path.** "Works at `http://localhost:3000/`" proves nothing.
-   Every delivery must be screenshot-tested at `http://<host>/index.html#/<route>`.
-10. **Headless SwiftShader FPS is not real FPS.** Software rendering is ~10× slower;
-   judge correctness (renders? counters tick? zero console errors?), not frame rate.
-11. **The platform preview can be flaky.** The single-file HTML export is the
-   reliable deliverable; always produce it (see §8).
+Standing guardrails: rewards follow evidence; no loot boxes, random rewards, come-back-later mechanics or leaderboards across strangers; never gate delight, correctness or the demo; the demo's readings are deleted when it ends.
 
-## 8. Quality gates & delivery (mandatory checklist)
+## 6. Landscape, three layouts, viewpoints
 
-Before any delivery:
-- [ ] `npm run build` exits 0, `tsc` clean, eslint clean on new files
-- [ ] Serve `dist/` over HTTP, headless-screenshot EVERY route at the
-      `/index.html#/<route>` path; confirm non-blank render + no uncaught console
-      errors (ignore dbus/GPU noise)
-- [ ] Click-through pass: welcome → start → one interaction → one fact card
-- [ ] Merge to `master` in the shared repo
-- [ ] `build_version` (type: static, project_dir: /mnt/agents/output/app)
-- [ ] **Export `dist/index.html` → `Ploobia.html`** in `/mnt/agents/output/`
-      as the user-facing downloadable deliverable
+**Decided 2026-09-06: everything in the Ploobia web app is landscape** — hall, cabinets, home, the game layer — in **three authored layouts**, not one fluid squeeze. Vault note: `Landscape Layouts.md`. The marketing site stays a normal responsive page.
 
-## 9. Roadmap — future cabinets (pick by the kid's current school topics)
+| Tier | Canonical sizes | Composition |
+|---|---|---|
+| **desktop** | 1440×900 · 1366×768 · 1920×1080 | three columns — left parts/controls, centre scene (target plate top-left, coach chip bottom-left), right data / Our Space; one bottom toolbar |
+| **tablet** | 1180×820 · 1024×768 · 1280×800 | same, narrower; toolbar drops secondary actions |
+| **phone** (landscape, ≤ ~520 px tall) | 915×412 · 844×390 | scene fills the frame; top bar + one bottom toolbar; side panels slide in **from the edges**, never the bottom |
 
-**Biology**
-- Blood Voyage → give it the Rate Lab treatment: exercise raises heart rate and
-  cardiac output, vessel radius drives resistance, O₂ saturation gradients, a
-  clotting cascade. It is currently a ride, not a simulation.
-- DNA Helix Explorer — spin, unzip, base-pair matching game, "build a codon"
-- Cell Explorer — plant vs. animal cell, clickable organelles, zoom into membrane
-- Human Anatomy — layer toggle skin → muscle → organs → skeleton
-- Food Web / Ecosystem sim — predator-prey population waves
+- `hooks/use-layout.ts` returns `desktop | tablet | phone` + `portrait`, from width **and** height. **Side columns need ≥ 1024 px.**
+- **Portrait shows one thing: a full-screen "Turn your phone" card with Ploob.** The Canvas is not mounted behind it; it mounts in place on rotation. No rotate button (`orientation.lock()` is unsupported on iOS and needs fullscreen elsewhere; a control that silently fails is worse than none). `RotateHint`, `HudDrawer` and `usePortrait()` branches are retired cabinet by cabinet.
+- **The bottom toolbar** is the standard action strip: Undo · Redo · Inspect · Duplicate | parts tray (next-needed part wears the amber aim ring) | Send · **Hand in**. Green = hand-in and invitations; amber = the aim ring; the cabinet tint = tabs and primary.
+- **Viewpoint pass per cabinet**: the default shot, one shot per door, the phone tier's shot — all composed for a wide frame, subject off-centre, HUD never over the centre, `setViewOffset` by measured headroom. FOV per tier, not per cabinet.
+- Three layouts are **not** three scenes: one scene, one model, one set of instruments; only HUD composition and camera differ.
+- Suites screenshot **1440×900, 1180×820, 915×412** and one portrait size (assert the card, assert no Canvas); the hit-test sweep runs per tier in a `hasTouch` context after one real tap.
 
-**Chemistry**
-- Atom Builder — add protons/neutrons/electrons, build elements, isotope stability
-- States of Matter — heat slider shakes particles solid→liquid→gas
-- pH Lab — pour indicators, watch colors change, titration toy
+## 6b. Input
 
-**Physics**
-- Solar System — orbit sandbox, gravity slingshot, scale-mode toggle
-- Circuit Builder — drag batteries/wires/bulbs, watch electron flow
-- Wave Machine — frequency/amplitude sliders, sound vs. light
+`lib/input.ts`: one abstract action bus (focus / confirm / back / adjust / orbit / zoom / menu / tab) with touch, mouse, keyboard and Gamepad adapters; everything interactive is a `Tile` (≥ 48 px touch, 64 px TV). Sliders are Radix, driven in tests **by the thumb plus the keyboard, never the track**. Default back → `location.hash = '#/'` (never `history.back`). Controllers and Xbox Edge come after the game and landscape passes.
 
-**Earth & Space Science**
-- Water Cycle — sun/heat sliders drive evaporation→clouds→rain
-- Plate Tectonics — drag continents, trigger earthquakes/volcanoes
-- Rock Cycle — melt/cool/erode a rock through its loop
+## 7. Hard-won lessons — DO NOT relearn
 
-**Math**
-- Geometry Playground — morph shapes, area/volume fill with water
-- Fraction Pizza / Probability Dice Lab
+1. **Never BrowserRouter.** Blank page, no error, at any non-root path.
+2. **Never multi-file builds.** Browsers block module scripts over `file://`; the single-file build is why a kid can double-click it. And **never hand out the hosted build as a file** — Safari refuses `type="module"` from `file://`; hand out `npm run build:offline` → `Ploobia-offline.html` (classic IIFE).
+3. **Model the mechanism, not the picture.** `rate = min(light, CO₂, water)` draws straight lines and can never reach the compensation point. Calibrate against real numbers before wiring UI; assert conservation in a Node suite.
+4. **No `scale` prop on an R3F `<mesh>` inside an animated subtree** — it silently fails to render. Bake into geometry or scale the group. Custom uniforms on an `onBeforeCompile`-patched `MeshStandardMaterial` can silently no-op too.
+5. **`inspectAttr()` only when `command === 'serve'`** — R3F throws on the injected prop in production.
+6. **A label at an object's centre is hidden by its own front face.** Offset along the view ray. A glyph's `size` and per-instance scale **multiply** — pass a 0–1 fade, not a world size, as the scale.
+7. **Two frame-loop clamps** (≤ 0.05 s animation, ≤ 0.25 s physics/trials), narration on wall time, crossings detected by comparing distances.
+8. **Verify at the real path** (`/index.html#/<route>`) over HTTP, and `curl … | wc -c` against `dist/index.html` first — a stale server on the same port silently serves the old build.
+9. **Headless SwiftShader FPS is not real FPS.** Judge correctness. Draw calls and triangles transfer; frame rate does not. A suite that fails only while another suite runs is CPU contention — rerun alone, sequentially, from a background shell.
+10. **Never `pkill -f <pattern>` when the pattern is in your own command line** (exit 144).
+11. **Never sweep a tube with `computeFrenetFrames`** — the frame twists per curve. Build the ring in world space (`v = 0` toward the camera). **`CylinderGeometry` puts θ at `(sin θ, 0, cos θ)`.**
+12. **`THREE.MathUtils.smoothstep(x, min, max)` returns 1 for any `x ≥ max`** — reversed edges do not invert it; write `1 - smoothstep(x, lo, hi)`.
+13. **Three's lighting units are not lux.** An outdoor rig needs far more intensity than looks reasonable. **Tune lighting against sampled pixels.** **An `InstancedMesh` renders every allocated instance** — set `mesh.count` to what you wrote, or unwritten instances stand at the origin at full size.
+14. **No post-processing chain, no physics engine.** God-rays are two instanced draw calls of geometry; bloom, colour grading, cannon-es and friends are real money on a mid-range tablet and step aside in Cardboard stereo. Ploob's transmission material is medium tier and up (a whole render pass).
+15. **Never fade an instanced sprite by darkening `instanceColor`** (it goes black, not invisible) — use an `aFade` attribute into alpha. Translucent shells get `depthWrite: false`.
+16. **A plate wider than its column is clipped and the clipped strip still swallows taps.** Columns own the width; plates are `w-full`. **A pinned block must be height-capped; a flex column's children need `shrink-0`.** **Assert hit-testing (`elementFromPoint`), not placement** — position, size and non-overlap all pass while a control is dead.
+17. **An effect that depends on an inline handler never fires its timeout.** Key it off the data, hold the handler in a ref. **A once-registered window listener must read its handler through a ref.**
+18. **`getByRole('button').first()` matches DOM order, not z-order** — render overlays first, and never name a mission anything a suite greps for. `aria-label` overrides visible text; `getByText` matches every ancestor (assert `>= 1`).
+19. **A panel that only mounts when its tab is open cannot emit learning events.** Emit from the always-mounted page.
+20. **`resilientClick` can double-fire.** For state assertions on a toggle, drive the element once from inside the page (`dispatchEvent('click')`).
+21. **Model init is lazy** (`ensureRiverModel()` pattern) — `App.tsx` imports pages eagerly, so module-level simulation taxes every cabinet's boot.
+22. **Shared scratch points alias.** Copy scalars out of a `planAt()` result before calling anything else.
+23. **Tailwind arbitrary-colour opacity must use scale values** (`/90`, `/95`; `/92` is silently dropped).
+24. **Never run `git` against the user's repo through the Cowork mount** (`git status` leaves an undeletable `index.lock`; every file shows modified because of CRLF). Read-only plumbing and `cat` only; never suggest `git add -A` on Windows.
+25. **A 403 is not evidence** — identify which layer answered before drawing a conclusion. **A build script written on Linux is not a build script**: `npm run build` must work from a clean checkout on Windows (`shell: true` for `.cmd`, `prebuild` installs the workspaces).
+26. **`concat -c copy` discards audio when stream parameters differ**, silently (film pipeline; use the concat filter).
+27. **`stabilityOf`, `SHELL_CAPS = [2,8,8,8]` for Z ≤ 20 only**, valency `min(outer, room)`, formula order via the IUPAC `H_FOLLOWS` set — the chemistry model rules are in *Cabinet Spec — The Foundry Game* §6. Some pairs the counting rule cannot settle: name the real product as a caveat, never fudge.
 
-Each new cabinet: follow §5 recipe, §6 design, §8 gates. When in doubt, more
-interaction, fewer words.
+## 8. Quality gates & delivery
 
-## 10. Working agreements for agents/contributors
+Before any hand-over:
 
-- Small, themed commits per cabinet (`photo: …`, `dna: …`).
-- Don't touch another cabinet's scene logic when adding yours; shared changes
-  (menu, design tokens) are fine and expected.
-- Facts are content — keep them in `lib/` data files, not buried in components,
-  so a non-programmer (e.g. a parent, a teacher) can edit them.
-- If the kid tester says "boring", that's a P0 bug.
+- [ ] `npm run build` exits 0 from a clean checkout; `tsc` clean; eslint clean on new files (`react-hooks/immutability` on the mutable-sim pattern is house architecture — leave it).
+- [ ] Serve `dist/` over HTTP; the cabinet's own suite green (`verify-<cabinet>.mjs`, and the pure-model suite where one exists); `verify-input`, `verify-touch`, `verify-progression`, `verify-perf` green; `verify-challenge` green for any cabinet with a game layer. Timing checks report **SKIP with the number** on a software renderer, never a silent pass.
+- [ ] Screenshots at **1440×900, 1180×820, 915×412** and one portrait size, for every door of the cabinet, looked at with your own eyes.
+- [ ] Perf within the cabinet's low-tier budget (`verify-perf`).
+- [ ] Pilot build + offline build + `scripts/verify-bundle.mjs` (`VITE_PILOT=1 PLOOBIA_BUILD=<id> npm run build && npm run build:offline && node scripts/verify-bundle.mjs`) — a cabinet rename must be made in that suite's greps too.
+- [ ] A Cowork session **cannot push**: hand over the source written into the clone (or a `git bundle` + the push lines, one per line, no `&&`), name the files, and Selorm commits. Cloudflare builds on push; match deployments by commit hash.
+- [ ] Vault: a `Build Log — …` note for the round and a dated line in `Decision Log.md`; update `Game Grammar.md` / `Landscape Layouts.md` if a rule changed.
+
+## 9. Roadmap
+
+The game and landscape passes run in the order in §5. Beyond them the content program (vault `Content Program.md`) stands: engines not one-offs (Investigation · Journey · Venue · Vision · Expedition · Chronicle · Commons); the Commons as same-room multi-device play via room codes (`lib/challenge.ts` already has `roomCode`); the curriculum layer `lib/curriculum.ts` mapping missions to IGCSE points as the parent-facing evidence view; then Circuit Workshop, the Digestion ride, The Old Crossing (history, with the historian's review planned in), the Observatory, maths cabinets, the Cell Interior with the Scale Elevator. Parked seeds: Cell Transport (the membrane bench), Cell Power (one ATP-synthase motor for photosynthesis and respiration), The Plot (the Sugar Line's stand as its own cabinet).
+
+## 10. Working agreements
+
+- Small themed commits per cabinet (`sugar: …`, `foundry: …`); don't touch another cabinet's scene logic; shared changes (hall, kit, tokens) are expected.
+- **Storyboard first, then code.** Whiteboard the way-in, the doors and each door's shot with Selorm before building; nothing is generated or built until he has read it.
+- Before choosing a base, read the tail of `Decision Log.md`; if a parallel session moved the head, port only your cabinet's own files and keep their shared ones, then run every suite.
+- Report honestly: a suite skipped is reported as skipped; a screenshot not looked at is not verified; a claim about the live site is checked in a real browser (the pilot is unlisted and blocks fetchers).
+- Ploob only. Play first. Landscape only. Score ≠ XP. Accuracy is non-negotiable. "Boring" is P0.

@@ -56,7 +56,7 @@ const DOORS = [
     blurb: 'Poke everything. Watch the world react. Collect readings and compare them.' },
   { label: 'Scientist', ages: '13–15', tint: '#3E7C43', q: 'Why did that happen?',
     blurb: 'Change one variable, control the rest, predict the result, then plot the curve.' },
-  { label: 'Analyst', ages: '16–17', tint: '#2E6DA8', q: 'Can I model it and defend a conclusion?',
+  { label: 'Analyst', ages: '16–18', tint: '#2E6DA8', q: 'Can I model it and defend a conclusion?',
     blurb: 'Repeat readings, quantify uncertainty, spot anomalies, compare competing explanations, write it up.' },
 ]
 

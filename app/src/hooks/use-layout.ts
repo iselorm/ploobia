@@ -67,3 +67,51 @@ export function useShortViewport(px = 900): boolean {
     () => false,
   )
 }
+
+/* ------------------------------------------------------------------ */
+/* The three landscape tiers (decided 2026-09-06)                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Everything in the app is landscape, in three authored layouts rather than
+ * one fluid squeeze:
+ *
+ *  • `desktop` — side columns beside the scene (needs ≥ 1024 px: below that
+ *                the two columns meet in the middle and cover the centre HUD).
+ *  • `tablet`  — the same columns, narrower.
+ *  • `phone`   — anything ≤ ~520 px tall: the scene owns the frame, one top
+ *                bar, one bottom toolbar, panels slide in from the edges.
+ *
+ * A phone held upright is not a fourth tier; it shows the turn-your-phone
+ * card and mounts nothing behind it (`usePortraitPhone`).
+ */
+export type LayoutTier = 'desktop' | 'tablet' | 'phone'
+
+const PHONE_MAX_HEIGHT = 520
+const DESKTOP_MIN_WIDTH = 1280
+
+function readTier(): LayoutTier {
+  if (typeof window === 'undefined') return 'desktop'
+  const w = window.innerWidth
+  const h = window.innerHeight
+  if (h <= PHONE_MAX_HEIGHT || w < 760) return 'phone'
+  if (w < DESKTOP_MIN_WIDTH) return 'tablet'
+  return 'desktop'
+}
+
+export function useLayoutTier(): LayoutTier {
+  return useSyncExternalStore(subscribe, readTier, () => 'desktop')
+}
+
+/**
+ * Held upright, on a device small enough that the wide way round is the
+ * whole point. A tall desktop window is left alone.
+ */
+export function usePortraitPhone(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () =>
+      typeof window !== 'undefined' && window.innerHeight > window.innerWidth && window.innerWidth < 1024,
+    () => false,
+  )
+}

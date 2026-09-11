@@ -5,12 +5,17 @@
  *   dist/index.html      the public site   (ploobia.com)
  *   dist/og.png          social card, referenced absolutely by the site's meta
  *   dist/app/index.html  the arcade        (ploobia.com/app/)
+ *   dist/app/models/…    the cabinets' generated props (loaded on demand)
+ *   dist/app/art/…       the cabinets' painted cards, cutouts and thumbnails
  *   dist/_headers        Cloudflare Pages cache + security headers
  *   dist/robots.txt      whether crawlers are welcome
  *
- * Both halves are already single-file builds, so "assembly" is genuinely just
- * placing two HTML files and their headers. That is the whole point of the
- * single-file decision: there is no asset graph to get wrong at deploy time.
+ * Both halves are single-file builds, so "assembly" is placing two HTML files
+ * and their headers — plus the on-demand asset folders the Numberworks
+ * introduced: meshes and painted art too big to inline, fetched by the page
+ * when it needs them and stood in for by procedural props until they arrive.
+ * The app never fails for their absence; the offline copy simply ships
+ * without them.
  *
  * Env:
  *   PLOOBIA_BUILD   build id stamped into the app (CI passes the short sha)
@@ -63,6 +68,18 @@ run(join(root, 'site'), ['run', 'build'])
 
 cpSync(join(root, 'site', 'dist'), dist, { recursive: true })
 cpSync(join(root, 'app', 'dist', 'index.html'), join(dist, 'app', 'index.html'))
+// On-demand assets: content is versioned by the build, so they can be cached
+// hard; a changed prop gets a new file name in the manifest, not a new byte
+// pattern under an old one.
+for (const folder of ['models', 'art']) {
+  const src = join(root, 'app', 'dist', folder)
+  try {
+    statSync(src)
+  } catch {
+    continue
+  }
+  cpSync(src, join(dist, 'app', folder), { recursive: true })
+}
 
 /* -- Headers ------------------------------------------------------ *
  * The two HTML files are the whole app, so they must never be served
@@ -83,6 +100,12 @@ writeFileSync(
 
 /og.png
   Cache-Control: public, max-age=86400
+
+/app/models/*
+  Cache-Control: public, max-age=604800
+
+/app/art/*
+  Cache-Control: public, max-age=604800
 `,
 )
 

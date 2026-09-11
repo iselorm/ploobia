@@ -1,82 +1,121 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { ArrowLeft, Atom, LineChart, RotateCcw, SlidersHorizontal, Trophy } from 'lucide-react'
-import { BAND_CAPS, getBand, useBand } from '@/lib/bands'
+import { ArrowLeft, Users } from 'lucide-react'
+import { getBand, useBand, type Band } from '@/lib/bands'
+import { useActiveLearner } from '@/lib/profiles'
 import { logEvent } from '@/lib/events'
 import { useBackHandler } from '@/lib/input'
-import { useLayoutMode, useShortViewport } from '@/hooks/use-layout'
+import { useLayoutTier } from '@/hooks/use-layout'
+import { read, write } from '@/lib/persist'
+import { cn } from '@/lib/utils'
+import { applyBuild, createAtomSim, type AtomViewId } from '@/lib/atoms'
+import { challengeLink, decodeChallenge, type Challenge, type ChallengeScore, type ResourceBudget } from '@/lib/challenge'
 import {
-  addressLogic,
-  applyBuild,
-  ATOM_DEMO,
-  CATEGORY_META,
-  roomInOuterShell,
-  commonNeutrons,
-  createAtomSim,
-  ELEMENT_BY_Z,
-  fireProbe,
-  forgePlace,
-  INTRO_STEPS,
-  MAX_Z,
-  outerElectrons,
-  PERIOD_OF,
-  shellsFor,
-  stabilityOf,
-  type AtomDemoApi,
-  type AtomMissionContext,
-  type AtomViewId,
-  type GripReading,
-  type PlacedBuild,
-} from '@/lib/atoms'
+  affordable,
+  attemptFor,
+  bankOf,
+  challengeFor,
+  cleanNickname,
+  sendableNickname,
+  gaugeFor,
+  identityOf,
+  levelForBand,
+  levelFromSetup,
+  nextPart,
+  benchLine,
+  isPairLevel,
+  ploobLine,
+  rain as rainFor,
+  shareCardFor,
+  soloSeed,
+  spentOf,
+  startBuild,
+  EMPTY_BENCH,
+  type Bench,
+  topUp,
+  type Build,
+  type Kind,
+  type Level,
+} from '@/lib/foundry'
+import { DOOR_BY_ID, DOORS } from '@/lib/foundry'
+import { nextDoor, recordHandIn } from '@/lib/foundrycampaign'
+import { COACH_KEY, nextDock, type CoachDock } from '@/components/atoms/game/coachDock'
+import { ElementPicker, ElementStrip, RatioDial, Readout } from '@/components/atoms/game/BenchHud'
+import { AtlasButton } from '@/components/sugar/hud/AtlasKit'
 import SceneErrorBoundary from '@/components/SceneErrorBoundary'
-import BandSwitch from '@/components/hud/BandSwitch'
 import InputHints from '@/components/hud/InputHints'
-import HudDrawer from '@/components/hud/HudDrawer'
 import ProgressToasts from '@/components/hud/ProgressToasts'
-import ProgressChip from '@/components/hud/ProgressChip'
-import ViewControls from '@/components/photo/hud/ViewControls'
-import AtomPanel from '@/components/atoms/hud/AtomPanel'
-import AtomDataLab from '@/components/atoms/hud/AtomDataLab'
-import {
-  AtomAboutCard,
-  AtomDemoOverlay,
-  AtomFactCard,
-  AtomMissionCard,
-  AtomTicker,
-  AtomWelcome,
-  CoachChip,
-  ElementPop,
-  IntroCards,
-  elementFact,
-  nextObjectFact,
-  type ActiveAtomFact,
-} from '@/components/atoms/hud/AtomCards'
-import { ATOM_VIEWS } from '@/components/atoms/AtomCamera'
+import { AtomFactCard, elementFact, type ActiveAtomFact } from '@/components/atoms/hud/AtomCards'
+import { CATEGORY_META, ELEMENT_BY_Z } from '@/lib/atoms'
 import type { ParticleKind } from '@/components/atoms/Dispensers'
+import {
+  ElementsPanel,
+  ForgeBeat,
+  ForgeBrief,
+  ForgeGauge,
+  ForgeScore,
+  ForgeSend,
+  ForgeTray,
+  ForgeWelcome,
+  IdentityChip,
+  OurSpace,
+  PloobLine,
+  PloobChip,
+  TopBar,
+  type JournalEntry,
+} from '@/components/atoms/game/ForgeHud'
 
-const AtomScene = lazy(() => import('@/components/atoms/AtomScene'))
+const ForgeScene = lazy(() => import('@/components/atoms/ForgeScene'))
+
+/**
+ * The Foundry — Door 1, The Forge.
+ *
+ * The page is the storyboard "Foundry Way In", as a phase machine:
+ *
+ *   welcome → (brief) → beat → (gather) → forge → scored → send
+ *
+ * Play is the front door. Explorer skips the brief and catches; the other
+ * bands guess first and receive the inventory. The bench is one tap away from
+ * every phase, untouched. Ploob talks in every phase; the target and the
+ * reading share one gauge; a hand-in scores through `lib/challenge` and
+ * opens the next door through `lib/foundrycampaign`. Score is not XP.
+ *
+ * A link (`?c=…`) is the whole world: same seed, same catch, the dare on the
+ * gauge. Nothing here talks to a server.
+ */
+
+/**
+ * Door 1 is played at the forge (`gather` → `forge`); Door 2 at the bench.
+ *
+ * The bench has its own three: `place` two atoms, `predict` what they make —
+ * and only then `readout`. That order is the whole cabinet. A readout that can
+ * be reached before a prediction turns the round into reading comprehension.
+ */
+type Phase = 'welcome' | 'brief' | 'beat' | 'gather' | 'forge' | 'place' | 'predict' | 'readout' | 'scored' | 'send'
+
+const SESSION_CODE = String((Date.now() ^ 0x9e3779b9) >>> 0)
+const JOURNAL_KEY = 'ploobia.foundry.journal.v1'
+/** The sender's nickname, kept so a child types it once. */
+const BY_KEY = 'ploobia.foundry.by.v1'
+const LIT_KEY = 'ploobia.foundry.lit.v1'
 
 function SceneFallback() {
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-[#4A3826]">
-      <p className="animate-pulse text-sm font-bold text-[#FBF5EA]/80">Lighting the foundry…</p>
+    <div className="flex h-full w-full items-center justify-center bg-[#E9CFA3]">
+      <div className="atlas-plate flex items-center gap-3 px-4 py-3">
+        <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#E4DCC9] border-t-[#D99B2B]" />
+        <span className="text-[12px] font-extrabold text-[#5A5445]">Lighting the foundry…</span>
+      </div>
     </div>
   )
 }
 
 function WebglFallback() {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#4A3826] p-6">
-      <div className="w-full max-w-md rounded-[28px] border border-[#F3E9D7] bg-[#FBF5EA] p-8 text-center shadow-2xl">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#B97D10]/10">
-          <Atom className="h-7 w-7 text-[#B97D10]" />
-        </div>
-        <h2 className="text-xl font-black text-[#402222]">The furnace went cold</h2>
-        <p className="mt-2 text-sm leading-relaxed font-semibold text-[#7A5252]">Your browser could not start the 3D foundry (WebGL is unavailable or crashed). Try reloading, or use a browser with WebGL enabled.</p>
-        <button onClick={() => window.location.reload()} className="mx-auto mt-5 flex items-center gap-2 rounded-full bg-[#B97D10] px-6 py-3 text-sm font-extrabold text-[#FBF5EA] shadow transition-all hover:bg-[#95650C] active:scale-95">
-          <RotateCcw className="h-4 w-4" />
-          Relight the foundry
-        </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#F6F2E8]/90 p-6">
+      <div className="atlas-plate max-w-md p-5 text-center">
+        <p className="text-[14px] font-black text-[#2A2823]">The 3D view stopped.</p>
+        <p className="mt-1 text-[12px] font-semibold text-[#8B8471]">Your device paused the graphics. Reload to light the foundry again — nothing you handed in is lost.</p>
       </div>
     </div>
   )
@@ -84,305 +123,436 @@ function WebglFallback() {
 
 function BackToMenu() {
   return (
-    <Link to="/" className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-[#F3E9D7] bg-[#FBF5EA]/90 px-3 py-1.5 text-[11px] font-extrabold text-[#7A5252] shadow-lg backdrop-blur-md transition-all hover:scale-[1.04] hover:text-[#B97D10]">
-      <ArrowLeft className="h-3.5 w-3.5" />
-      Back to Ploobia
+    <Link
+      to="/"
+      aria-label="Back to the arcade"
+      className="tile pointer-events-auto flex items-center gap-1.5 rounded-full border border-[#E9E2D1] bg-[#FCFAF4]/90 px-3 py-2 text-[12px] font-extrabold text-[#5A5445] backdrop-blur-md transition-all hover:bg-[#F1ECDE] active:scale-95"
+    >
+      <ArrowLeft className="h-4 w-4" />
+      Arcade
     </Link>
   )
 }
 
-interface BuildState {
-  protons: number
-  neutrons: number
-  electrons: number
+/* The sim is a mutable object the scene reads every frame; these are the only
+   two writes the page makes to it outside `applyBuild`, kept out of the
+   callbacks so the compiler's immutability rule can see they are deliberate. */
+function markStarted(sim: ReturnType<typeof createAtomSim>): void {
+  sim.started = true
+}
+function setSimView(sim: ReturnType<typeof createAtomSim>, id: AtomViewId): void {
+  sim.viewId = id
+  sim.viewSeq += 1
+  sim.autoOrbit = false
+}
+
+function sameBuild(a: Build, b: Build): boolean {
+  return a.protons === b.protons && a.neutrons === b.neutrons && a.electrons === b.electrons
 }
 
 export default function AtomFoundry() {
   const sim = useMemo(() => createAtomSim(), [])
   const [band] = useBand()
-  const caps = BAND_CAPS[band]
-  const layout = useLayoutMode()
-  const compact = layout === 'compact'
-  const short = useShortViewport(900)
+  const tier = useLayoutTier()
+  const compact = tier === 'phone'
+  /**
+   * The gauge and the tray are the two widest things in the middle column, and
+   * at the tablet tier they were running under the right-hand column — the
+   * last gauge cell clipped, "Hand in" half-covered. They take the compact
+   * density **one tier earlier** than everything else: the plate loses the
+   * "≈ 0.1 nm, enlarged" line and the per-cell to-do line, which is exactly
+   * the slack the column needed and nothing a learner is reading mid-forge.
+   */
+  const dense = tier !== 'desktop'
+  const columns = tier === 'desktop' || tier === 'tablet'
 
-  const [started, setStarted] = useState(false)
-  const [contextLost, setContextLost] = useState(false)
-  const [build, setBuild] = useState<BuildState>({ protons: 0, neutrons: 0, electrons: 0 })
-  const [cloudView, setCloudView] = useState(false)
-  const [predicted, setPredicted] = useState<number | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
-  const [readings, setReadings] = useState<GripReading[]>([])
-  const [builds, setBuilds] = useState<PlacedBuild[]>([])
-  const [discovered, setDiscovered] = useState<number[]>([])
-  const [probed, setProbed] = useState<Record<number, number>>({})
-  const [ionHeld, setIonHeld] = useState(false)
-  const [shellOpened, setShellOpened] = useState(false)
-  const [probing, setProbing] = useState(false)
-  const [placing, setPlacing] = useState(false)
-  const [lastGrip, setLastGrip] = useState<number | null>(null)
+  /* ---- where Ploob's line sits (the player's call, remembered) ---- */
+  const [dock, setDock] = useState<CoachDock>(() => {
+    const saved = read<CoachDock>(COACH_KEY, 'float')
+    return saved === 'float' || saved === 'left' || saved === 'right' || saved === 'hidden' ? saved : 'float'
+  })
+  const setDockAnd = useCallback((next: CoachDock) => {
+    setDock(next)
+    write(COACH_KEY, next)
+  }, [])
+  // A line that arrives while Ploob is shut puts a dot on the chip. It never
+  // reopens itself: the player closed it, and taking that back would teach
+  // them the close button is a lie.
+  const learner = useActiveLearner()
+  const [heard, setHeard] = useState('')
+
+  /* ---- Door 2: what is on the two pads, and what was predicted ---- */
+  const [bench, setBench] = useState<Bench>(EMPTY_BENCH)
+
+  /**
+   * Who the card is from.
+   *
+   * The share card said "Someone forged helium" because nothing ever asked.
+   * It starts from the active learner's nickname (unless that is still the
+   * stock "Player 1", which is nobody's name), keeps whatever the sender types
+   * for next time, and is the **only** thing about a child that travels with a
+   * link. `cleanNickname` is what decides that stays true.
+   */
+  const [by, setByRaw] = useState<string>(() => {
+    const saved = read<string>(BY_KEY, '')
+    if (typeof saved === 'string' && saved.trim()) return cleanNickname(saved)
+    const nick = learner.nickname
+    return nick && nick !== 'Player 1' ? cleanNickname(nick) : ''
+  })
+  const setBy = useCallback((next: string) => {
+    const clean = cleanNickname(next)
+    setByRaw(clean)
+    write(BY_KEY, clean)
+  }, [])
+  const [searchParams] = useSearchParams()
+
+  /* ---- the incoming link, if any ---- */
+  const incoming = useMemo<{ challenge: Challenge; level: Level } | null>(() => {
+    const c = searchParams.get('c')
+    if (!c) return null
+    const challenge = decodeChallenge(c)
+    if (!challenge || challenge.cabinet !== 'atoms') return null
+    const level = levelFromSetup(challenge.setup)
+    return level ? { challenge, level } : null
+  }, [searchParams])
+
+  /* ---- state ---- */
+  const [phase, setPhase] = useState<Phase>('welcome')
+  const [level, setLevel] = useState<Level | null>(null)
+  const [challenge, setChallenge] = useState<Challenge | null>(null)
+  const [build, setBuild] = useState<Build>({ protons: 0, neutrons: 0, electrons: 0 })
+  const [history, setHistory] = useState<Build[]>([])
+  const [future, setFuture] = useState<Build[]>([])
+  const [bank, setBank] = useState<ResourceBudget | null>(null)
+  const [caught, setCaught] = useState<Kind[]>([])
+  const [rain, setRain] = useState<{ seed: number; kinds: Kind[]; startAt: number; startedAtMs: number; seconds: number } | null>(null)
+  const [gatherLeft, setGatherLeft] = useState<number>(0)
+  const [beat, setBeat] = useState(3)
+  const [trials, setTrials] = useState(0)
+  const [score, setScore] = useState<ChallengeScore | null>(null)
+  const [opened, setOpened] = useState<number | null>(null)
+  const [lit, setLit] = useState<number[]>(() => read<number[]>(LIT_KEY, []))
+  const [journal, setJournal] = useState<JournalEntry[]>(() => read<JournalEntry[]>(JOURNAL_KEY, []))
   const [fact, setFact] = useState<ActiveAtomFact | null>(null)
-  const [factSummonZ, setFactSummonZ] = useState<number | null>(null)
-  const [elementPop, setElementPop] = useState<{ z: number; a: number } | null>(null)
-  const [autoOrbit, setAutoOrbit] = useState(false)
-  const [viewId, setViewId] = useState<AtomViewId>('overview')
-  const [demoStep, setDemoStep] = useState(-1)
-  const [demoProgress, setDemoProgress] = useState(0)
-  const [introStep, setIntroStep] = useState<number | null>(null)
-  const introSeen = useRef(false)
-  const probeExplained = useRef(false)
-
-  const nextId = useRef(1)
-  const factKey = useRef(1)
-  const lastProbeDone = useRef(0)
-  const lastPlaceDone = useRef(0)
-  const lastCompleteSeq = useRef(0)
-  const popTimer = useRef(0)
-  const pendingForge = useRef<{ z: number; neutrons: number } | null>(null)
-  const predictedRef = useRef<number | null>(null)
-  predictedRef.current = predicted
-  const buildRef = useRef(build)
-  buildRef.current = build
-  const noticeTimer = useRef(0)
-  const demoSnapshot = useRef<{ discovered: number[]; probed: Record<number, number>; readingCutoff: number } | null>(null)
+  const [tab, setTab] = useState<'wall' | 'bench' | 'space'>('bench')
+  const [spaceOpen, setSpaceOpen] = useState(false)
+  const [contextLost, setContextLost] = useState(false)
+  const [line, setLine] = useState<string>('')
+  const [prev, setPrev] = useState<Build | null>(null)
+  const startedAt = useRef(0)
+  const prevBuild = useRef<Build | null>(null)
+  const factKey = useRef(0)
 
   useEffect(() => {
     logEvent('atoms', getBand(), 'session.started', {})
-    // Exposed for the Playwright harness (verify-atoms.mjs).
-    ;(window as unknown as { __atomSim?: unknown }).__atomSim = sim
-  }, [sim])
-
-  const showNotice = useCallback((text: string) => {
-    setNotice(text)
-    window.clearTimeout(noticeTimer.current)
-    noticeTimer.current = window.setTimeout(() => setNotice(null), 5000)
   }, [])
 
-  /* ---- build changes ---- */
-  const updateBuild = useCallback(
-    (patch: Partial<BuildState>) => {
-      setBuild((prev) => {
-        const next = { ...prev, ...patch }
-        next.protons = Math.max(0, Math.min(MAX_Z, next.protons))
-        next.neutrons = Math.max(0, Math.min(30, next.neutrons))
-        next.electrons = Math.max(0, Math.min(MAX_Z + 2, next.electrons))
-        // Explorer never juggles neutrons: the common isotope loads itself.
-        if (!BAND_CAPS[getBand()].isotopes && patch.protons !== undefined) {
-          next.neutrons = commonNeutrons(next.protons)
+  /* ---- the build: one setter, so the sim and the state never drift ---- */
+  const commit = useCallback(
+    (next: Build, record = true) => {
+      setBuild((cur) => {
+        if (sameBuild(cur, next)) return cur
+        if (record) {
+          setHistory((h) => [...h.slice(-30), cur])
+          setFuture([])
         }
-        if (next.protons === 0 && patch.protons !== undefined) next.neutrons = BAND_CAPS[getBand()].isotopes ? next.neutrons : 0
+        prevBuild.current = cur
+        setPrev(cur)
         applyBuild(sim, next)
-        // A learner opening a second shell is a mission moment.
-        if (!sim.demoMode && shellsFor(next.electrons).length >= 2) setShellOpened(true)
         return next
       })
     },
     [sim],
   )
 
-  const handleAdd = useCallback(
-    (kind: ParticleKind) => {
-      if (sim.placing) return
-      const b = buildRef.current
-      if (kind === 'proton') updateBuild({ protons: b.protons + 1 })
-      else if (kind === 'neutron') updateBuild({ neutrons: b.neutrons + 1 })
-      else updateBuild({ electrons: b.electrons + 1 })
+  const canAfford = useCallback(
+    (next: Build) => {
+      if (!level || !bank) return true
+      return affordable(level, bank, next)
     },
-    [sim, updateBuild],
+    [level, bank],
   )
 
-  /* ---- facts (defined early: the probe explainer fires from handleProbe) ---- */
-  const openObjectFact = useCallback((kind: 'nucleus' | 'electron' | 'wall' | 'probe') => {
-    const accents = { nucleus: '#E8A33D', electron: '#63E0FF', wall: '#B97D10', probe: '#1E9BBF' }
-    setFactSummonZ(null)
-    setFact({ fact: nextObjectFact(kind), accent: accents[kind], key: factKey.current++ })
-  }, [])
+  const add = useCallback(
+    (k: Kind) => {
+      if (phase !== 'forge') return
+      const next = { ...build }
+      if (k === 'proton') next.protons += 1
+      else if (k === 'neutron') next.neutrons += 1
+      else next.electrons += 1
+      if (next.protons > 20) return
+      if (!canAfford(next)) return
+      commit(next)
+    },
+    [phase, build, canAfford, commit],
+  )
+  const remove = useCallback(
+    (k: Kind) => {
+      if (phase !== 'forge') return
+      const next = { ...build }
+      if (k === 'proton') next.protons = Math.max(0, next.protons - 1)
+      else if (k === 'neutron') next.neutrons = Math.max(0, next.neutrons - 1)
+      else next.electrons = Math.max(0, next.electrons - 1)
+      commit(next)
+    },
+    [phase, build, commit],
+  )
+  const undo = useCallback(() => {
+    setHistory((h) => {
+      if (!h.length) return h
+      const last = h[h.length - 1]
+      setFuture((f) => [build, ...f])
+      prevBuild.current = build
+      setPrev(build)
+      applyBuild(sim, last)
+      setBuild(last)
+      return h.slice(0, -1)
+    })
+  }, [build, sim])
+  const redo = useCallback(() => {
+    setFuture((f) => {
+      if (!f.length) return f
+      const next = f[0]
+      setHistory((h) => [...h, build])
+      prevBuild.current = build
+      setPrev(build)
+      applyBuild(sim, next)
+      setBuild(next)
+      return f.slice(1)
+    })
+  }, [build, sim])
+  const reset = useCallback(() => {
+    const s = level ? startBuild(level) : { protons: 0, neutrons: 0, electrons: 0 }
+    commit(s)
+  }, [level, commit])
 
-  const openTileFact = useCallback((z: number) => {
+  /* ---- the launchers in the world feed the same setter ---- */
+  const onCrucible = useCallback((kind: ParticleKind) => add(kind), [add])
+
+  /* ---- starting a level ---- */
+  const begin = useCallback(
+    (lvl: Level, c: Challenge) => {
+      setLevel(lvl)
+      setChallenge(c)
+      setTrials(0)
+      setScore(null)
+      setOpened(null)
+      setHistory([])
+      setFuture([])
+      setCaught([])
+      setRain(null)
+      prevBuild.current = null
+      setPrev(null)
+      const s = startBuild(lvl)
+      applyBuild(sim, s)
+      setBuild(s)
+      setBench(EMPTY_BENCH)
+      startedAt.current = Date.now()
+      markStarted(sim)
+      if (c.gatherSeconds > 0) setBank({ proton: 0, neutron: 0, electron: 0 })
+      else setBank({ ...c.budget })
+      setBeat(3)
+      if (band === 'explorer') {
+        setPhase('beat')
+        setLine(lvl.open)
+      } else {
+        setPhase('brief')
+        setLine(lvl.blurb)
+      }
+    },
+    [sim, band],
+  )
+
+  const play = useCallback(() => {
+    if (incoming) {
+      begin(incoming.level, incoming.challenge)
+      return
+    }
+    // Play opens the door the campaign is actually up to, not always the first
+    // one. With two doors built, a learner who has finished the Forge should
+    // land on the Bench without hunting for it.
+    const door = nextDoor().id
+    const lvl = levelForBand(band as Band, door)
+    begin(lvl, challengeFor(lvl, band, soloSeed(SESSION_CODE, lvl)))
+  }, [incoming, band, begin])
+
+  const explore = useCallback(() => {
+    setLevel(null)
+    setChallenge(null)
+    setBank(null)
+    setRain(null)
+    setHistory([])
+    setFuture([])
+    prevBuild.current = null
+    setPrev(null)
+    markStarted(sim)
+    setPhase('forge')
+    setLine('The bench is yours. Fire a launcher, or use the tray. What you forge goes up on the wall.')
+  }, [sim])
+
+  /* ---- the brief → the beat ---- */
+  const commitGuess = useCallback(
+    (guess: number) => {
+      if (!level) return
+      logEvent('atoms', band, 'prediction.committed', { variable: `guess:${level.id}`, x: level.tier, predicted: guess, kind: 'point' })
+      setLine(guess === level.guess.answer ? `${level.guess.answer} — right. ${level.open}` : `You said ${guess}. ${level.open}`)
+      setBeat(3)
+      setPhase('beat')
+    },
+    [level, band],
+  )
+
+  /* ---- the beat: three seconds, then catch or build ---- */
+  useEffect(() => {
+    if (phase !== 'beat') return
+    const t1 = setTimeout(() => setBeat(2), 1000)
+    const t2 = setTimeout(() => setBeat(1), 2000)
+    const t3 = setTimeout(() => {
+      if (!level || !challenge) return
+      if (isPairLevel(level)) {
+        setPhase('place')
+      } else if (challenge.gatherSeconds > 0) {
+        setRain({ seed: challenge.seed, kinds: rainFor(challenge.seed, level, 60), startAt: sim.time, startedAtMs: Date.now(), seconds: challenge.gatherSeconds })
+        setGatherLeft(challenge.gatherSeconds)
+        setLine('Two of each is enough. Extra is fine — you will use it later.')
+        setPhase('gather')
+      } else {
+        setPhase('forge')
+      }
+    }, 3000)
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+      clearTimeout(t3)
+    }
+  }, [phase, level, challenge, sim])
+
+  /* ---- the gather round: a catch, not a countdown ---- */
+  const onCatch = useCallback(
+    (k: Kind) => {
+      if (phase !== 'gather') return
+      setCaught((c) => [...c, k])
+    },
+    [phase],
+  )
+  useEffect(() => {
+    if (phase !== 'gather' || !rain || !level) return
+    // The round is timed on the **wall clock**, not on rendered-frame time.
+    // sim.time accumulates clamped frame deltas, so on a slow renderer it
+    // falls behind the child's actual afternoon — a "20 second catch" ran for
+    // closer to a minute, which is a bug in the game before it is a bug in the
+    // test. The rain's *motion* still runs on sim.time, so the drops keep
+    // moving smoothly; only the deadline is real time.
+    const id = setInterval(() => {
+      const left = rain.seconds + 4 - (Date.now() - rain.startedAtMs) / 1000
+      setGatherLeft(Math.max(0, left))
+      if (left <= 0) {
+        const { bank: b, topped } = topUp(bankOf(caught, level), level)
+        setBank(b)
+        setRain(null)
+        setPhase('forge')
+        if (topped) setLine(`You caught ${caught.length}. The launchers top you up this time — build with what is in the tray.`)
+      }
+    }, 150)
+    return () => clearInterval(id)
+  }, [phase, rain, level, caught])
+  /* ---- the bench: place, predict, read ---- */
+  const nextPad: 'a' | 'b' = bench.a === null ? 'a' : bench.b === null ? 'b' : 'b'
+  const placeAtom = useCallback(
+    (z: number) => {
+      setBench((cur) => (cur.a === null ? { ...cur, a: z, predicted: null } : { ...cur, b: z, predicted: null }))
+    },
+    [],
+  )
+  const clearPad = useCallback((slot: 'a' | 'b') => {
+    // Clearing a pad clears the prediction with it. A guess about a pair that
+    // is no longer on the bench is not a guess about anything.
+    setBench((cur) => ({ ...cur, [slot]: null, predicted: null }))
+  }, [])
+  const lockPrediction = useCallback(
+    (n: number) => {
+      setBench((cur) => ({ ...cur, predicted: n }))
+      setPhase('readout')
+      // Logged as evidence, the same shape as the brief's guess: this is the
+      // prediction the round is actually about.
+      if (level) logEvent('atoms', band, 'prediction.committed', { variable: `ratio:${level.id}`, x: level.tier, predicted: n, kind: 'point' })
+    },
+    [level, band],
+  )
+  // What is still allowed on the pads, by symbol — a job's budget, spent.
+  const allowance = useMemo(() => {
+    if (!level || level.target.kind !== 'pair') return {}
+    const spent: Record<string, number> = {}
+    for (const z of [bench.a, bench.b]) {
+      const sym = z === null ? null : ELEMENT_BY_Z[z]?.symbol
+      if (sym) spent[sym] = (spent[sym] ?? 0) + 1
+    }
+    const out: Record<string, number> = {}
+    for (const [sym, n] of Object.entries(level.budget)) out[sym] = n - (spent[sym] ?? 0)
+    return out
+  }, [level, bench])
+
+  /* ---- hand in ---- */
+  const handIn = useCallback(() => {
+    if (!level || !challenge) return
+    const t = trials + 1
+    setTrials(t)
+    const seconds = (Date.now() - startedAt.current) / 1000
+    const { attempt, score: s } = attemptFor(level, challenge, build, t, bank ?? { ...challenge.budget }, seconds, bench)
+    setScore(s)
+    logEvent('atoms', band, 'challenge.handedIn', { presetId: level.id, stage: level.door, score: s.total, hit: attempt.hit })
+    if (attempt.hit) {
+      const openedDoor = recordHandIn(level.id, s.total)
+      setOpened(openedDoor ? level.door + 1 : null)
+      const id = identityOf(build)
+      if (id) {
+        setLit((cur) => {
+          const next = cur.includes(id.z) ? cur : [...cur, id.z]
+          write(LIT_KEY, next)
+          return next
+        })
+      }
+      const entry: JournalEntry = { id: `${level.id}:${Date.now()}`, levelId: level.id, title: level.title, build: { ...build }, score: s, trials: t, by: challenge.by }
+      setJournal((j) => {
+        const next = [entry, ...j].slice(0, 12)
+        write(JOURNAL_KEY, next)
+        return next
+      })
+    } else {
+      setOpened(null)
+    }
+    setPhase('scored')
+  }, [level, challenge, trials, build, bank, band, bench])
+
+  /* ---- the link and the card ---- */
+  const link = useMemo(() => {
+    if (!level || !challenge) return ''
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    return challengeLink(origin, '/atoms', { ...challenge, by: sendableNickname(by) || undefined })
+  }, [level, challenge, by])
+  const card = useMemo(() => {
+    if (!level) return null
+    return shareCardFor(level, build, sendableNickname(by) || undefined, lit, Math.max(1, trials), score?.stars ?? 0)
+  }, [level, build, by, lit, trials, score])
+
+  /* ---- views ---- */
+  const view = useCallback((id: AtomViewId) => setSimView(sim, id), [sim])
+  const onTab = useCallback(
+    (t: 'wall' | 'bench' | 'space') => {
+      setTab(t)
+      if (t === 'wall') view('wall')
+      else if (t === 'bench') view('overview')
+      else setSpaceOpen(true)
+    },
+    [view],
+  )
+
+  const look = useCallback((z: number) => {
     const f = elementFact(z)
     if (!f) return
-    setFactSummonZ(z)
-    setFact({ fact: f, accent: CATEGORY_META[ELEMENT_BY_Z[z].category].tint, key: factKey.current++ })
+    factKey.current += 1
+    setFact({ fact: f, accent: CATEGORY_META[ELEMENT_BY_Z[z].category].tint, key: factKey.current })
   }, [])
-
-  const summon = useCallback(
-    (z: number) => {
-      updateBuild({ protons: z, neutrons: commonNeutrons(z), electrons: z })
-      setFact(null)
-      showNotice(`${ELEMENT_BY_Z[z].name} summoned back to the stage.`)
-    },
-    [updateBuild, showNotice],
-  )
-
-  /* ---- ion held (charge ±1 kept steady for a moment) ---- */
-  useEffect(() => {
-    const charge = build.protons - build.electrons
-    if (sim.demoMode || build.protons === 0 || build.electrons === 0 || Math.abs(charge) !== 1) return
-    const t = window.setTimeout(() => setIonHeld(true), 2500)
-    return () => window.clearTimeout(t)
-  }, [build, sim])
-
-  /* ---- probe / forge ---- */
-  const handleProbe = useCallback(() => {
-    const b = buildRef.current
-    if (b.protons < 1) {
-      showNotice('Nothing on the stage yet — add particles first.')
-      return
-    }
-    if (b.electrons !== b.protons) {
-      showNotice('The probe reads neutral atoms only — balance electrons against protons first.')
-      return
-    }
-    if (fireProbe(sim, BAND_CAPS[getBand()].noise)) {
-      setProbing(true)
-      // First firing: explain what the instrument actually measures.
-      if (!probeExplained.current && !sim.demoMode) {
-        probeExplained.current = true
-        openObjectFact('probe')
-      }
-      if (predictedRef.current !== null && !sim.demoMode) {
-        logEvent('atoms', getBand(), 'prediction.committed', { variable: 'grip', x: b.protons, predicted: predictedRef.current, kind: 'point' })
-      }
-    }
-  }, [sim, showNotice, openObjectFact])
-
-  const handleForge = useCallback(() => {
-    const b = buildRef.current
-    if (forgePlace(sim)) {
-      pendingForge.current = { z: b.protons, neutrons: b.neutrons }
-      setPlacing(true)
-      // Pull back to the overview so the flight to the wall is actually seen.
-      if (sim.viewId === 'stage') {
-        sim.viewId = 'overview'
-        sim.viewSeq += 1
-        setViewId('overview')
-      }
-    }
-  }, [sim])
-
-  const handleReset = useCallback(() => {
-    updateBuild({ protons: 0, neutrons: 0, electrons: 0 })
-    setPredicted(null)
-  }, [updateBuild])
-
-  /* ---- poll the sim for finished animations ---- */
-  useEffect(() => {
-    const t = window.setInterval(() => {
-      if (sim.probeDone !== lastProbeDone.current) {
-        lastProbeDone.current = sim.probeDone
-        setProbing(false)
-        const z = sim.probeZ
-        const el = ELEMENT_BY_Z[z]
-        const y = sim.probeValue
-        setLastGrip(y)
-        setProbed((prev) => ({ ...prev, [z]: y }))
-        const pred = predictedRef.current
-        const reading: GripReading = {
-          id: nextId.current++,
-          z,
-          symbol: el?.symbol ?? '?',
-          period: PERIOD_OF[z] ?? 1,
-          outer: outerElectrons(z),
-          y,
-          repeats: [y],
-          predicted: pred,
-        }
-        setReadings((prev) => [...prev, reading])
-        setPredicted(null)
-        if (!sim.demoMode) {
-          logEvent('atoms', getBand(), 'reading.recorded', {
-            variable: 'grip',
-            x: z,
-            y,
-            repeats: [y],
-            uncertainty: Math.round(y * BAND_CAPS[getBand()].noise),
-            controls: { neutrons: buildRef.current.neutrons },
-            predicted: pred,
-            predictionClose: pred === null ? null : Math.abs(pred - y) <= Math.abs(y) * 0.15,
-            anomalous: false,
-          })
-        }
-      }
-      if (sim.completeSeq !== lastCompleteSeq.current) {
-        lastCompleteSeq.current = sim.completeSeq
-        if (!sim.demoMode) {
-          setElementPop({ z: sim.lastCompleteZ, a: sim.lastCompleteZ + buildRef.current.neutrons })
-          window.clearTimeout(popTimer.current)
-          popTimer.current = window.setTimeout(() => setElementPop(null), 3800)
-        }
-      }
-      if (sim.placeDone !== lastPlaceDone.current) {
-        lastPlaceDone.current = sim.placeDone
-        setPlacing(false)
-        const forged = pendingForge.current
-        pendingForge.current = null
-        if (forged) {
-          setBuilds((prev) => [...prev, { id: nextId.current++, z: forged.z, neutrons: forged.neutrons }])
-          setDiscovered([...sim.discovered])
-          updateBuild({ protons: 0, neutrons: 0, electrons: 0 })
-        }
-      }
-    }, 90)
-    return () => window.clearInterval(t)
-  }, [sim, updateBuild])
-
-  /* ---- missions ---- */
-  const ctx = useMemo<AtomMissionContext>(() => ({ readings, builds, ionHeld, shellOpened }), [readings, builds, ionHeld, shellOpened])
-
-  /* ---- the coach: one line that always says the next move ---- */
-  const coach = useMemo(() => {
-    if (!started || demoStep >= 0 || placing || probing || introStep !== null) return null
-    const { protons, neutrons, electrons } = build
-    if (protons === 0 && electrons === 0) return { text: 'Tap the glowing amber crucible — or its + button — to drop in your first proton.', glow: false }
-    if (protons === 0) return { text: 'Electrons need a nucleus to orbit — add a proton first.', glow: false }
-    const el = ELEMENT_BY_Z[protons]
-    const charge = protons - electrons
-    if (charge > 0) {
-      const room = roomInOuterShell(electrons)
-      const seat =
-        electrons === 0
-          ? ' The first ring seats 2.'
-          : room === 0
-            ? ' The outer ring is full — the next one starts a new ring.'
-            : room !== null
-              ? ` Room for ${room} more in the outer ring.`
-              : ''
-      return { text: `Charge +${charge}: add ${charge} more electron${charge === 1 ? '' : 's'} (cyan) to balance it.${seat}`, glow: false }
-    }
-    if (charge < 0) return { text: `Charge ${charge}: that's an ion — remove ${-charge} electron${charge === -1 ? '' : 's'} to get back to a neutral atom.`, glow: false }
-    if (caps.isotopes && el && stabilityOf(protons, neutrons) !== 'stable')
-      return { text: `${el.name}'s nucleus is shaking — a stable one has ${el.stableN.join(' or ')} neutrons.`, glow: false }
-    if (el && probed[protons] === undefined) return { text: `${el.name} complete! Fire the grip probe to measure how hard it holds its outer electron.`, glow: true }
-    if (el && !discovered.includes(protons)) {
-      const addr = addressLogic(electrons)
-      const where = addr ? ` Its address: row ${addr.row} (${addr.rowWhy}), column ${addr.col} (${addr.colWhy}).` : ''
-      return { text: `Measured! Now press “Forge into the wall”.${where}`, glow: true }
-    }
-    if (el) return { text: `${el.name} is on the wall! Clear the stage and forge the next element — or try an isotope or an ion.`, glow: false }
-    return null
-  }, [started, demoStep, placing, probing, introStep, build, caps, probed, discovered])
-
-  /* ---- camera ---- */
-  const handleView = useCallback(
-    (id: AtomViewId) => {
-      sim.viewId = id
-      sim.viewSeq += 1
-      sim.autoOrbit = false
-      setAutoOrbit(false)
-      setViewId(id)
-    },
-    [sim],
-  )
-  const handleZoomView = useCallback((d: number) => void (sim.viewZoom = d), [sim])
-  const handleToggleOrbit = useCallback(() => {
-    sim.autoOrbit = !sim.autoOrbit
-    setAutoOrbit(sim.autoOrbit)
-  }, [sim])
-  const handleResetView = useCallback(() => {
-    sim.viewReset += 1
-    sim.autoOrbit = false
-    setAutoOrbit(false)
-    setViewId('overview')
-  }, [sim])
 
   useBackHandler(
     useCallback(() => {
@@ -390,256 +560,294 @@ export default function AtomFoundry() {
         setFact(null)
         return true
       }
+      if (spaceOpen) {
+        setSpaceOpen(false)
+        return true
+      }
+      if (phase === 'send') {
+        setPhase(score ? 'scored' : 'forge')
+        return true
+      }
+      if (phase === 'scored' || phase === 'brief') {
+        setPhase('forge')
+        return true
+      }
       return false
-    }, [fact]),
+    }, [fact, spaceOpen, phase, score]),
   )
 
-  /* ---- guided demo ---- */
-  const demoApi = useMemo<AtomDemoApi>(
-    () => ({
-      set: (patch) => updateBuild(patch),
-      get: () => buildRef.current,
-      probe: () => handleProbe(),
-      probeBusy: () => sim.probing,
-      place: () => handleForge(),
-      placeBusy: () => !!sim.placing,
-      view: (v) => handleView(v),
-      resetView: () => handleResetView(),
-      setAutoOrbit: (on) => {
-        sim.autoOrbit = on
-        setAutoOrbit(on)
-      },
-    }),
-    [updateBuild, handleProbe, handleForge, handleView, handleResetView, sim],
-  )
+  /* ---- derived ---- */
+  // During the catch the bank IS the catch, so the tray's badges tick up as drops land.
+  const liveBank = phase === 'gather' && level ? bankOf(caught, level) : bank
+  // A phone has no columns to dock into, so a saved 'left'/'right' floats there.
+  const shownDock: CoachDock = !columns && (dock === 'left' || dock === 'right') ? 'float' : dock
 
-  const startDemo = useCallback(() => {
-    sim.started = true
-    sim.demoMode = true
-    demoSnapshot.current = { discovered: [...sim.discovered], probed: { ...probed }, readingCutoff: nextId.current }
-    setStarted(true)
-    setDemoProgress(0)
-    setDemoStep(0)
-  }, [sim, probed])
+  /**
+   * How much of the canvas's bottom edge the HUD is sitting on, in CSS pixels.
+   *
+   * The scene is drawn behind the whole HUD, so on a short screen the shot's
+   * centre lands under the tray and the room's subject is composed where the
+   * player cannot see it. Telling the camera how tall the furniture is lets it
+   * frame the part of the canvas that is actually visible. Desktop is left
+   * alone: its columns are beside the scene, not on top of it, and its
+   * composition already works.
+   */
+  const hudBottom =
+    tier === 'phone' ? (shownDock === 'float' ? 172 : 110) : tier === 'tablet' ? 80 : 0
+  const spent = useMemo(() => (level ? spentOf(level, build) : { proton: 0, neutron: 0, electron: 0 }), [level, build])
+  const gauge = useMemo(() => (level ? gaugeFor(level, build) : null), [level, build])
+  const aim: Kind | 'hand' | null = useMemo(() => {
+    if (!level || phase !== 'forge') return null
+    const p = nextPart(level, build)
+    return p ?? 'hand'
+  }, [level, phase, build])
+  const onBench = level !== null && isPairLevel(level)
+  /** True when this job wants a prediction before it will show a readout. */
+  const askingRatio = level !== null && level.target.kind === 'pair' && level.target.askRatio
+  const shownLine =
+    phase === 'forge' && level
+      ? ploobLine(level, build, prev)
+      : onBench && (phase === 'place' || phase === 'predict' || phase === 'readout') && level
+        ? benchLine(level, bench)
+        : line
+  const showBench = phase !== 'welcome'
+  const inGame = level !== null
+  const doorOpened = opened ? DOOR_BY_ID[opened] ?? null : null
+  const presence = 1
 
-  const [searchParams] = useSearchParams()
-  const autoDemo = searchParams.get('demo') === '1'
-  const autoDemoDone = useRef(false)
-  useEffect(() => {
-    if (!autoDemo || autoDemoDone.current) return
-    autoDemoDone.current = true
-    const t = window.setTimeout(startDemo, 600)
-    return () => window.clearTimeout(t)
-  }, [autoDemo, startDemo])
-
-  const finishDemo = useCallback(
-    (completed = false) => {
-      logEvent('atoms', getBand(), 'demo.watched', { completed })
-      sim.demoMode = false
-      sim.autoOrbit = false
-      setAutoOrbit(false)
-      setDemoStep(-1)
-      setDemoProgress(0)
-      // The demo's atoms are examples, not evidence: wipe what it forged.
-      const snap = demoSnapshot.current
-      if (snap) {
-        sim.discovered = new Set(snap.discovered)
-        sim.probedGrip = new Map(Object.entries(snap.probed).map(([k, v]) => [Number(k), v]))
-        setDiscovered(snap.discovered)
-        setProbed(snap.probed)
-        setReadings((prev) => prev.filter((r) => r.id < snap.readingCutoff))
-        setBuilds((prev) => prev.filter((b) => b.id < snap.readingCutoff))
-      }
-      setLastGrip(null)
-      updateBuild({ protons: 0, neutrons: 0, electrons: 0 })
-      handleResetView()
-      // The demo teaches the controls; the intro teaches the concepts. Anyone
-      // who has not read it yet gets it at handover.
-      if (!introSeen.current) {
-        introSeen.current = true
-        setIntroStep(0)
-      }
-    },
-    [sim, updateBuild, handleResetView],
-  )
-
-  useEffect(() => {
-    if (demoStep < 0) return
-    if (demoStep >= ATOM_DEMO.length) {
-      finishDemo(true)
-      return
-    }
-    const step = ATOM_DEMO[demoStep]
-    const startedAt = performance.now()
-    const state: Record<string, unknown> = {}
-    let doneFlag = false
-    step.enter?.(demoApi)
-    const advance = () => {
-      if (doneFlag) return
-      doneFlag = true
-      window.clearInterval(timer)
-      setDemoStep((n) => n + 1)
-    }
-    const timer = window.setInterval(() => {
-      const elapsed = performance.now() - startedAt
-      setDemoProgress(Math.min(1, elapsed / step.ms))
-      const early = step.tick?.(demoApi, elapsed, state)
-      if (early === true || elapsed >= step.ms) advance()
-    }, 60)
-    return () => {
-      doneFlag = true
-      window.clearInterval(timer)
-    }
-  }, [demoStep, demoApi, finishDemo])
-
-  const handleStart = useCallback(() => {
-    sim.started = true
-    setStarted(true)
-    if (!introSeen.current) {
-      introSeen.current = true
-      setIntroStep(0)
-    }
-  }, [sim])
-
-  /* ---- panels ---- */
-  const controlsPanel = (
-    <AtomPanel
-      build={build}
-      status={{ probing, placing, lastGrip, predicted }}
-      cloudView={cloudView}
-      notice={notice}
-      onChange={updateBuild}
-      onProbe={handleProbe}
-      onForge={handleForge}
-      onPredict={setPredicted}
-      onReset={handleReset}
-      onDemo={startDemo}
-      onCloud={setCloudView}
-      embedded={compact}
+  const ourSpace = (
+    <OurSpace
+      entries={journal}
+      incoming={incoming && phase === 'welcome' ? { by: incoming.challenge.by, title: incoming.level.title } : incoming && !inGame ? { by: incoming.challenge.by, title: incoming.level.title } : null}
+      onPlay={() => {
+        setSpaceOpen(false)
+        play()
+      }}
+      onRemix={() => {
+        if (!level) {
+          play()
+          return
+        }
+        setPhase('send')
+      }}
+      compact={compact}
     />
   )
-  const dataLab = (
-    <AtomDataLab
-      readings={readings}
-      onDelete={(id) => setReadings((prev) => prev.filter((r) => r.id !== id))}
-      onClear={() => setReadings([])}
-      embedded={compact}
-    />
-  )
-  const missionCard = <AtomMissionCard ctx={ctx} embedded={compact} />
+
+  /* ---- Ploob's line, wherever the player has put it ---- */
+  const coachNode =
+    phase !== 'beat' && shownLine ? (
+      shownDock === 'hidden' ? (
+        <PloobChip
+          unread={heard !== shownLine}
+          onOpen={() => {
+            setHeard(shownLine)
+            setDockAnd(columns ? 'left' : 'float')
+          }}
+        />
+      ) : (
+        <PloobLine
+          text={shownLine}
+          compact={compact}
+          dock={shownDock}
+          columns={columns}
+          onDock={() => setDockAnd(nextDock(shownDock, columns))}
+          onHide={() => {
+            setHeard(shownLine)
+            setDockAnd('hidden')
+          }}
+        />
+      )
+    ) : null
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-[#4A3826]">
+    <div className="fixed inset-0 overflow-hidden bg-[#E9CFA3]" data-phase={phase} data-hud-bottom={hudBottom} data-testid="foundry">
       <SceneErrorBoundary>
         <Suspense fallback={<SceneFallback />}>
-          <AtomScene
+          <ForgeScene
             sim={sim}
             protons={build.protons}
             neutrons={build.neutrons}
             electrons={build.electrons}
-            cloudView={cloudView && caps.electronCloud}
-            showMass={caps.isotopes}
-            showNeutrons={caps.isotopes}
-            discovered={discovered}
-            probed={probed}
-            onAdd={handleAdd}
-            onTile={openTileFact}
-            onFact={openObjectFact}
+            discovered={lit}
+            showNeutrons
+            rain={rain}
+            bench={onBench ? bench : null}
+            showProduct={phase === 'readout' || phase === 'scored' || phase === 'send'}
+            phone={tier === 'phone'}
+            hudBottom={hudBottom}
+            onAdd={onCrucible}
+            onCatch={onCatch}
+            onTile={look}
             onContextLost={() => setContextLost(true)}
           />
         </Suspense>
       </SceneErrorBoundary>
 
-      <div className="pointer-events-none fixed inset-0 z-10" style={{ background: 'radial-gradient(ellipse at center, transparent 62%, rgba(46, 32, 16, 0.28) 100%)' }} />
-
-      {compact ? (
-        <div className="hud pointer-events-none fixed inset-0 z-20">
-          <div className={`absolute top-3 right-3 left-3 flex flex-wrap items-center gap-2 transition-opacity duration-300 ${demoStep >= 0 ? 'pointer-events-none opacity-70' : ''}`}>
-            <BackToMenu />
-            <BandSwitch />
-            <ProgressChip compact />
+      {/* the HUD: three columns, one toolbar, Ploob's line */}
+      {showBench && (
+        <div className="hud pointer-events-none fixed inset-0 z-20 flex flex-col gap-2 p-2 sm:gap-3 sm:p-3">
+          <TopBar tab={tab} onTab={onTab} band={band} compact={compact} presence={presence} left={<BackToMenu />} />
+          <div className="flex min-h-0 flex-1 gap-3">
+            {columns && <div className={cn('flex min-h-0 flex-col gap-2', tier === 'desktop' ? 'w-[18.5rem] shrink-0' : 'w-[11.5rem] shrink-0')}>
+              {/* the panel owns the column's slack and clips inside itself, so
+                  a docked Ploob underneath never squeezes a card off the end */}
+              <div className="min-h-0 flex-1 overflow-hidden">
+                {onBench && level ? (
+                  <ElementPicker bench={bench} slot={nextPad} allowance={allowance} compact={tier !== 'desktop'} onPick={placeAtom} onClear={clearPad} />
+                ) : (
+                  <ElementsPanel onLook={look} onWall={() => onTab('wall')} compact={tier !== 'desktop'} />
+                )}
+              </div>
+              {shownDock === 'left' && coachNode}
+            </div>}
+            <div className="flex min-w-0 flex-1 flex-col justify-between">
+              <div className="flex items-start justify-between gap-2">
+                {inGame && level && phase !== 'brief' ? (
+                  <ForgeGauge level={level} build={build} bench={bench} trials={trials + 1} gather={phase === 'gather' ? { left: gatherLeft, total: challenge?.gatherSeconds ?? 0 } : null} compact={dense} />
+                ) : (
+                  <IdentityChip build={build} />
+                )}
+                {/* The nuclide chip is the forge's reading. At the bench there
+                    is no single atom to name, and "No atom yet · 0 p⁺" beside
+                    two atoms on the pads is just wrong. */}
+                {inGame && !onBench && <IdentityChip build={build} />}
+              </div>
+              <div className="flex flex-col gap-2">
+                {(shownDock === 'float' || shownDock === 'hidden') && coachNode && (
+                  <div className="flex justify-start pl-2 sm:pl-8">{coachNode}</div>
+                )}
+                {columns && phase === 'predict' && level && <RatioDial level={level} bench={bench} compact={false} onLock={lockPrediction} />}
+                {columns && phase === 'readout' && (
+                  <Readout bench={bench} locked={bench.predicted !== null || !askingRatio} compact={false} onHandIn={handIn} />
+                )}
+                {/* No side columns means no picker; the strip is where the
+                    elements live on a phone. Without it Door 2 could not be
+                    played on a phone at all. */}
+                {phase === 'place' && level && !columns && (
+                  <ElementStrip bench={bench} slot={nextPad} allowance={allowance} onPick={placeAtom} onClear={clearPad} />
+                )}
+                {phase === 'place' && level && (
+                  <div className="atlas-plate pointer-events-auto flex w-full max-w-[30rem] items-center justify-between gap-3 p-3" data-testid="place">
+                    <div className="min-w-0">
+                      <span className="atlas-eyebrow">On the bench</span>
+                      <p className="text-[13px] leading-snug font-black text-[#2A2823]">
+                        {bench.a === null || bench.b === null ? 'Put an atom on each pad.' : 'Two atoms down. Ready?'}
+                      </p>
+                    </div>
+                    <AtlasButton
+                      onClick={() => setPhase(askingRatio ? 'predict' : 'readout')}
+                      tone="primary"
+                      invite
+                      disabled={bench.a === null || bench.b === null}
+                      className="shrink-0 py-2"
+                      ariaLabel={askingRatio ? 'Say what forms' : 'See what formed'}
+                    >
+                      {askingRatio ? 'Say what forms' : 'See what formed'}
+                    </AtlasButton>
+                  </div>
+                )}
+                {(phase === 'forge' || phase === 'gather') && (
+                  <ForgeTray
+                    bank={liveBank}
+                    spent={spent}
+                    aim={aim}
+                    canUndo={history.length > 0 && phase === 'forge'}
+                    canRedo={future.length > 0 && phase === 'forge'}
+                    hit={!!gauge?.hit}
+                    free={!inGame}
+                    compact={dense}
+                    onAdd={add}
+                    onRemove={remove}
+                    onUndo={undo}
+                    onRedo={redo}
+                    onReset={reset}
+                    onSend={() => setPhase('send')}
+                    onHandIn={handIn}
+                  />
+                )}
+              </div>
+            </div>
+            {columns && (
+              <div className={cn('flex min-h-0 flex-col gap-2', tier === 'desktop' ? 'w-[18.5rem] shrink-0' : 'w-[12rem] shrink-0')}>
+                <div className="min-h-0 flex-1 overflow-hidden">{ourSpace}</div>
+                {shownDock === 'right' && coachNode}
+              </div>
+            )}
           </div>
-          <HudDrawer
-            muted={demoStep >= 0}
-            tabs={[
-              { id: 'controls', label: caps.vocab === 'simple' ? 'Forge' : 'Controls', icon: <SlidersHorizontal className="h-4 w-4" />, content: controlsPanel },
-              { id: 'data', label: 'Data', icon: <LineChart className="h-4 w-4" />, badge: readings.length ? String(readings.length) : undefined, badgeTone: 'good' as const, content: dataLab },
-              { id: 'missions', label: 'Missions', icon: <Trophy className="h-4 w-4" />, content: missionCard },
-            ]}
-          />
-          {fact && (
-            <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center px-2 pb-16">
-              <AtomFactCard active={fact} onClose={() => setFact(null)} onSummon={factSummonZ !== null ? () => summon(factSummonZ) : undefined} />
-            </div>
-          )}
-          {elementPop && (
-            <div className="absolute inset-x-0 top-16 z-30 px-2">
-              <ElementPop z={elementPop.z} a={elementPop.a} />
-            </div>
-          )}
-          {coach && (
-            <div className="absolute inset-x-0 bottom-[4.4rem] px-3">
-              <CoachChip text={coach.text} glow={coach.glow} />
-            </div>
-          )}
-          {demoStep >= 0 && (
-            <div className="absolute inset-x-0 top-0 bottom-16">
-              <AtomDemoOverlay step={demoStep} progress={demoProgress} onSkip={() => finishDemo(false)} />
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="hud pointer-events-none fixed inset-0 z-20">
-          <div className={`absolute top-4 bottom-4 left-4 flex flex-col items-start gap-2 transition-opacity duration-300 ${demoStep >= 0 ? 'pointer-events-none opacity-70' : ''}`}>
-            <div className="shrink-0">
-              <ProgressChip compact={short} />
-            </div>
-            <div className="shrink-0">
-              <BandSwitch />
-            </div>
-            <div className="shrink-0">
-              <BackToMenu />
-            </div>
-            <div className="min-h-0 grow" />
-            {controlsPanel}
-          </div>
-          <div className="absolute top-4 right-4 bottom-4 flex w-[min(23rem,calc(100vw-5.5rem))] flex-col items-end gap-2">
-            {!short && <AtomAboutCard />}
-            {!short && <AtomTicker />}
-            <div className="min-h-0 grow" />
-            <div className="min-h-0 shrink">{missionCard}</div>
-            {dataLab}
-          </div>
-          <div className="absolute inset-x-0 top-4 hidden justify-center sm:flex">
-            <ViewControls autoOrbit={autoOrbit} onZoom={handleZoomView} onToggleOrbit={handleToggleOrbit} onReset={handleResetView} viewId={viewId} onView={(id) => handleView(id as AtomViewId)} views={ATOM_VIEWS} />
-          </div>
-          {fact && (
-            <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center px-4">
-              <AtomFactCard active={fact} onClose={() => setFact(null)} onSummon={factSummonZ !== null ? () => summon(factSummonZ) : undefined} />
-            </div>
-          )}
-          {elementPop && (
-            <div className="absolute inset-x-0 top-28 z-30">
-              <ElementPop z={elementPop.z} a={elementPop.a} />
-            </div>
-          )}
-          {coach && (
-            <div className="absolute inset-x-0 bottom-5">
-              <CoachChip text={coach.text} glow={coach.glow} />
-            </div>
-          )}
-          {demoStep >= 0 && <AtomDemoOverlay step={demoStep} progress={demoProgress} onSkip={() => finishDemo(false)} />}
         </div>
       )}
 
-      {!started && <AtomWelcome onStart={handleStart} onDemo={startDemo} />}
-      {introStep !== null && (
-        <IntroCards
-          step={introStep}
-          onNext={() => setIntroStep((s) => (s !== null && s + 1 < INTRO_STEPS.length ? s + 1 : null))}
-          onSkip={() => setIntroStep(null)}
+      {/* On a phone the dial and the readout are sheets.
+          Inside the HUD's flex column nothing bounded their height, so the
+          card ran past the bottom of a 390 px screen and took "Lock it in"
+          with it — the one control the round cannot continue without. A sheet
+          is bounded by the viewport by construction, which is the whole reason
+          this layout already uses one for Our Space. */}
+      {!columns && (phase === 'predict' || phase === 'readout') && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center p-2">
+          <div className="pointer-events-auto w-full max-w-md">
+            {phase === 'predict' && level && <RatioDial level={level} bench={bench} compact onLock={lockPrediction} />}
+            {phase === 'readout' && <Readout bench={bench} locked={bench.predicted !== null || !askingRatio} compact onHandIn={handIn} />}
+          </div>
+        </div>
+      )}
+
+      {/* the phone's Our Space, as a sheet */}
+      {spaceOpen && !columns && (
+        <div className="pointer-events-auto fixed inset-0 z-30 flex items-end justify-center bg-[#2A2823]/35 p-2" onClick={() => setSpaceOpen(false)}>
+          <div className="max-h-[80vh] w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            {ourSpace}
+          </div>
+        </div>
+      )}
+
+      {phase === 'welcome' && (
+        <ForgeWelcome level={incoming ? incoming.level : levelForBand(band as Band, nextDoor().id)} incoming={incoming ? { by: incoming.challenge.by, title: incoming.level.title } : null} onPlay={play} onExplore={explore} />
+      )}
+      {phase === 'brief' && level && <ForgeBrief level={level} onCommit={commitGuess} onClose={() => setPhase('forge')} />}
+      {phase === 'beat' && <ForgeBeat count={beat} />}
+      {phase === 'scored' && level && score && (
+        <ForgeScore
+          level={level}
+          build={build}
+          score={score}
+          trials={trials}
+          spent={spent}
+          bank={bank}
+          opened={doorOpened}
+          onNext={() => {
+            // Go through actually goes through, now that there is somewhere to
+            // go. It was written when Door 2 did not exist and the honest move
+            // was back to the map; a door that opens and then hands you a menu
+            // is a door that did not open.
+            const door = nextDoor()
+            if (door.built && doorOpened && door.id === doorOpened.id) {
+              const lvl = levelForBand(band as Band, door.id)
+              begin(lvl, challengeFor(lvl, band, soloSeed(SESSION_CODE, lvl)))
+              return
+            }
+            setPhase('welcome')
+          }}
+          onSend={() => setPhase('send')}
+          onAgain={() => {
+            reset()
+            setPhase('forge')
+          }}
+          onClose={() => setPhase('forge')}
         />
       )}
+      {phase === 'send' && card && (
+        <ForgeSend card={card} build={build} link={link} by={by} onBy={setBy} onClose={() => setPhase(score ? 'scored' : 'forge')} />
+      )}
+
+      {fact && (
+        <div className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center px-4">
+          <AtomFactCard active={fact} onClose={() => setFact(null)} />
+        </div>
+      )}
+      <span className="sr-only" data-testid="doors">{DOORS.map((d) => d.name).join(' · ')}</span>
+      <span className="sr-only" data-testid="presence"><Users className="h-3 w-3" />{presence}</span>
       <InputHints />
       <ProgressToasts />
       {contextLost && <WebglFallback />}

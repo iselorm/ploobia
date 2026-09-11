@@ -148,7 +148,7 @@ async function sweepPointer(page, moves) {
 /* The front door: Play first, and an Explorer never sees the brief   */
 /* ================================================================== */
 {
-  const page = await open(390, 844, true)
+  const page = await open(844, 390, true)
   await page.evaluate(() => localStorage.setItem('ploobia.band.v1', JSON.stringify('explorer')))
   await page.reload({ waitUntil: 'load' })
   await page.waitForTimeout(1800)
@@ -167,7 +167,8 @@ async function sweepPointer(page, moves) {
   )
   check('the welcome card shows five doors', states.length === 5, states.join(','))
   check('the first is open and the second is shut', states[0] === 'open' && states[1] === 'shut', states.join(','))
-  check('the unbuilt ones are on the map, undiscovered', states.slice(2).every((s) => s === 'undiscovered'))
+  check('the third door is built and shut behind the second', states[2] === 'shut', states.join(','))
+  check('the unbuilt ones are on the map, undiscovered', states.slice(3).every((s) => s === 'undiscovered'), states.join(','))
   check('and none of them says coming soon', !(await page.evaluate(() => /coming soon/i.test(document.body.innerText))))
   await resilientClick(page.getByTestId('door-2'), { label: 'door 2' })
   await page.waitForTimeout(300)
@@ -498,7 +499,20 @@ async function sweepPointer(page, moves) {
   await resilientClick(page.getByRole('button', { name: /Hand it in/ }).first(), {
     label: 'Hand it in',
   })
-  await waitFor(async () => (await run(page)).phase === 'scored')
+  // The reveal card carries its own "Hand it in" and folds away on its own;
+  // on a saturated host the real click can arrive after the card has gone,
+  // which resilientClick reads as "landed". The gauge's button is still
+  // there, so press it from inside the page if the round has not scored.
+  if (!(await waitFor(async () => (await run(page)).phase === 'scored', 20000))) {
+    const pressed = await page.evaluate(() => {
+      const el = [...document.querySelectorAll('button')].find((b) => /Hand it in/.test(b.textContent || '') || /Hand it in/.test(b.getAttribute('aria-label') || ''))
+      if (!el) return false
+      el.click()
+      return true
+    })
+    console.log(`   · Hand it in: pressed again from inside the page (${pressed})`)
+    await waitFor(async () => (await run(page)).phase === 'scored', 20000)
+  }
   const scored = await run(page)
   check('handing in scores the run', scored.phase === 'scored' && scored.score !== null)
   await page.waitForTimeout(400)
@@ -590,10 +604,11 @@ async function sweepPointer(page, moves) {
 }
 
 /* ================================================================== */
-/* Portrait: the round has to be playable on the phone it was made for */
+/* The phone: the round has to be playable on the phone it was made for */
+/* (Landscape since 2026-09-06 — portrait shows the turn-your-phone card.) */
 /* ================================================================== */
 {
-  const page = await open(390, 844, true)
+  const page = await open(844, 390, true)
   await start(page)
   await tap(page, 'Challenge')
   await page.waitForTimeout(400)
@@ -637,18 +652,20 @@ async function sweepPointer(page, moves) {
   await toTheLab(page)
   await page.waitForTimeout(600)
 
-  /* ---- the target gauge is on screen, at the top, never behind a tab ---- */
-  const gauge = await page.evaluate(() => {
-    const el = document.querySelector('[data-testid="target-gauge"]')
+  /* ---- the target is on screen, in the top strip, never behind a tab ----
+     On the phone tier the full gauge folds to a one-line strip; tapping it
+     opens the gauge. */
+  const strip = await page.evaluate(() => {
+    const el = document.querySelector('[data-testid="target-strip"]')
     if (!el) return null
     const r = el.getBoundingClientRect()
-    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + 12)
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
     return { top: r.top, bottom: r.bottom, h: r.height, onTop: !!hit && el.contains(hit) }
   })
-  check('the target gauge is on screen', gauge !== null && gauge.top >= 0 && gauge.bottom <= 844, JSON.stringify(gauge))
-  check('and nothing is drawn over it', gauge !== null && gauge.onTop)
-  check('and it is not behind a tab', gauge !== null && gauge.top < 300, `top ${Math.round(gauge?.top ?? 0)}`)
-  check('and folds so the specimen stays visible', gauge !== null && gauge.h < 230, `${Math.round(gauge?.h ?? 0)}px tall`)
+  check('the target strip is on screen', strip !== null && strip.top >= 0 && strip.bottom <= 390, JSON.stringify(strip))
+  check('and nothing is drawn over it', strip !== null && strip.onTop)
+  check('and it sits in the top strip', strip !== null && strip.top < 60, `top ${Math.round(strip?.top ?? 0)}`)
+  check('and is one line tall so the specimen stays visible', strip !== null && strip.h <= 56, `${Math.round(strip?.h ?? 0)}px tall`)
   check('the coach is still talking inside the challenge', (await page.getByTestId('coach').count()) === 1)
 
   await page.close()

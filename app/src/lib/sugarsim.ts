@@ -199,6 +199,7 @@ export interface TrialSnapshot {
   water: number
   specimenId: string
   girdled: boolean
+  xylemCut: boolean
 }
 
 export interface SugarSim {
@@ -226,6 +227,12 @@ export interface SugarSim {
   specimenId: string
   /** The phloem ring has been cut. Xylem keeps running; sugar cannot pass. */
   girdled: boolean
+  /**
+   * The wood has been cut — the other blade. Nothing reaches the leaf from
+   * the roots; it transpires what it holds and wilts. Never true together with
+   * `girdled`: the knife has two edges and makes one cut.
+   */
+  xylemCut: boolean
 
   /* ---- clocks ---- */
   /** Wall-clock seconds since mount, for idle animation. */
@@ -314,6 +321,7 @@ export function createSugarSim(): SugarSim {
 
     specimenId: DEFAULT_SPECIMEN,
     girdled: false,
+    xylemCut: false,
 
     time: 0,
     plantHours: 8,
@@ -379,7 +387,36 @@ export function simEnv(sim: SugarSim): LabEnv {
 }
 
 export function simSolve(sim: SugarSim): SugarSolve {
-  return solveSugarLine(simSpecimen(sim), simEnv(sim), sim.carbon, { girdled: sim.girdled })
+  return solveSugarLine(simSpecimen(sim), simEnv(sim), sim.carbon, simSurgery(sim))
+}
+
+/** Which cut, if any, the stem carries. */
+export function simSurgery(sim: SugarSim): { girdled: boolean; xylemCut: boolean } {
+  return { girdled: sim.girdled, xylemCut: sim.xylemCut }
+}
+
+export type CutId = 'none' | 'phloem' | 'xylem'
+
+/** One knife, two edges, one cut at a time. */
+export function setCut(sim: SugarSim, cut: CutId): void {
+  sim.girdled = cut === 'phloem'
+  sim.xylemCut = cut === 'xylem'
+}
+
+export function cutOf(sim: SugarSim): CutId {
+  return sim.girdled ? 'phloem' : sim.xylemCut ? 'xylem' : 'none'
+}
+
+/**
+ * Bank starch in the leaf — what a gather round of daylight puts away for the
+ * night. Clamped to what this specimen's leaf can hold; the leaf's free sugar
+ * is topped up too, because a leaf that banked a day's surplus is not empty
+ * of the sugar it was banking.
+ */
+export function bankStarch(sim: SugarSim, mg: number): void {
+  const specimen = simSpecimen(sim)
+  sim.carbon.leafStarch = clamp(mg, 0, specimen.starchMax)
+  sim.carbon.leafSugar = Math.max(sim.carbon.leafSugar, specimen.leafSugarStart)
 }
 
 /** Swap the specimen and start its stores fresh. */
@@ -390,6 +427,7 @@ export function loadSpecimen(sim: SugarSim, id: string): void {
   sim.carbon = createCarbonState(specimen)
   sim.turgor = 1
   sim.girdled = false
+  sim.xylemCut = false
   sim.tracerActive = false
   sim.tracerWatch = 0
   sim.tracerDistance = 0
@@ -404,10 +442,44 @@ export function loadSpecimen(sim: SugarSim, id: string): void {
 function stepTurgor(sim: SugarSim, solve: SugarSolve, dtHours: number): void {
   const specimen = simSpecimen(sim)
   const buffer = 0.5 + 3 * specimen.leaf.waterStore
-  const balance = solve.leaf.uptake - solve.leaf.transpiration
-  sim.turgor = clamp01(sim.turgor + (balance * 0.22 * dtHours) / buffer)
+  if (sim.xylemCut) {
+    // Nothing comes up the wood. The leaf spends what it holds through its
+    // stomata while they are open and through the cuticle after they shut —
+    // a cut shoot does not stop wilting when its pores close, it only slows.
+    const loss = solve.leaf.transpiration + CUTICLE_LOSS
+    // Faster than the pot-fed relaxation: a leaf with no supply at all
+    // spends its store outright, and a cut shoot in daylight is limp within a
+    // few plant hours — the model suite pins three.
+    sim.turgor = clamp01(sim.turgor - (loss * TURGOR_RATE * CUT_HASTE * dtHours) / buffer)
+    return
+  }
+  /*
+   * The plain lab's turgor relaxes toward what the pot can support, rather
+   * than integrating uptake minus transpiration. The raw balance ran slightly
+   * negative at every ordinary setting, so a leaf left alone in a wet pot
+   * drifted to limp over a plant-hour — and a girdle brief refused the correct
+   * reading for "limp leaves" on a stem whose wood was never cut. A pot at
+   * 0.7 supports a firm leaf; below about 0.3 it cannot (the drought mission
+   * still bites); healing a cut lets the leaf drink back up at the roots'
+   * pace. The pot still dries with transpiration, as before.
+   */
+  const supported = clamp01(sim.soilWater + 0.3)
+  sim.turgor = clamp01(sim.turgor + (supported - sim.turgor) * Math.min(1, (TURGOR_RATE * 2.2 * dtHours) / buffer))
   sim.soilWater = clamp01(sim.soilWater - solve.leaf.transpiration * 0.014 * dtHours)
 }
+
+/** How fast the leaf's water state moves, per unit of loss per plant hour. */
+const TURGOR_RATE = 0.22
+/** How much faster a leaf with no supply spends its store than a pot-fed one recovers. */
+const CUT_HASTE = 2.0
+
+/**
+ * Water a leaf loses through its cuticle with every stoma shut, in the same
+ * units `solveLeaf` reports transpiration (a wide-open bean leaf loses about
+ * 0.56). Small next to open stomata — a few per cent, as in the Hatches'
+ * day — and the reason a cut flower still droops in a closed room.
+ */
+const CUTICLE_LOSS = 0.05
 
 /**
  * Advance everything by `rawDt` real seconds. Called once per frame from the
@@ -497,6 +569,7 @@ export function snapshotTrial(sim: SugarSim): TrialSnapshot {
     water: sim.soilWater * 100,
     specimenId: sim.specimenId,
     girdled: sim.girdled,
+    xylemCut: sim.xylemCut,
   }
 }
 
@@ -525,6 +598,7 @@ export function makeReading(
     anomalous: findAnomaly(repeats),
     specimenId: snap.specimenId,
     girdled: snap.girdled,
+    xylemCut: snap.xylemCut,
     controls: { light: snap.light, co2: snap.co2, temp: snap.tempC, water: snap.water },
     predicted,
     audit: {

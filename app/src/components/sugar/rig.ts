@@ -240,6 +240,8 @@ export interface SugarRig {
   /** The stem centreline, from the soil surface to the growing tip. */
   stem: THREE.CatmullRomCurve3
   stemGeometry: THREE.BufferGeometry
+  /** The whole stem, no slot — for the gather round. */
+  stemClosedGeometry: THREE.BufferGeometry
   /** The pale pith inside the cutaway. */
   pithGeometry: THREE.BufferGeometry
   /** Where the cutaway slot starts, and how wide it is, in radians. */
@@ -312,7 +314,11 @@ export function buildRig(specimen: Specimen): SugarRig {
   // The pith has to stop well short of the vascular ring, or it simply hides
   // the two pipes the whole cutaway exists to show. (It did, in the first cut.)
   const pithGeometry = taperedTube(stem, 44, 14, b.stemR0 * 0.3, b.stemR1 * 0.3)
-  owned.push(stemGeometry, pithGeometry)
+  // The same stem with nothing left out: what the gather round shows. The
+  // cutaway is a lab drawing, and the round is the one moment the plant should
+  // read as a plant standing in the light rather than a diagram of one.
+  const stemClosedGeometry = taperedTube(stem, 44, 16, b.stemR0, b.stemR1)
+  owned.push(stemGeometry, pithGeometry, stemClosedGeometry)
 
   /* ---- vascular strands inside the slot ---- */
   // ONE bundle, opened out side by side rather than the true radial stack.
@@ -430,6 +436,7 @@ export function buildRig(specimen: Specimen): SugarRig {
     specimenId: specimen.id,
     stem,
     stemGeometry,
+    stemClosedGeometry,
     pithGeometry,
     slot,
     xylem,

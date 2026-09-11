@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Check, Copy, Flag, Hourglass, Swords, Target, X } from 'lucide-react'
 import Ploob2 from '@/components/brand/Ploob2'
 import { Tile } from '@/components/ui/tile'
@@ -16,7 +16,9 @@ import {
 } from '@/lib/challenge'
 import {
   STAGE_NAMES,
-  SUGAR_RESOURCES,
+  BANK_META,
+  bankFromLight,
+  dayWorldOf,
   challengesForBand,
   levelForBand,
   metricLabel,
@@ -24,7 +26,7 @@ import {
   type SugarResource,
 } from '@/lib/sugarchallenge'
 import { isStageOpen } from '@/lib/campaign'
-import { AtlasButton, Chip, Meter } from './AtlasKit'
+import { AtlasButton, Chip, Dial, Meter } from './AtlasKit'
 
 /**
  * The challenge layer's whole user interface.
@@ -80,6 +82,7 @@ export function metricPhrase(metric: string): string {
   if (metric === 'velocity') return 'sap speed'
   if (metric === 'gain') return 'net carbon gain'
   if (metric === 'sugarDay') return 'sugar banked'
+  if (metric === 'sugarNight') return 'sugar sent down the line'
   if (metric === 'mgPerMl') return 'sugar per water'
   return metricLabel(metric).toLowerCase()
 }
@@ -94,6 +97,7 @@ export function goalSentence(c: Challenge): string {
   const what = metricPhrase(c.goal.metric)
   const n = `${c.goal.target} ${c.goal.unit}`
   if (c.loop === 'keep' && c.goal.metric === 'sugarDay') return `Bank ${n} ${spanWord(c)}`
+  if (c.goal.metric === 'sugarNight') return `Send ${n} down the line before dawn`
   if (c.goal.direction === 'near') return `Land ${what} within ${c.goal.tolerance} of ${n}`
   if (c.goal.direction === 'atMost') return `Keep ${what} at or under ${n}`
   return `Get ${what} to ${n} or better`
@@ -105,9 +109,12 @@ function goalHeadline(c: Challenge): { lead: string; number: string; tail: strin
   const what = metricPhrase(c.goal.metric)
   if (c.loop === 'keep' && c.goal.metric === 'sugarDay')
     return { lead: 'Bank ', number: n, tail: ` of sugar ${spanWord(c)}${c.condition === 'leafFirm' ? ' — with the leaf still firm' : ''}.` }
+  if (c.goal.metric === 'sugarNight')
+    return { lead: 'Send ', number: n, tail: ' of sugar down the line before dawn, with the sun off.' }
   if (c.goal.direction === 'near')
     return { lead: `Land ${what} at `, number: n, tail: `, give or take ${c.goal.tolerance}.` }
-  if (c.goal.direction === 'atMost') return { lead: `Keep ${what} under `, number: n, tail: '.' }
+  if (c.goal.direction === 'atMost')
+    return { lead: `Keep ${what} under `, number: n, tail: c.condition === 'leafFirm' ? ' — with the leaves still firm.' : '.' }
   return { lead: `Get ${what} to `, number: n, tail: ' or better.' }
 }
 
@@ -143,7 +150,7 @@ export function ChallengeBrief({
   incoming: Challenge | null
   rival: number | null
   /** The campaign stage the brief opens on. */
-  stage?: 1 | 2
+  stage?: 1 | 2 | 3
   onBegin: (c: Challenge) => void
   onClose: () => void
 }) {
@@ -159,6 +166,14 @@ export function ChallengeBrief({
    */
   const [showList, setShowList] = useState(false)
   const [showRoom, setShowRoom] = useState(false)
+  /* The guess: committed once per brief; the answer lands the moment it is. */
+  const [guessValue, setGuessValue] = useState<number | null>(null)
+  const [locked, setLocked] = useState(false)
+  // A new brief is a new guess.
+  useEffect(() => {
+    setGuessValue(null)
+    setLocked(false)
+  }, [pickedId])
 
   const picked = presets.find((p) => p.id === pickedId) ?? presets[0]
   /**
@@ -202,6 +217,38 @@ export function ChallengeBrief({
           </Tile>
         </div>
 
+        {picked?.guess && !incoming && (
+          <div data-testid="brief-guess" className="mt-2 rounded-xl border border-[#E4DCC9] bg-[#F6F2E8] px-3 py-2">
+            <p className="atlas-serif text-[15px] leading-tight font-semibold text-[#2A2823]">{picked.guess.question}</p>
+            {!locked ? (
+              <div className="mt-1 flex items-end gap-2">
+                <div className="flex-1">
+                  <Dial
+                    label="Your guess"
+                    value={guessValue ?? (picked.guess.min + picked.guess.max) / 2}
+                    display={guessValue === null ? 'not set — move it' : `${guessValue} ${picked.guess.unit}`}
+                    min={picked.guess.min}
+                    max={picked.guess.max}
+                    step={picked.guess.step}
+                    color="#D9A441"
+                    onChange={setGuessValue}
+                  />
+                </div>
+                <AtlasButton tone="primary" onClick={() => setLocked(true)} disabled={guessValue === null} ariaLabel="Lock in the guess">
+                  Lock it in
+                </AtlasButton>
+              </div>
+            ) : (
+              <div className="mt-1.5 flex items-start gap-2">
+                <Chip tone={Math.abs((guessValue ?? 0) - picked.guess.answer) <= picked.guess.step * 2 ? 'good' : 'warn'}>
+                  you said {guessValue} {picked.guess.unit} · it is {picked.guess.answer} {picked.guess.unit}
+                </Chip>
+                <p className="text-[11.5px] leading-snug font-bold text-[#2A2823]">{picked.guess.reveal}</p>
+              </div>
+            )}
+          </div>
+        )}
+
         {headline && (
           <h2
             data-testid="brief-headline"
@@ -216,9 +263,13 @@ export function ChallengeBrief({
 
         <p className="mt-2 text-[12px] leading-relaxed font-semibold text-[#5F5A4E]">
           {incoming
-            ? offer!.loop === 'keep'
-              ? 'A whole day plays out on its own. You hold one slider — how far the hatches may open — and the plant closes them further whenever it must.'
-              : `${offer!.gatherSeconds} seconds to gather light, carbon and water out of the air. After that the dials only go as far as what you caught — so this time you can run out.`
+            ? dayWorldOf(offer!).night
+              ? `${offer!.gatherSeconds} seconds of daylight to bank as starch. Then the sun goes off and the line runs on what you banked — the night's one lever is the temperature.`
+              : offer!.loop === 'keep'
+                ? 'A whole day plays out on its own. You hold one slider — how far the hatches may open — and the plant closes them further whenever it must.'
+                : offer!.budget.parcels !== undefined
+                  ? `${offer!.budget.parcels} tracer parcels. Release one, time it between the marks, read the speed — and change what needs changing before the next.`
+                  : `${offer!.gatherSeconds} seconds to gather light, carbon and water out of the air. After that the dials only go as far as what you caught — so this time you can run out.`
             : picked?.brief}
         </p>
 
@@ -242,7 +293,14 @@ export function ChallengeBrief({
               <Chip tone="good">
                 <Target className="h-3 w-3" /> Target: {goalSentence(offer).replace(/^(Get|Land|Keep) /, '')}
               </Chip>
-              {offer.loop === 'keep' ? (
+              {dayWorldOf(offer).night ? (
+                <>
+                  <Chip>
+                    <Hourglass className="h-3 w-3" /> {offer.gatherSeconds}s to bank daylight
+                  </Chip>
+                  <Chip>☾ one night · 75 s</Chip>
+                </>
+              ) : offer.loop === 'keep' ? (
                 <>
                   {offer.condition === 'leafFirm' && <Chip tone="good">💧 leaf firm at the end</Chip>}
                   <Chip>
@@ -250,10 +308,22 @@ export function ChallengeBrief({
                     {Number((offer.world ?? '').split(':')[1]) > 12 ? 'a day and a night · 3 min' : 'one plant-day · 90 s'}
                   </Chip>
                 </>
+              ) : offer.budget.parcels !== undefined ? (
+                <>
+                  <Chip>◉ {offer.budget.parcels} parcels</Chip>
+                  {offer.condition === 'leafFirm' && <Chip tone="good">💧 leaves still firm</Chip>}
+                </>
               ) : (
-                <Chip>
-                  <Hourglass className="h-3 w-3" /> {offer.gatherSeconds}s to gather
-                </Chip>
+                <>
+                  {offer.condition === 'leafFirm' && <Chip tone="good">💧 leaves still firm</Chip>}
+                  {offer.gatherSeconds > 0 ? (
+                    <Chip>
+                      <Hourglass className="h-3 w-3" /> {offer.gatherSeconds}s to gather
+                    </Chip>
+                  ) : (
+                    <Chip>the jars are full — no gather</Chip>
+                  )}
+                </>
               )}
               <Chip>{BAND_META[offer.band].label}</Chip>
               <Chip title="The world this challenge builds">Room {roomCode(offer.seed)}</Chip>
@@ -264,7 +334,13 @@ export function ChallengeBrief({
               onClick={() => onBegin(offer)}
               className="mt-3 w-full py-2.5 text-[13px]"
             >
-              {offer.loop === 'keep' ? 'Start the day' : 'Start gathering'}
+              {dayWorldOf(offer).night
+                ? 'Start banking'
+                : offer.loop === 'keep'
+                  ? 'Start the day'
+                  : offer.gatherSeconds > 0
+                    ? 'Start gathering'
+                    : 'Into the lab'}
             </AtlasButton>
           </>
         )}
@@ -297,7 +373,11 @@ export function ChallengeBrief({
                     key={p.id}
                     disabled={!!p.stage && !isStageOpen(p.stage)}
                     title={p.stage && !isStageOpen(p.stage) ? `Hand in any level of stage ${p.stage - 1} first` : undefined}
-                    onClick={() => setPickedId(p.id)}
+                    onClick={() => {
+                      setPickedId(p.id)
+                      setGuessValue(null)
+                      setLocked(false)
+                    }}
                     className={cn(
                       'rounded-xl border px-3 py-2 text-left transition-all active:scale-[0.99]',
                       p.id === picked?.id
@@ -359,28 +439,40 @@ function BankRow({
   bank,
   budget,
   compact,
+  night = false,
 }: {
   bank: ResourceBudget
   budget: ResourceBudget
   compact?: boolean
+  /** A night shift's light jar reads as the starch it becomes. */
+  night?: boolean
 }) {
+  // The jars are whatever the brief granted — three from the sky, one of
+  // light for a night, or three parcels and a capped lab for the tracer.
+  const keys = Object.keys(budget).filter((k) => BANK_META[k])
+  const cols = keys.length >= 3 ? 'grid-cols-3' : keys.length === 2 ? 'grid-cols-2' : 'grid-cols-1'
   return (
-    <div className={cn('grid gap-1.5', compact ? 'grid-cols-3' : 'grid-cols-3')}>
-      {SUGAR_RESOURCES.map((r) => {
-        const have = bank[r.id] ?? 0
-        const cap = budget[r.id] ?? 0
+    <div className={cn('grid gap-1.5', compact ? cols : cols)}>
+      {keys.map((k) => {
+        const r = BANK_META[k]
+        const have = bank[k] ?? 0
+        const cap = budget[k] ?? 0
         const full = cap > 0 && have >= cap - 1e-6
+        const starch = night && k === 'light'
         return (
           <div
-            key={r.id}
+            key={k}
             className="rounded-lg border border-[#E4DCC9] bg-[#FCFAF4]/92 px-2 py-1 backdrop-blur-md"
           >
-            <div className="flex items-baseline justify-between gap-1">
-              <span className="text-[10.5px] font-black tracking-[0.08em] text-[#6B6555] uppercase">
-                {r.label}
+            {/* Three jars share a 16-rem plate on the desktop, so the label
+                sits over the number rather than beside it: a jar that has to
+                shorten its own name is a jar nobody can read. */}
+            <div className="flex flex-col leading-tight">
+              <span className="text-[9.5px] font-black tracking-[0.06em] text-[#6B6555] uppercase">
+                {starch ? 'Starch banked' : r.label}
               </span>
-              <span className="text-[11px] font-extrabold text-[#2A2823] tabular-nums">
-                {Math.round(have)}
+              <span className="text-[12px] font-extrabold text-[#2A2823] tabular-nums">
+                {starch ? `${Math.round(bankFromLight(have))} mg` : Math.round(have)}
               </span>
             </div>
             <div className="mt-1">
@@ -405,7 +497,16 @@ function gatherLine(
   budget: ResourceBudget,
   secondsLeft: number,
   ready: boolean,
+  night = false,
 ): string {
+  if (night) {
+    const frac = (budget.light ?? 0) > 0 ? (bank.light ?? 0) / (budget.light as number) : 1
+    if (ready) return 'The sun is going. Every shaft you catch is starch the leaf puts away — and starch is all the line will have tonight.'
+    if (frac >= 0.999) return 'The bank is full. Nothing more to put away — let the night come.'
+    if (secondsLeft <= 5) return 'Last few seconds of light — sweep the shafts.'
+    if (frac < 0.25) return 'Barely anything banked yet. Light comes down the sun lanes, up high — sweep through the shafts.'
+    return `${Math.round(frac * 100)}% banked. The more you put away now, the longer the line runs after dark.`
+  }
   if (ready)
     return 'Light comes down in shafts. Carbon drifts across the leaves. Water rises off the soil. Catch all three — you will need all three.'
   const frac = (k: SugarResource) => ((budget[k] ?? 0) > 0 ? (bank[k] ?? 0) / (budget[k] as number) : 1)
@@ -447,6 +548,7 @@ export function GatherHud({
   bank,
   budget,
   caught,
+  challenge = null,
   onDone,
 }: {
   secondsLeft: number
@@ -458,11 +560,14 @@ export function GatherHud({
   budget: ResourceBudget
   /** The most recent catch, for the little flash. */
   caught: { kind: SugarResource; n: number } | null
+  /** The round's challenge, for a night's jar to read as starch. */
+  challenge?: Challenge | null
   onDone: () => void
 }) {
   const frac = total > 0 ? secondsLeft / total : 0
   const urgent = !ready && secondsLeft <= 5
-  const line = gatherLine(bank, budget, secondsLeft, ready)
+  const night = !!challenge && dayWorldOf(challenge).night
+  const line = gatherLine(bank, budget, secondsLeft, ready, night)
   return (
     <div className="pointer-events-none fixed inset-0 z-30" data-testid="gather-hud">
       <div className="absolute inset-x-3 top-3 mx-auto flex max-w-[36rem] flex-col gap-2">
@@ -480,11 +585,11 @@ export function GatherHud({
               <Meter value={frac} color={urgent ? '#C0453C' : '#3E7C43'} height={5} />
             </div>
           </div>
-          <AtlasButton onClick={onDone} className="pointer-events-auto shrink-0" disabled={ready}>
-            To the lab
+          <AtlasButton onClick={onDone} className="pointer-events-auto shrink-0" disabled={ready} ariaLabel="To the lab">
+            {night ? 'Let the night come' : 'To the lab'}
           </AtlasButton>
         </div>
-        <BankRow bank={bank} budget={budget} compact />
+        <BankRow bank={bank} budget={budget} compact night={night} />
         <p className="px-1 text-center text-[10.5px] font-bold text-[#6B6555]">
           What you catch is what the dials will reach.
         </p>
@@ -561,35 +666,50 @@ export function Handover({
   onEnter: () => void
 }) {
   const h = goalHeadline(challenge)
+  const night = dayWorldOf(challenge).night
   return (
     <div className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-[#F6F2E8]/72 p-3 backdrop-blur-[3px]">
       <div
         data-testid="handover"
         className="atlas-plate atlas-arrive w-full max-w-md p-4"
       >
-        <span className="atlas-eyebrow">Round over · here is what you caught</span>
+        <span className="atlas-eyebrow">{night ? 'Dusk · here is what you banked' : 'Round over · here is what you caught'}</span>
         <div className="mt-2">
-          <BankRow bank={granted} budget={challenge.budget} />
+          <BankRow bank={granted} budget={challenge.budget} night={night} />
         </div>
         <h2 className="atlas-serif mt-3.5 text-[21px] leading-tight font-semibold text-[#2A2823]">
-          Now use it. {h.lead}
+          {night ? 'Now the night. ' : 'Now use it. '}
+          {h.lead}
           <span className="text-[#2F6134]">{h.number}</span>
           {h.tail}
         </h2>
         <p className="mt-2 text-[12px] leading-relaxed font-semibold text-[#5F5A4E]">
-          The dials only go as far as your jars. Each measurement spends a little of them, so a
-          few good trials beat many wild ones.
+          {night
+            ? 'The night runs on its own, on the starch you banked. Watch the tap on the cut stem — and hold the temperature: a cool night burns less of the bank, but sap that is too cold thickens and slows.'
+            : 'The dials only go as far as your jars. Each measurement spends a little of them, so a few good trials beat many wild ones.'}
         </p>
         <div className="mt-3 flex items-center gap-3">
           <ol className="flex-1 text-[11.5px] leading-relaxed font-extrabold text-[#8B8471]">
-            <li>1 &nbsp;Set the dials</li>
-            <li>
-              2 &nbsp;Press <span className="text-[#2A2823]">Run measurement</span>
-            </li>
-            <li>3 &nbsp;Read the gauge</li>
+            {night ? (
+              <>
+                <li>1 &nbsp;The sun goes off</li>
+                <li>
+                  2 &nbsp;Hold the <span className="text-[#2A2823]">temperature</span>
+                </li>
+                <li>3 &nbsp;Read the gauge — and the bank</li>
+              </>
+            ) : (
+              <>
+                <li>1 &nbsp;Set the dials</li>
+                <li>
+                  2 &nbsp;Press <span className="text-[#2A2823]">Run measurement</span>
+                </li>
+                <li>3 &nbsp;Read the gauge</li>
+              </>
+            )}
           </ol>
           <AtlasButton tone="primary" invite onClick={onEnter} className="flex-1 py-2.5 text-[13px]">
-            Into the lab
+            {night ? 'Into the night' : 'Into the lab'}
           </AtlasButton>
         </div>
       </div>
@@ -634,6 +754,8 @@ export function TargetGauge({
   trials,
   affordable,
   compact,
+  fold = compact,
+  refused = null,
   onFinish,
   onQuit,
 }: {
@@ -646,6 +768,15 @@ export function TargetGauge({
   trials: number
   affordable: boolean
   compact: boolean
+  /**
+   * Fold the jars and the hand-in behind a toggle. Right for the phone's
+   * pop-over, where height is scarce; wrong for the desktop plate, where the
+   * hand-in is the round's one primary action and must never hide behind a
+   * fold once the result card has gone (it folds itself away after 9 s).
+   */
+  fold?: boolean
+  /** Why the last reading did not count, when a condition refused it. */
+  refused?: string | null
   onFinish: () => void
   onQuit: () => void
 }) {
@@ -798,14 +929,21 @@ export function TargetGauge({
 
       {!affordable && (
         <p className="mt-1 text-[10.5px] leading-snug font-bold text-[#96591C]">
-          Too dear to run at these settings — turn something down, or run it at night.
+          {challenge.budget.parcels !== undefined && (bank.parcels ?? 0) < 1
+            ? 'No parcels left. Hand in the best run, or play again.'
+            : 'Too dear to run at these settings — turn something down, or run it at night.'}
+        </p>
+      )}
+      {refused && (
+        <p data-testid="gauge-refused" className="mt-1 text-[10.5px] leading-snug font-bold text-[#9A302A]">
+          {refused}
         </p>
       )}
 
       {/* On a phone the bank and the hand-in fold behind a tap; on desktop
           there is room for all of it. Hand-in also lives on every result
           card, so nobody has to find this. */}
-      {compact && (
+      {fold && (
         <Tile
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open || hit}
@@ -815,7 +953,7 @@ export function TargetGauge({
           {open || hit ? 'Jars and hand-in ▾' : 'Jars and hand-in ▸'}
         </Tile>
       )}
-      {(!compact || open || hit) && (
+      {(!fold || open || hit) && (
         <div className="mt-1.5 flex flex-col gap-1.5">
           <BankRow bank={bank} budget={challenge.budget} />
           <AtlasButton
@@ -834,30 +972,109 @@ export function TargetGauge({
   )
 }
 
+/**
+ * The gauge folded into one line, for the phone tier's top strip: the name,
+ * the bar, the last reading, the gap. A tap opens the full gauge beneath it
+ * — jars and hand-in included — and a tap closes it again. Same numbers,
+ * same words, a size that leaves the scene the frame.
+ */
+export function TargetStrip(props: Parameters<typeof TargetGauge>[0]) {
+  const [open, setOpen] = useState(false)
+  const { challenge, last, best, hit, trials, refused } = props
+  const g = challenge.goal
+  const axisMax = niceAxisMax(challenge, best, last)
+  const W = 120
+  const x = (v: number) => 2 + (116 * Math.max(0, Math.min(axisMax, v))) / axisMax
+  const gap = shortfall(challenge, last)
+  return (
+    <div className="relative min-w-[15rem] flex-1">
+      <Tile
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Target"
+        aria-expanded={open}
+        data-testid="target-strip"
+        className={cn(
+          'atlas-plate flex h-9 w-full items-center gap-2 px-2.5 text-left',
+          refused && 'border-[#EDC2BC]',
+        )}
+      >
+        <span className="atlas-eyebrow shrink-0">
+          <Target className="h-3 w-3" /> {metricPhrase(g.metric)}
+        </span>
+        <svg viewBox={`0 0 ${W} 12`} className="h-3 min-w-[4rem] flex-1" aria-hidden>
+          <rect x="2" y="3" width="116" height="6" rx="3" fill="#EAE4D4" />
+          {g.direction === 'atLeast' && <rect x={x(g.target)} y="3" width={118 - x(g.target)} height="6" rx="3" fill="#C8DFC2" />}
+          {g.direction === 'atMost' && <rect x="2" y="3" width={x(g.target) - 2} height="6" rx="3" fill="#C8DFC2" />}
+          {g.direction === 'near' && (
+            <rect x={x(g.target - g.tolerance)} y="3" width={Math.max(3, x(g.target + g.tolerance) - x(g.target - g.tolerance))} height="6" rx="3" fill="#C8DFC2" />
+          )}
+          {last !== null && <rect x="2" y="3" width={Math.max(0, x(last) - 2)} height="6" rx="3" fill={gap.hit ? '#3E7C43' : '#E8A33D'} />}
+          <line x1={x(g.target)} y1="0" x2={x(g.target)} y2="12" stroke="#2F6134" strokeWidth="1.5" />
+          {last !== null && <circle cx={x(last)} cy="6" r="4" fill="#FCFAF4" stroke={gap.hit ? '#2F6134' : '#2A2823'} strokeWidth="1.5" />}
+        </svg>
+        <span className="shrink-0 text-[12px] font-black text-[#2A2823] tabular-nums">
+          {last === null ? '—' : last.toFixed(g.metric === 'velocity' ? 2 : 1)}
+          <span className="ml-0.5 text-[9px] font-bold text-[#8B8471]">/ {g.target}</span>
+        </span>
+        <Chip tone={hit ? 'good' : last === null ? 'neutral' : 'warn'}>{last === null ? `${trials} trials` : gap.text}</Chip>
+      </Tile>
+      {open && (
+        <div className="absolute top-10 left-0 z-30 w-[22rem] max-w-[calc(100vw-1rem)]">
+          <TargetGauge {...props} compact />
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ------------------------------------------------------------------ */
 /* The score                                                           */
 /* ------------------------------------------------------------------ */
 
-function Stars({ n }: { n: number }) {
+function Stars({ n, stagger = false }: { n: number; stagger?: boolean }) {
   return (
     <span aria-label={`${n} of 3 stars`} className="text-[18px] leading-none">
-      {'★'.repeat(n)}
-      <span className="text-[#D8D0BC]">{'★'.repeat(3 - n)}</span>
+      {[0, 1, 2].map((i) =>
+        i < n ? (
+          <span
+            key={i}
+            className={cn('text-[#D9A441]', stagger && 'atlas-star')}
+            style={stagger ? { animationDelay: `${640 + i * 220}ms` } : undefined}
+          >
+            ★
+          </span>
+        ) : (
+          <span key={i} className="text-[#D8D0BC]">
+            ★
+          </span>
+        ),
+      )}
     </span>
   )
 }
 
-function Part({ label, value, why }: { label: string; value: number; why: string }) {
+/** A value that arrives: 0 on mount, then the real number, so the meter's transition runs. */
+function useArrive(value: number, delayMs = 0): number {
+  const [v, setV] = useState(0)
+  useEffect(() => {
+    const t = window.setTimeout(() => setV(value), delayMs + 30)
+    return () => window.clearTimeout(t)
+  }, [value, delayMs])
+  return v
+}
+
+function Part({ label, value, why, delay = 0 }: { label: string; value: number; why: string; delay?: number }) {
+  const v = useArrive(value, delay)
   return (
     <div>
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-[11px] font-extrabold text-[#4A4438]">{label}</span>
         <span className="text-[11px] font-extrabold text-[#8B8471] tabular-nums">
-          {Math.round(value * 100)}%
+          {Math.round(v * 100)}%
         </span>
       </div>
       <div className="mt-0.5">
-        <Meter value={value} color="#3E7C43" height={5} />
+        <Meter value={v} color="#3E7C43" height={5} />
       </div>
       <p className="mt-0.5 text-[10.5px] leading-snug font-semibold text-[#8B8471]">{why}</p>
     </div>
@@ -949,7 +1166,7 @@ export function ScoreCard({
             <h2 className="atlas-serif text-[24px] leading-tight font-semibold text-[#2A2823]">
               {score.total} <span className="text-[15px] text-[#8B8471]">/ 1000</span>
             </h2>
-            <Stars n={score.stars} />
+            <Stars n={score.stars} stagger />
           </div>
           <Tile
             onClick={onClose}
@@ -997,11 +1214,13 @@ export function ScoreCard({
           <Part
             label="Accuracy"
             value={score.accuracy}
+            delay={0}
             why="How near the mark you got. Worth the most, because it is the only part that is about understanding the plant."
           />
           <Part
             label={keep ? 'Standing' : 'Economy'}
             value={score.economy}
+            delay={180}
             why={
               keep
                 ? 'Whether the leaf was firm at the end. A number banked by a plant that is dying is not banked.'
@@ -1011,6 +1230,7 @@ export function ScoreCard({
           <Part
             label={keep ? 'Water' : 'Thrift'}
             value={score.thrift}
+            delay={360}
             why={
               keep
                 ? 'How much of the water a wide-open leaf would have lost you kept in the pot.'
