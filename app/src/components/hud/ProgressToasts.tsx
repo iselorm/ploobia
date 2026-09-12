@@ -23,7 +23,7 @@ interface Toast {
  *   the Sugar Line's target plate during a round. Given as a Tailwind left
  *   class (e.g. `left-[38rem]`); the toasts then centre in what is left.
  */
-export default function ProgressToasts({ clearLeft }: { clearLeft?: string | null } = {}) {
+export default function ProgressToasts({ clearLeft, top }: { clearLeft?: string | null; top?: string } = {}) {
   const [toasts, setToasts] = useState<Toast[]>([])
 
   useEffect(
@@ -45,7 +45,7 @@ export default function ProgressToasts({ clearLeft }: { clearLeft?: string | nul
   if (!toasts.length) return null
   return (
     <div
-      className={`pointer-events-none fixed top-[4.25rem] right-0 z-30 flex flex-col items-center gap-1.5 sm:top-16 ${clearLeft ?? 'left-0'}`}
+      className={`pointer-events-none fixed right-0 z-30 flex flex-col items-center gap-1.5 ${top ?? 'top-[4.25rem] sm:top-16'} ${clearLeft ?? 'left-0'}`}
       aria-live="polite"
     >
       {toasts.map((t) => (
