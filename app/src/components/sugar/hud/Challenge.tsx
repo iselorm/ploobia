@@ -1,3 +1,4 @@
+import { notePrediction } from '@/lib/curriculum'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Check, Copy, Flag, Hourglass, Swords, Target, X } from 'lucide-react'
 import Ploob2 from '@/components/brand/Ploob2'
@@ -234,7 +235,17 @@ export function ChallengeBrief({
                     onChange={setGuessValue}
                   />
                 </div>
-                <AtlasButton tone="primary" onClick={() => setLocked(true)} disabled={guessValue === null} ariaLabel="Lock in the guess">
+                <AtlasButton
+                  tone="primary"
+                  onClick={() => {
+                    setLocked(true)
+                    // The first line of the evidence record: the guess, in words.
+                    const g = picked.guess
+                    if (guessValue !== null && g) notePrediction(picked.id, `${guessValue} ${g.unit} (it is ${g.answer} ${g.unit})`)
+                  }}
+                  disabled={guessValue === null}
+                  ariaLabel="Lock in the guess"
+                >
                   Lock it in
                 </AtlasButton>
               </div>

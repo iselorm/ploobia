@@ -749,8 +749,10 @@ async function start(page) {
 }
 {
   const page = await open(844, 390, true)
-  // One real tap first, so the input model switches to touch sizing.
-  await page.touchscreen.tap(422, 300)
+  // One real tap first, so the input model switches to touch sizing — on
+  // the backdrop beside the welcome card, which on the phone tier is
+  // compact enough that its Play button sits at the centre of the screen.
+  await page.touchscreen.tap(30, 200)
   await page.waitForTimeout(200)
   await start(page)
   await page.waitForTimeout(600)

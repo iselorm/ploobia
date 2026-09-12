@@ -37,12 +37,12 @@ export default function CampaignMap({
 }) {
   useCampaign()
   return (
-    <div className="mt-4" data-testid="campaign-map">
+    <div className={compact ? 'mt-1.5' : 'mt-4'} data-testid="campaign-map">
       <div className="flex flex-wrap items-baseline justify-between gap-x-2">
         <span className="atlas-eyebrow">The journey</span>
         <span className="text-[9.5px] font-extrabold text-[#8B8471]">a hand-in opens the next door</span>
       </div>
-      <div className={cn('mt-1.5 grid gap-1.5', compact ? 'grid-cols-5' : 'grid-cols-5')}>
+      <div className={cn('grid grid-cols-5 gap-1.5', compact ? 'mt-1' : 'mt-1.5')}>
         {CAMPAIGN.map((s) => {
           const state = doorState(s)
           const enterable = state === 'open' || state === 'done'
@@ -59,7 +59,8 @@ export default function CampaignMap({
                 else onShut(s, `${s.name} is shut. Nobody has discovered what is behind it yet.`)
               }}
               className={cn(
-                'flex flex-col items-center rounded-[12px] border px-1 py-1.5 text-center transition-all active:scale-[0.98]',
+                'flex flex-col items-center rounded-[12px] border px-1 text-center transition-all active:scale-[0.98]',
+                compact ? 'py-0.5' : 'py-1.5',
                 state === 'done' && 'border-[#3E7C43] bg-[#E7F1E3]',
                 state === 'open' && 'atlas-invite border-[#2F6134] bg-[#FCFAF4]',
                 state === 'shut' && 'border-[#E4DCC9] bg-[#F6F2E8]',

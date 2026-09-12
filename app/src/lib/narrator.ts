@@ -216,3 +216,64 @@ export function speakable(text: string): string {
     .replace(/\s+/g, ' ')
     .trim()
 }
+
+/* ------------------------------------------------------------------ */
+/* Reading a page                                                     */
+/* ------------------------------------------------------------------ */
+
+export interface ReadOptions {
+  /** Fired as the voice reaches each word: the character offset into `text`. */
+  onWord?: (charIndex: number, charLength: number) => void
+  onEnd?: () => void
+}
+
+/**
+ * Read a page aloud, word by word.
+ *
+ * The field guide lights each term as the voice reaches it and fires the
+ * term's verb — text, voice and scene sharing one vocabulary. Unlike `speak`,
+ * this is a learner's explicit ask ("Read to me"), so it always interrupts,
+ * always repeats, and switches narration on for the session if it was off:
+ * a tap on a button that says "read to me" is the gesture browser policy
+ * wants, and refusing it would be the one thing the button must not do.
+ *
+ * `boundary` events are the only per-word signal the Web Speech API gives.
+ * Some voices never fire them (notably some Android engines); then the page
+ * still reads, just without the highlight — nothing here is load-bearing.
+ * Returns false when the device cannot speak at all.
+ */
+export function readAloud(text: string, options: ReadOptions = {}): boolean {
+  const s = synth()
+  if (!s) return false
+  started = true
+  if (!enabled) setNarration(true)
+  pickVoice()
+  const line = text.replace(/\s+/g, ' ').trim()
+  if (!line) return false
+  try {
+    s.cancel()
+    const u = new SpeechSynthesisUtterance(line)
+    if (voice) u.voice = voice
+    u.lang = voice?.lang ?? 'en-GB'
+    u.rate = 0.92
+    u.pitch = 1.02
+    u.volume = 1
+    if (options.onWord) {
+      const onWord = options.onWord
+      u.onboundary = (e) => {
+        if (e.name && e.name !== 'word') return
+        onWord(e.charIndex, e.charLength ?? 0)
+      }
+    }
+    if (options.onEnd) {
+      const onEnd = options.onEnd
+      u.onend = () => onEnd()
+      u.onerror = () => onEnd()
+    }
+    s.speak(u)
+    lastSpoken = line.slice(0, MAX_CHARS)
+    return true
+  } catch {
+    return false
+  }
+}

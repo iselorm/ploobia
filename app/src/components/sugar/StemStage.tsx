@@ -157,6 +157,46 @@ function pipeMaterials() {
 }
 
 /* ------------------------------------------------------------------ */
+/* The spotlight                                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * One pipe lit for a few seconds when the field guide names it. An additive
+ * halo sleeve round the pipe rather than a material swap: the pipes' physical
+ * materials are per-mesh instances, and a sleeve costs one draw call while
+ * it is visible and none when it is not. Transparent, `depthTest` off, like
+ * the other halos — the transmission buffer ignores it.
+ */
+function Spotlight({ sim }: { sim: SugarSim }) {
+  const ref = useRef<THREE.Mesh>(null)
+  const mat = useMemo(
+    () => new THREE.MeshBasicMaterial({ color: '#FFD98A', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
+    [],
+  )
+  useFrame(() => {
+    const m = ref.current
+    if (!m) return
+    const left = sim.spotlightUntil - sim.time
+    const on = !!sim.spotlight && left > 0
+    m.visible = on
+    if (!on) return
+    const x = sim.spotlight === 'xylem' ? XYLEM_X : PHLOEM_X
+    const r = (sim.spotlight === 'xylem' ? XYLEM_R : PHLOEM_R) * 1.35
+    m.position.x = x
+    m.scale.set(r, 1, r)
+    mat.color.set(sim.spotlight === 'xylem' ? '#9BD0FF' : '#FFD98A')
+    // In fast, out slow: a pulse the eye catches, then a fade.
+    mat.opacity = Math.min(1, left) * 0.28
+  })
+  return (
+    <mesh ref={ref} position={[XYLEM_X, 0, 0]} visible={false} renderOrder={5}>
+      <cylinderGeometry args={[1, 1, TOP - BOTTOM, 24, 1, true]} />
+      <primitive object={mat} attach="material" />
+    </mesh>
+  )
+}
+
+/* ------------------------------------------------------------------ */
 /* The two pipes                                                      */
 /* ------------------------------------------------------------------ */
 
@@ -227,6 +267,7 @@ function Pipes({ sim }: { sim: SugarSim }) {
           phloem sap crawl at a metre an hour instead of tearing along. */}
       <SievePlates plates={plates} />
       <CompanionCells />
+      <Spotlight sim={sim} />
     </group>
   )
 }

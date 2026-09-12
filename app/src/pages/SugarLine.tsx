@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { ArrowLeft, Clock, RotateCcw, Sprout, Swords } from 'lucide-react'
+import { ArrowLeft, BookOpen, Clock, RotateCcw, Sprout, Swords } from 'lucide-react'
 import SceneErrorBoundary from '@/components/SceneErrorBoundary'
 import BandSwitch from '@/components/hud/BandSwitch'
 import InputHints from '@/components/hud/InputHints'
@@ -15,6 +15,12 @@ import { checkpointBlip, landChord, loadClick, nudge, startAudio } from '@/lib/a
 import { useBackHandler, useInputAction } from '@/lib/input'
 import { useLayoutTier, usePortraitPhone } from '@/hooks/use-layout'
 import TurnCard from '@/components/game/TurnCard'
+import { PageCard, type GuideLocation } from '@/components/game/PageCard'
+import { SectionLedger } from '@/components/game/SectionLedger'
+import { BOOK_0610 } from '@/books/biology'
+import { findSection, pagesFor, sectionForStage } from '@/lib/page'
+import { registerSugarVerbs } from '@/lib/sugarverbs'
+import { noteHandIn, useCurriculum } from '@/lib/curriculum'
 import {
   narrationAvailable,
   narrationOn,
@@ -197,6 +203,24 @@ function ChallengeChip({ onClick, invite = false }: { onClick: () => void; invit
 }
 
 /** Capitalise the first letter of a coach line. */
+function GuideChip({ onClick, invite = false, open = false }: { onClick: () => void; invite?: boolean; open?: boolean }) {
+  return (
+    <Tile
+      onClick={onClick}
+      aria-label="Field guide"
+      aria-pressed={open}
+      data-testid="guide-chip"
+      className={cn(
+        'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-extrabold',
+        open ? 'border-[#2A2823] bg-[#2A2823] text-[#FBF8EF]' : 'border-[#E4DCC9] bg-[#FCFAF4]/94 text-[#4A4438]',
+        invite && !open && 'atlas-invite',
+      )}
+    >
+      <BookOpen className="h-3.5 w-3.5" /> {invite && !open ? 'Explain it' : 'Guide'}
+    </Tile>
+  )
+}
+
 function cap(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1)
 }
@@ -212,7 +236,22 @@ export default function SugarLine() {
   const compact = tier === 'phone'
   const portraitPhone = usePortraitPhone()
   /** Which edge sheet is open on the phone tier, if any. */
-  const [sheet, setSheet] = useState<'conditions' | 'data' | null>(null)
+  const [sheet, setSheet] = useState<'conditions' | 'data' | 'guide' | null>(null)
+  /**
+   * The field guide, pulled open from inside the room. While it is open it
+   * takes the parts column (decision 2, 11 Sep); the parts come back the
+   * moment a practical starts, and the page returns when the round is over
+   * to ask for the explanation that closes the hand-in's record.
+   */
+  const [guide, setGuide] = useState<GuideLocation | null>(null)
+  const guideOpenRef = useRef(false)
+  guideOpenRef.current = guide !== null
+  const curriculum = useCurriculum()
+  /** A hit hand-in waiting for its explanation — the guide chip invites. */
+  const guideOwed = useMemo(
+    () => Object.values(curriculum.pending).some((p) => p.cabinet === 'photosynthesis'),
+    [curriculum],
+  )
   const stereo = useStereo()
 
   const [started, setStarted] = useState(false)
@@ -710,7 +749,8 @@ export default function SugarLine() {
       sim.viewId = v.id
       sim.viewSeq += 1
       setViewId(v.id)
-      setTipOpen(true)
+      // A page that flies the stage should not also drop a tip on it.
+      setTipOpen(!guideOpenRef.current)
     },
     [sim],
   )
@@ -1103,7 +1143,37 @@ export default function SugarLine() {
       score: run.score.total,
       hit: run.score.hit,
     })
-  }, [run.phase, run.challenge, run.score, run.trials])
+    // Three lines of the evidence record land here; the fourth — the
+    // explanation — is asked for on the guide's practical page, and only
+    // then does anything stamp. A miss records nothing.
+    if (run.score.hit) {
+      const bandNow = getBand()
+      const stamps = new Set<string>()
+      for (const ch of BOOK_0610.chapters)
+        for (const sec of ch.sections)
+          for (const pg of sec.pages)
+            if (pg.practical && pg.practical.level[bandNow] === presetId) pg.practical.stamps.forEach((id) => stamps.add(id))
+      const g = run.challenge.goal
+      noteHandIn({
+        cabinet: 'photosynthesis',
+        source: presetId,
+        action: `light ${Math.round(sim.light * 100)} %, CO₂ ${Math.round(sim.co2 * CO2_MAX_PPM)} ppm, ${Math.round(sim.tempC)} °C, water ${Math.round(sim.soilWater * 100)} %${sim.night ? ', night' : ''}${sim.girdled ? ', ring cut' : ''}${sim.xylemCut ? ', wood cut' : ''}`,
+        observed: `${g.metric} ${run.best === null ? '—' : Math.round(run.best * 100) / 100} ${g.unit}`.trim(),
+        stamps: [...stamps],
+      })
+      if (stamps.size) {
+        for (const ch of BOOK_0610.chapters)
+          for (const sec of ch.sections) {
+            const pages = pagesFor(sec, bandNow)
+            const i = pages.findIndex((pg) => pg.practical && pg.practical.level[bandNow] === presetId)
+            if (i >= 0) {
+              setGuide({ sectionId: sec.id, page: i })
+              return
+            }
+          }
+      }
+    }
+  }, [run.phase, run.challenge, run.score, run.trials, sim])
 
   /**
    * The day starts the moment the countdown ends. The hook owns the phase;
@@ -1169,6 +1239,56 @@ export default function SugarLine() {
     },
     [sim],
   )
+
+  /**
+   * The field guide's verbs — what a word on a page can do in this room.
+   * Bound to the live handlers so a page goes through the same caps as a
+   * slider, and unbound on unmount so no page can move a cabinet that is not
+   * on screen.
+   */
+  useEffect(
+    () =>
+      registerSugarVerbs({
+        stage: handleStage,
+        view: handleView,
+        patch: patchConditions,
+        humidity: (h) => {
+          sim.humidity = h
+        },
+        hatch: (h) => {
+          handleStage('hatches')
+          handleHatch(h)
+        },
+        vision: (on) => {
+          sim.vision = on
+          setVision(on)
+        },
+        water: handleWater,
+        tracer: handleTracer,
+        bankStarch: (mg) => bankStarch(sim, mg),
+        specimen: handleSpecimen,
+        spotlight: (tissue) => {
+          sim.spotlight = tissue
+          sim.spotlightUntil = sim.time + 3
+        },
+      }),
+    [sim, handleStage, handleView, patchConditions, handleHatch, handleWater, handleTracer, handleSpecimen],
+  )
+
+  const openGuide = useCallback(
+    (sectionId?: string) => {
+      setGuide((g) => {
+        if (sectionId) return { sectionId, page: 0 }
+        if (g) return g
+        const s = sectionForStage(BOOK_0610, sim.stage)
+        return { sectionId: s?.id ?? BOOK_0610.chapters[0].sections[0].id, page: 0 }
+      })
+      setTipOpen(false)
+      if (compact) setSheet('guide')
+    },
+    [sim, compact],
+  )
+  const guideSection = guide ? findSection(BOOK_0610, guide.sectionId) : undefined
   /** An Explorer's finger on the thumb holds the day; older bands' days do not wait. */
   const handleHold = useCallback(
     (held: boolean) => {
@@ -1716,6 +1836,9 @@ export default function SugarLine() {
             )}
             <ProgressChip compact />
             {!inChallenge && (
+              <GuideChip open={sheet === 'guide'} invite={guideOwed} onClick={() => (sheet === 'guide' ? setSheet(null) : openGuide())} />
+            )}
+            {!inChallenge && (
               <ChallengeChip invite={readings.length > 0 && !challengeSeen.current} onClick={() => run.open(null)} />
             )}
           </div>
@@ -1732,7 +1855,7 @@ export default function SugarLine() {
                   'pointer-events-auto absolute top-1/2 z-40 -translate-y-1/2 rounded-r-xl border border-l-0 border-[#E4DCC9] bg-[#FCFAF4]/94 px-1.5 py-3 text-[9.5px] font-black tracking-[0.08em] text-[#5F5A4E] uppercase [writing-mode:vertical-rl] [text-orientation:mixed] transition-[left] duration-200',
                   // The tab rides the sheet's outer edge while it is open, so
                   // the thing that opened it is the thing that closes it.
-                  sheet === 'conditions' ? 'left-[16.5rem]' : 'left-0',
+                  sheet === 'conditions' ? 'left-[16.5rem]' : sheet === 'guide' ? 'left-[17.5rem]' : 'left-0',
                 )}
               >
                 Conditions
@@ -1748,6 +1871,29 @@ export default function SugarLine() {
               >
                 Data{readings.length ? ` · ${readings.length}` : ''}
               </Tile>
+              {sheet === 'guide' && guide && guideSection && !inChallenge && (
+                <div
+                  data-testid="sheet-guide"
+                  className="pointer-events-auto absolute top-[2.9rem] bottom-[2.9rem] left-2 flex w-[17rem] flex-col gap-2 overflow-y-auto pr-1"
+                >
+                  <PageCard
+                    book={BOOK_0610}
+                    band={band}
+                    cabinet="photosynthesis"
+                    where={guide}
+                    onNavigate={setGuide}
+                    onClose={() => setSheet(null)}
+                    onStartPractical={(door) => {
+                      const st = door === 'plant' ? 1 : door === 'hatches' ? 2 : door === 'stem' ? 3 : null
+                      if (!st) return
+                      setSheet(null)
+                      run.open(null, st)
+                    }}
+                    compact
+                  />
+                  <SectionLedger section={guideSection} band={band} embedded />
+                </div>
+              )}
               {sheet === 'conditions' && (
                 <div
                   data-testid="sheet-conditions"
@@ -1873,7 +2019,29 @@ export default function SugarLine() {
               {!inChallenge && (
               <ChallengeChip invite={readings.length > 0 && !challengeSeen.current} onClick={() => run.open(null)} />
             )}
+              {!inChallenge && (
+                <GuideChip open={!!guide} invite={guideOwed} onClick={() => (guide ? setGuide(null) : openGuide())} />
+              )}
             </div>
+            {/* The field guide takes the parts column while the learner reads;
+                the parts come back the moment a practical starts. */}
+            {guide && guideSection && !inChallenge ? (
+              <div className="pointer-events-auto flex min-h-0 flex-1 flex-col">
+                <PageCard
+                  book={BOOK_0610}
+                  band={band}
+                  cabinet="photosynthesis"
+                  where={guide}
+                  onNavigate={setGuide}
+                  onClose={() => setGuide(null)}
+                  onStartPractical={(door) => {
+                    const st = door === 'plant' ? 1 : door === 'hatches' ? 2 : door === 'stem' ? 3 : null
+                    if (!st) return
+                    run.open(null, st)
+                  }}
+                />
+              </div>
+            ) : (
             <div className="pointer-events-auto min-h-0 flex-1 overflow-y-auto pr-1">
               <div className="flex flex-col gap-2">
                 <SpecimenRail aim={highlight} current={specimenId} onPick={handleSpecimen} />
@@ -1891,6 +2059,7 @@ export default function SugarLine() {
                 />
               </div>
             </div>
+            )}
           </div>
 
           {/* Top centre: the three stages, then the tool rail — or, inside a
@@ -1964,6 +2133,11 @@ export default function SugarLine() {
                 readings add rows, and an uncapped pinned block pushes the tab
                 below it clean off the screen — which is exactly how "Run
                 measurement" ended up at y≈934 on a 900px display once already. */}
+            {guide && guideSection && !inChallenge && (
+              <div className="shrink-0">
+                <SectionLedger section={guideSection} band={band} />
+              </div>
+            )}
             <div className="max-h-[calc(100%-9.5rem)] shrink-0 overflow-y-auto pr-0.5">
               <InstrumentPlate
                 aim={highlight}

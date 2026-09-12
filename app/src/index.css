@@ -200,6 +200,32 @@ html:not([data-input='pointer']) .hud a:not(.absolute):not(.fixed):not(.tile)::a
   border-radius: inherit;
 }
 
+/* The book's tappable words are inline in a paragraph, so the centred
+   hit-area extension above would stack the line below over the line above
+   and swallow its taps. Words get their room from the line instead: a
+   taller line box and a little vertical padding on touch, which is the
+   most an inline target can honestly have. */
+.hud .page-term::after {
+  content: none;
+}
+html:not([data-input='pointer']) .page-text > p {
+  line-height: 1.85;
+}
+html:not([data-input='pointer']) [data-compact='true'] .page-text > p {
+  line-height: 2.15;
+}
+html:not([data-input='pointer']) .page-term {
+  padding-block: 0.22em;
+}
+html:not([data-input='pointer']) [data-compact='true'] .page-term {
+  padding-block: 0.28em;
+}
+/* A scrolling page body fades out at its foot, so a cut sentence reads as
+   "more below" rather than as the end of the thought. */
+.page-scroll {
+  mask-image: linear-gradient(to bottom, black calc(100% - 22px), transparent);
+}
+
 /* Sliders: a bigger thumb and a taller track on glass. */
 html:not([data-input='pointer']) [data-slot='slider-thumb'] {
   width: 1.75rem;
@@ -525,4 +551,13 @@ html[data-input='tv'] [data-slot='slider-thumb']:focus {
 
 @media (prefers-reduced-motion: reduce) {
   .eq-number-in, .eq-arrow-in, .eq-pulse, .eq-shake, .fp-rise { animation: none; }
+}
+
+/* The Market's count layer: the tomatoes stand up into rows of ten. */
+@keyframes market-count-in {
+  from { transform: translateY(18px) scale(0.4); }
+  to { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .market-count-tom { animation: none !important; }
 }

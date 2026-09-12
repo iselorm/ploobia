@@ -269,6 +269,13 @@ export interface SugarSim {
   pulse: number
   viewId: string
   viewSeq: number
+  /**
+   * One tissue of the cut stem lit for a few seconds — the field guide's
+   * "tap xylem and its pipe lights". Null when nothing is lit; the halo in
+   * the stem stage fades as `time` passes `spotlightUntil`.
+   */
+  spotlight: 'xylem' | 'phloem' | null
+  spotlightUntil: number
   viewZoom: number
   viewReset: number
   autoOrbit: boolean
@@ -339,6 +346,8 @@ export function createSugarSim(): SugarSim {
     pulse: 0,
     viewId: 'overview',
     viewSeq: 0,
+    spotlight: null,
+    spotlightUntil: 0,
     viewZoom: 0,
     viewReset: 0,
     autoOrbit: false,
