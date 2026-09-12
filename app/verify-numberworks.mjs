@@ -4,15 +4,18 @@
  * Serve dist/ on :8765 first (python3 -m http.server 8765 in dist).
  *
  * The rules are proved out of band by `verify-market-model.mjs`. This suite
- * is for what only a browser can settle: that Play is the front door and the
- * free stall is one tap away; that an Explorer skips the brief and catches
- * while a Scientist guesses first and starts with a full basin; that opening
- * the stall runs a day on the wall clock, the till reads while it runs, and
- * the gauge reads the same number at closing; that a hand-in scores and lands
- * a journal card; that Send makes a link the same page reads back onto the
- * same seed and level; that level 3 is a prediction locked before it is read;
- * that the stand-ins hold the scene when the props are kept off; and that
- * every control on the phone layout is actually under the finger.
+ * is for what only a browser can settle (round A.2, after review 1): that
+ * Play is the front door and the free stall is one tap away; that EVERY
+ * depth opens on a typed number — an Explorer included — and Ploob repeats it
+ * back; that the catch has that number as its target and the count layer
+ * stands the basin up in rows of ten; that the board is locked on day 1 and
+ * the lever thins the alley when it is free; that a day runs on the wall
+ * clock with the three plates reading it, and ends on the reconstruction
+ * before any score, then one why-question; that a hand-in scores in the
+ * stall's words and lands a strategy card; that Send makes a link the same
+ * page reads back onto the same crowd; that level 3 is a prediction locked
+ * before it is read; that the stand-ins hold the scene; and that every
+ * control on the phone layout is actually under the finger.
  */
 import { chromium } from 'playwright'
 import { execSync } from 'node:child_process'
@@ -42,7 +45,8 @@ const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable
 const consoleErrors = []
 function watch(page) {
   page.on('console', (m) => {
-    if (m.type() === 'error' && !m.text().includes('ERR_TUNNEL_CONNECTION_FAILED')) consoleErrors.push(m.text())
+    // With the props kept off on purpose (STANDINS=1) a missing model is a 404, not a bug.
+    if (m.type() === 'error' && !m.text().includes('ERR_TUNNEL_CONNECTION_FAILED') && !(process.env.STANDINS === '1' && /404/.test(m.text()))) consoleErrors.push(m.text())
   })
   page.on('pageerror', (e) => consoleErrors.push(String(e)))
 }
@@ -54,7 +58,7 @@ const gauge = (page) =>
     const g = document.querySelector('[data-testid=gauge]')
     return g ? { met: Number(g.getAttribute('data-met')), of: Number(g.getAttribute('data-of')), hit: g.getAttribute('data-hit') === 'true', text: g.textContent ?? '' } : null
   })
-const till = (page) => page.evaluate(() => Number(document.querySelector('[data-testid=till-plate]')?.getAttribute('data-till') ?? 'NaN'))
+const till = (page) => page.evaluate(() => Number(document.querySelector('[data-testid=numberworks]')?.getAttribute('data-till') ?? 'NaN'))
 const coach = (page) => page.evaluate(() => document.querySelector('[data-testid=coach]')?.textContent ?? '')
 async function waitFor(fn, timeout = 40000, every = 150) {
   const t0 = Date.now()
@@ -91,24 +95,60 @@ async function open(band, size = { width: 1440, height: 900 }, extra = '', walke
     },
     [band, walked],
   )
-  await page.goto(`${BASE}#/numberworks${extra}`, { waitUntil: 'networkidle' })
+  // STANDINS=1 keeps the generated props off everywhere (a machine without public/models — the cloud build box).
+  const standins = process.env.STANDINS === '1' && !/standins=/.test(extra) ? (extra.includes('?') ? '&standins=1' : '?standins=1') : ''
+  await page.goto(`${BASE}#/numberworks${extra}${standins}`, { waitUntil: 'networkidle' })
   await page.waitForTimeout(1800)
   return page
 }
 
 /* A seed on which level 1 is a hit at the board's starting price (₵4) with a
-   full basin — so the walk below is about the page, not the dice. */
+   full basin on the LINK's day-1 crowd — so the walk below is about the page,
+   not the dice. Day 1's crowd is the guaranteed one (D5). */
 const fill = M.LEVEL_BY_ID['fill-the-till']
+const crowd1 = (s) => M.shoppersFor(M.crowdSeedFor(s, fill, 1))
 let seed = 1
-while (M.simulateDay(M.shoppersFor(seed), 60, { price: 4, discount: 0 }).till < 200 && seed < 500) seed += 1
-check('a seed exists on which ₵4 × a full basin fills the till', seed < 500, `seed ${seed}`)
+while (M.simulateDay(crowd1(seed), 60, { price: 4, discount: 0 }).till < 200 && seed < 500) seed += 1
+check('a seed exists on which ₵4 × a full basin fills the till on day 1', seed < 500, `seed ${seed}`)
 const linkFor = (level, band, s = seed) => {
   const url = M.challengeLink('http://localhost:8765', '/numberworks', M.challengeFor(level, band, s))
   return url.slice(url.indexOf('?c='))
 }
+/** Run a day to its close, answering four o'clock if it comes (keep the price). */
+const throughTheDay = async (page, timeout = 25000) => {
+  const t0 = Date.now()
+  while (Date.now() - t0 < timeout) {
+    if ((await phase(page)) === 'close') return true
+    if ((await page.getByTestId('event').count()) === 1) {
+      await page.getByTestId('event').getByRole('button').first().click()
+      await page.waitForTimeout(200)
+    }
+    await page.waitForTimeout(150)
+  }
+  return (await phase(page)) === 'close'
+}
+const plate = (page, id) => page.evaluate((i) => document.querySelector(`[data-testid=cell-${i}]`)?.textContent ?? '', id)
+const typeNumber = async (page, n) => {
+  await page.getByTestId('typed').fill(String(n))
+  await page.waitForTimeout(150)
+  await tap(page, 'Commit')
+}
+/* mission → predict → (typed) → beat */
+const throughTheNumber = async (page, n) => {
+  check('play → the mission card, the world at rest, the three plates at zero', (await phase(page)) === 'mission' && (await page.getByTestId('mission').count()) === 1 && (await page.getByTestId('gauge').count()) === 1)
+  await tap(page, 'First, a number')
+  await page.waitForTimeout(300)
+  check('the mission asks for a number before anything moves', (await phase(page)) === 'predict' && (await page.getByTestId('brief').count()) === 1)
+  const briefText = (await page.getByTestId('brief').textContent()) ?? ''
+  check('the number is typed — a keypad, no options', (await page.getByTestId('keypad').count()) === 1 && (await page.getByTestId('typed').count()) === 1 && (await page.getByTestId('why-option').count()) === 0)
+  check('Commit is disabled until a number is typed', await page.evaluate(() => !!document.querySelector('button[aria-label=Commit]')?.hasAttribute('disabled')))
+  await typeNumber(page, n)
+  await page.waitForTimeout(300)
+  return briefText
+}
 
 /* ------------------------------------------------------------------ */
-/* Scientist on a level-1 link: brief → beat → lab → a day → hand in → send */
+/* Scientist on a level-1 link: number → beat → count → a day → close → explain → hand in → send */
 /* ------------------------------------------------------------------ */
 {
   const page = await open('scientist', { width: 1440, height: 900 }, linkFor(fill, 'scientist'))
@@ -123,14 +163,12 @@ const linkFor = (level, band, s = seed) => {
   await page.screenshot({ path: path.join(SHOTS, 'numberworks-welcome.png') })
 
   await page.getByTestId('play').click()
-  await page.waitForTimeout(400)
-  check('scientist: the brief opens on a guess, before the model is shown', (await page.getByTestId('brief').count()) === 1 && (await phase(page)) === 'brief')
-  const briefText = (await page.getByTestId('brief').textContent()) ?? ''
-  check('the brief never prints the number being guessed', !/\b50\b/.test(briefText))
+  await page.waitForTimeout(500)
+  const briefText = await throughTheNumber(page, 50)
+  check('the brief never prints the number being asked for', !/\b50\b/.test(briefText))
   check('the brief prices in cedis', /₵/.test(briefText))
-  await tap(page, 'Commit')
-  await page.waitForTimeout(300)
   check('commit → the beat', (await phase(page)) === 'beat' && (await page.getByTestId('beat').count()) === 1)
+  check('the number stays on screen as a chip', /you said 50 tomatoes/.test((await page.getByTestId('said').textContent()) ?? ''))
   const predicted = await page.evaluate(() => {
     try {
       const raw = localStorage.getItem('ploobia.events.v1')
@@ -139,46 +177,75 @@ const linkFor = (level, band, s = seed) => {
       return -1
     }
   })
-  check('the guess is recorded as a prediction (evidence, not decoration)', predicted >= 1, `${predicted}`)
-  check('after the beat a scientist goes straight to the stall — no catch', await waitPhase(page, 'lab', 8000))
+  check('the number is recorded as a prediction (evidence, not decoration)', predicted >= 1, `${predicted}`)
+  check('after the beat a scientist gets no catch — the count layer stands the full basin up', await waitPhase(page, 'count', 8000) && (await page.getByTestId('count-lift').count()) === 1)
+  check('rows of ten: a basin of 60 is 6 rows', (await page.locator('[data-testid=count-lift] [data-rows]').getAttribute('data-rows')) === '6')
+  check('the count line names the learner\'s number', /your 50/.test((await page.getByTestId('count-line').textContent()) ?? ''))
+  check('then the stall', await waitPhase(page, 'lab', 8000))
+  await page.waitForTimeout(300)
   check('a scientist starts with a full basin', /60 in the basin/.test((await page.getByTestId('stall-plate').textContent()) ?? ''))
-  check('Ploob is on at the stall and answers the guess', /Fifty/.test(await coach(page)))
+  check('Ploob does not answer the number — he sends you to the stall', !/Fifty/.test(await coach(page)) && /Open the stall/.test(await coach(page)))
   let g = await gauge(page)
-  check('gauge before the day: 0 of 1, "open the stall"', g && g.met === 0 && g.of === 1 && !g.hit && /open the stall/.test(g.text))
+  check('the plates before the day: target · stock · till, 0 of 1', g && g.met === 0 && g.of === 1 && !g.hit && (await page.getByTestId('cell-target').count()) === 1 && (await page.getByTestId('cell-stock').count()) === 1 && (await page.getByTestId('cell-till').count()) === 1)
   check('the till reads empty', (await till(page)) === 0)
   check('the aim ring is on "Open the stall"', (await page.locator('button[aria-label="Open the stall"].atlas-aim').count()) === 1)
-  check('the price dial shows its ceiling', (await page.locator('[data-testid=price-dial] [data-ceiling]').count()) === 1)
+  check('day 1: the board is locked at ₵4 — observe first', (await page.locator('[data-testid=price-dial][data-locked=true]').count()) === 1 && /observe at ₵4/.test((await page.getByTestId('stall-plate').textContent()) ?? ''))
+  check('no column touches the world: no Our Space, no Days on screen', (await page.getByTestId('our-space').count()) === 0 && (await page.getByTestId('days').count()) === 0 && (await page.getByTestId('edge-tab').count()) === 1)
   await page.screenshot({ path: path.join(SHOTS, 'numberworks-lab-desktop.png') })
 
   await tap(page, 'Open the stall')
   await page.waitForTimeout(1200)
   check('the stall opens: the day runs', (await running(page)) === 'true' && (await page.getByRole('button', { name: 'Close early' }).count()) === 1)
-  check('the till reads while the day runs', await waitFor(async () => (await till(page)) > 0, 8000))
+  check('the till plate reads while the day runs', await waitFor(async () => (await till(page)) > 0, 8000))
   check('the price dial is locked while the stall is open', await page.evaluate(() => !!document.querySelector('[data-testid=price-dial] [data-disabled]')))
-  check('the day closes on its own in about eight seconds', await waitDayDone(page, 20000))
+  check('the shoppers settle as bubbles over the counter — a sum or a walk-on', await waitFor(async () => (await page.getByTestId('bubble').count()) > 0, 6000))
+  check('the day closes on its own in about eight seconds (four o\'clock answered) and lands on the closing card', await throughTheDay(page))
   const closing = await till(page)
-  const expected = M.simulateDay(M.shoppersFor(seed), 60, { price: 4, discount: 0 }).till
+  const expected = M.simulateDay(crowd1(seed), 60, { price: 4, discount: 0 }).till
   check('the till at closing is the model\'s to the pesewa', Math.abs(closing - expected) < 0.006, `${closing} vs ${expected}`)
+  check('the closing card reconstructs before it scores — the product is the till', (await page.getByTestId('close').getAttribute('data-hit')) === 'true' && /working strategy/.test((await page.getByTestId('close-headline').textContent()) ?? '') && new RegExp(`= ${M.cedis(expected).replace('₵', '₵')}`).test((await page.getByTestId('reconstruction').textContent()) ?? ''))
+  check('no score on the closing card', !/\/ 1000/.test((await page.getByTestId('close').textContent()) ?? ''))
+  await page.screenshot({ path: path.join(SHOTS, 'numberworks-close.png') })
+  await tap(page, 'Why did it work?')
+  await page.waitForTimeout(300)
+  check('then one why-question, three options', (await phase(page)) === 'explain' && (await page.getByTestId('why-option').count()) === 3)
+  check('the stamp\'s fourth line is still open', /still to choose/.test((await page.getByTestId('stamp').textContent()) ?? ''))
+  await page.locator('[data-testid=why-option][data-right=false]').first().click()
+  await page.waitForTimeout(250)
+  check('a distractor is answered from the day, never marked wrong', (await page.getByTestId('why-answer').count()) === 1 && !/wrong/i.test((await page.getByTestId('why-answer').textContent()) ?? ''))
+  await page.locator('[data-testid=why-option][data-right=true]').click()
+  await page.waitForTimeout(250)
+  check('the right option is the sum, and the stamp closes on it', (await page.getByTestId('explain').getAttribute('data-chosen')) === 'right' && /Explained: 50 tomatoes/.test((await page.getByTestId('stamp').textContent()) ?? ''))
+  check('the explanation is recorded as a write-up (evidence)', await page.evaluate(() => {
+    const raw = localStorage.getItem('ploobia.events.v1')
+    return (raw ? JSON.parse(raw) : []).filter((e) => e.type === 'writeup.completed' && e.cabinet === 'numberworks').length >= 1
+  }))
+  await page.screenshot({ path: path.join(SHOTS, 'numberworks-explain.png') })
+  await tap(page, 'Back to the stall')
+  await page.waitForTimeout(300)
   g = await gauge(page)
-  check('the gauge reads the till: 1 of 1, hit', g && g.hit && g.met === 1)
+  check('back at the stall the plates read the day: 1 of 1, hit', (await phase(page)) === 'lab' && g && g.hit && g.met === 1)
   check('Ploob says the done line', /Hand it in/.test(await coach(page)))
-  check('a reading landed in Days', (await page.getByTestId('reading').count()) === 1 && /Day 1/.test((await page.getByTestId('reading').first().textContent()) ?? ''))
   check('the day was recorded as a reading (evidence)', await page.evaluate(() => {
     const raw = localStorage.getItem('ploobia.events.v1')
     return (raw ? JSON.parse(raw) : []).filter((e) => e.type === 'reading.recorded' && e.cabinet === 'numberworks').length === 1
   }))
   check('Hand in wears the aim ring once the target is met', (await page.locator('button[aria-label="Hand in"].atlas-aim').count()) === 1)
+  await page.getByTestId('edge-tab').click()
+  await page.waitForTimeout(250)
+  check('the edge tab opens Days and Our Space as a sheet, and the day is in it', (await page.getByTestId('side-sheet').count()) === 1 && (await page.getByTestId('reading').count()) === 1 && /Day 1/.test((await page.getByTestId('reading').first().textContent()) ?? ''))
+  await tap(page, 'Close the sheet')
+  await page.waitForTimeout(200)
   await tap(page, 'Hand in')
   await page.waitForTimeout(500)
   check('hand in → the score card', (await phase(page)) === 'scored' && (await page.getByTestId('score').count()) === 1)
   const total = Number(await page.getByTestId('score').getAttribute('data-total'))
   check('a hit in one day scores high', total >= 800, `${total}`)
-  check('the card says WHY under each bar', /reasoned it out/.test((await page.getByTestId('score').textContent()) ?? ''))
-  // Door 2 opens on the map (one hand-in opens the next) but nobody has built
-  // it, and the card says exactly that — never "coming soon", never a menu.
-  check('door 2 opens but is undiscovered — the card says so and keeps the hand-in in the journal', (await page.getByTestId('door-opened').count()) === 1 && /Nobody has discovered/.test((await page.getByTestId('door-opened').textContent()) ?? '') && /journal/.test((await page.getByTestId('score').textContent()) ?? ''))
-  check('an undiscovered door offers Play again, not Go through', (await page.getByRole('button', { name: 'Play again' }).count()) === 1 && (await page.getByRole('button', { name: 'Go through' }).count()) === 0)
-  check('the hand-in landed a journal card in Our Space', (await page.getByTestId('journal-card').count()) === 1)
+  const scoreText = (await page.getByTestId('score').textContent()) ?? ''
+  check('the three words are explained through the stall', /how near the till came/.test(scoreText) && /how few days/.test(scoreText) && /how little you wasted/.test(scoreText))
+  check('the card carries the strategy, and a mathematical dare', (await page.getByTestId('strategy').count()) === 1 && /stocked/.test(scoreText) && /at ₵4\.20/.test(scoreText))
+  check('the next experiment is offered: day 2 at ₵4.50', (await page.getByRole('button', { name: 'Next day' }).count()) === 1 && /what if ₵4\.50/.test(scoreText))
+  check('door 2 opens but is undiscovered — the card says so and keeps the hand-in in the journal', (await page.getByTestId('door-opened').count()) === 1 && /Nobody has discovered/.test((await page.getByTestId('door-opened').textContent()) ?? '') && /journal/.test(scoreText))
   check('the hand-in is logged with its score and hit', await page.evaluate(() => {
     const raw = localStorage.getItem('ploobia.events.v1')
     const h = (raw ? JSON.parse(raw) : []).filter((e) => e.type === 'challenge.handedIn' && e.cabinet === 'numberworks')
@@ -190,7 +257,7 @@ const linkFor = (level, band, s = seed) => {
   await page.waitForTimeout(600)
   check('send: the card and the link', (await page.getByTestId('send').count()) === 1)
   check('the send card starts by asking who it is from', (await page.getByTestId('by').count()) === 1)
-  check('unsigned, the card still says something true', /Someone/.test((await page.getByTestId('headline').textContent()) ?? ''))
+  check('unsigned, the card still says something true — a strategy, with the price', /Someone/.test((await page.getByTestId('headline').textContent()) ?? '') && /selling at ₵4\.00/.test((await page.getByTestId('headline').textContent()) ?? ''))
   await page.getByTestId('by').fill('Kwame')
   await page.waitForTimeout(300)
   check('a nickname reaches the headline', /Kwame/.test((await page.getByTestId('headline').textContent()) ?? ''))
@@ -209,48 +276,113 @@ const linkFor = (level, band, s = seed) => {
   const page2 = await open('explorer', { width: 1440, height: 900 }, query)
   check('a link opens as an incoming market day on the welcome card', /Kwame/.test((await page2.getByTestId('play').textContent()) ?? '') && (await page2.getByTestId('incoming').count()) >= 1)
   await page2.getByTestId('play').click()
-  await page2.waitForTimeout(400)
-  const ph2 = await phase(page2)
-  check("an explorer opening a scientist link still skips the brief (band is the player's)", ph2 === 'beat' || ph2 === 'lab', String(ph2))
-  check("but the world is the link's: no catch, a full basin", (await waitPhase(page2, 'lab', 8000)) && /60 in the basin/.test((await page2.getByTestId('stall-plate').textContent()) ?? ''))
+  await page2.waitForTimeout(500)
+  check('an explorer on a link is asked for the number too — nobody skips it', (await phase(page2)) === 'mission')
+  await tap(page2, 'First, a number')
+  await page2.waitForTimeout(300)
+  await typeNumber(page2, 50)
+  check("but the world is the link's: no catch, the count then a full basin", (await waitPhase(page2, 'lab', 12000)) && /60 in the basin/.test((await page2.getByTestId('stall-plate').textContent()) ?? ''))
+  await page2.waitForTimeout(300)
   await tap(page2, 'Open the stall')
-  check('the same seed runs the same day', (await waitDayDone(page2, 20000)) && Math.abs((await till(page2)) - expected) < 0.006, `${await till(page2)} vs ${expected}`)
+  check('the same seed runs the same day', (await throughTheDay(page2)) && Math.abs((await till(page2)) - expected) < 0.006, `${await till(page2)} vs ${expected}`)
   await page2.close()
   await page.close()
 }
 
 /* ------------------------------------------------------------------ */
-/* Explorer solo: no brief, a catch, a thin catch topped up, the price dial */
+/* Explorer solo: the number, the catch with it as the target, the count, day 1 locked, day 2 the experiment */
 /* ------------------------------------------------------------------ */
 {
   const page = await open('explorer')
   check('explorer welcome names level 1', /Fill the till by closing time/.test((await page.getByTestId('play').textContent()) ?? ''))
   await page.getByTestId('play').click()
-  await page.waitForTimeout(400)
-  check('explorer skips the brief: straight to the beat', (await phase(page)) === 'beat')
+  await page.waitForTimeout(500)
+  check('an explorer does NOT skip the number (review 1)', (await phase(page)) === 'mission')
+  await tap(page, 'First, a number')
+  await page.waitForTimeout(300)
+  await typeNumber(page, 50)
+  check('Ploob repeats the number back and sets it as the catch', /50\. Then let/.test(await coach(page)) || (await waitPhase(page, 'gather', 8000)))
   check('after the beat, the catch', await waitPhase(page, 'gather', 8000))
-  check('the gauge says it is a catch, not a countdown', /a catch, not a countdown/.test((await gauge(page))?.text ?? ''))
-  check('the basin starts empty', /^0/.test(((await page.getByTestId('cell-basin').textContent()) ?? '').replace(/in the basin/, '').trim()))
+  check('the plates during the catch: NEEDED is the learner\'s number, IN THE BASIN counts toward it', /50/.test(await plate(page, 'needed')) && /you said/.test(await plate(page, 'needed')) && /0 \/ 50/.test(await plate(page, 'basin')))
   check('the rain is in the scene', await page.evaluate(() => !!window.__marketScene?.getObjectByName('rain')))
   const t0 = Date.now()
   while (Date.now() - t0 < 12000 && (await phase(page)) === 'gather') {
     await page.mouse.click(300 + Math.random() * 840, 120 + Math.random() * 380)
     await page.waitForTimeout(160)
   }
-  check('the catch ends on its own and the stall opens', await waitPhase(page, 'lab', 60000))
+  check('the catch ends on its own and the count layer stands the basin up', await waitPhase(page, 'count', 60000) && (await page.getByTestId('count-lift').count()) === 1)
+  check('then the stall', await waitPhase(page, 'lab', 8000))
+  await page.waitForTimeout(300)
   const basin = Number((((await page.getByTestId('stall-plate').textContent()) ?? '').match(/(\d+) in the basin/) ?? [])[1])
-  check('a thin catch is topped up to what the target needs — never a dead end', basin >= 50, `${basin}`)
-  check('Ploob names the top-up, or the basin', /basin/.test(await coach(page)))
-  // the price dial moves the board
-  await nudge(page, 'Price · each', 'ArrowRight', 5)
-  check('the price dial moves the board', /₵4\.50/.test((await page.getByTestId('stall-plate').textContent()) ?? ''))
-  await nudge(page, 'Price · each', 'ArrowLeft', 5)
+  check('a thin catch is topped up to the number the learner said — never a dead end, never more than they said', basin === 50, `${basin}`)
+  check('Ploob names the top-up, or the basin', /basin/.test(await coach(page)) || /stall/.test(await coach(page)))
+  check('day 1: the board is locked — the lever cannot move', (await page.locator('[data-testid=price-dial][data-locked=true]').count()) === 1)
   await tap(page, 'Open the stall')
-  check('a day runs', await waitDayDone(page, 20000))
-  const g = await gauge(page)
-  check('the gauge reads the day', g && g.of === 1 && /₵\d+/.test(g.text))
-  check('after a day the aim is the price (or the hand-in)', (await page.locator('[data-testid=price-dial].atlas-aim').count()) === 1 || (await page.locator('button[aria-label="Hand in"].atlas-aim').count()) === 1)
-  check('Run another day is offered', (await page.getByRole('button', { name: 'Run another day' }).count()) === 1)
+  check('a day runs and closes on the reconstruction', await throughTheDay(page))
+  const hit1 = (await page.getByTestId('close').getAttribute('data-hit')) === 'true'
+  check('day 1 with the right number is proved right — the crowd is guaranteed (D5)', hit1)
+  await page.getByTestId('close').getByRole('button').click()
+  await page.waitForTimeout(250)
+  await page.locator('[data-testid=why-option][data-right=true]').click()
+  await page.waitForTimeout(200)
+  await tap(page, 'Back to the stall')
+  await page.waitForTimeout(300)
+  check('after day 1 the next move is another day', (await page.getByRole('button', { name: 'Run another day' }).count()) === 1)
+  await tap(page, 'Run another day')
+  await page.waitForTimeout(300)
+  check('day 2 opens on a typed till at ₵4.50 — the experiment', (await phase(page)) === 'predict' && /4\.50/.test((await page.getByTestId('brief').textContent()) ?? '') && /What will the till say/.test((await page.getByTestId('brief').textContent()) ?? ''))
+  await typeNumber(page, 200)
+  await page.waitForTimeout(600)
+  check('the till is typed, then the day runs at ₵4.50', (await running(page)) === 'true' && /₵4\.50/.test((await page.getByTestId('stall-plate').textContent()) ?? ''))
+  check('the number is on screen as a chip', /you said ₵200/.test((await page.getByTestId('said').textContent()) ?? ''))
+  // four o'clock: when stock remains the day pauses for a decision
+  const hadEvent = await waitFor(async () => (await page.getByTestId('event').count()) === 1 || (await phase(page)) === 'close', 20000)
+  if ((await page.getByTestId('event').count()) === 1) {
+    check('at four the day pauses: keep, or drop to ₵3.50 — both sums', /Keep ₵4\.50/.test((await page.getByTestId('event').textContent()) ?? '') && /Drop to ₵3\.50/.test((await page.getByTestId('event').textContent()) ?? ''))
+    check('paused means paused: the clock stands still', await page.evaluate(() => window.__marketSim?.paused === true))
+    await page.getByRole('button', { name: 'Drop to ₵3.50' }).click()
+    check('the day runs on after the decision', await waitPhase(page, 'close', 20000))
+    check('the reconstruction says both products when the price dropped at four', /₵3\.50/.test((await page.getByTestId('reconstruction').textContent()) ?? '') && /\+/.test((await page.getByTestId('reconstruction').textContent()) ?? ''))
+  } else {
+    check('day 2 closed (sold out before four, so no event)', hadEvent && (await phase(page)) === 'close')
+  }
+  check('the closing card says what was said and what the day made', /you said ₵200/.test((await page.getByTestId('reconstruction').textContent()) ?? ''))
+  await page.screenshot({ path: path.join(SHOTS, 'numberworks-day2-close.png') })
+  await page.getByTestId('close').getByRole('button').click()
+  await page.waitForTimeout(250)
+  await page.locator('[data-testid=why-option]').first().click()
+  await page.waitForTimeout(200)
+  await tap(page, 'Back to the stall')
+  await page.waitForTimeout(300)
+  await tap(page, 'Run another day')
+  await page.waitForTimeout(300)
+  const q3 = (await page.getByTestId('brief').textContent()) ?? ''
+  check('day 3 asks a number again: the learner\'s own price and the till — or, after a miss, the count', (await phase(page)) === 'predict' && (/Your price is/.test(q3) || /how many must we sell/.test(q3)), q3.slice(0, 60))
+  await tap(page, 'Close')
+  await page.waitForTimeout(250)
+  check('closing the question leaves the lever free on day 3', (await phase(page)) === 'lab' && (await page.locator('[data-testid=price-dial][data-locked=true]').count()) === 0)
+  // the alley between days: the heads in the frame, sampled over a second (they drift)
+  const heads = async () => {
+    let best = 0
+    for (let i = 0; i < 7; i++) {
+      best = Math.max(best, await page.evaluate(() => { const s = window.__marketScene; const g = s?.getObjectByName('shoppers'); return g ? g.children.filter((c) => c.visible && c.name !== 'bubbles').length : -1 }))
+      await page.waitForTimeout(150)
+    }
+    return best
+  }
+  const priceOf = async () => Number((((await page.getByTestId('stall-plate').textContent()) ?? '').match(/₵(\d+\.\d\d)/) ?? [])[1])
+  const p0 = await priceOf()
+  await nudge(page, 'Price · each', 'ArrowRight', 3)
+  await page.waitForTimeout(300)
+  const p1 = await priceOf()
+  check('the price dial moves the board', Math.abs(p1 - p0 - 0.3) < 0.011 || p1 >= 5.0, `${p0} → ${p1}`)
+  const dear = await heads()
+  await nudge(page, 'Price · each', 'ArrowLeft', 15)
+  await page.waitForTimeout(300)
+  const p2 = await priceOf()
+  const cheap = await heads()
+  const dbg = await page.evaluate(() => { const m = window.__marketSim; const s = window.__marketScene; const g = s?.getObjectByName('shoppers'); return JSON.stringify({ preview: m?.previewPrice, run: !!m?.run, n: g?.children.length, vis: g?.children.filter((c) => c.visible).length, crowd: m?.shoppers?.length, phase: document.querySelector('[data-testid=numberworks]')?.getAttribute('data-phase'), stock: m?.stock }) })
+  check('the lever thins the alley: fewer heads at a dearer price (a head-count, not a list)', p2 < p1 && cheap > dear, `${cheap} at ${p2} vs ${dear} at ${p1} · ${dbg}`)
   await page.close()
 }
 
@@ -261,13 +393,17 @@ const linkFor = (level, band, s = seed) => {
   const page = await open('scientist')
   check('scientist welcome names level 2', /Make a quarter more than you paid/.test((await page.getByTestId('play').textContent()) ?? ''))
   await page.getByTestId('play').click()
-  await page.waitForTimeout(400)
-  await tap(page, 'Commit')
+  await page.waitForTimeout(500)
+  await tap(page, 'First, a number')
+  await page.waitForTimeout(300)
+  check('level 2 asks the unit cost, typed with pesewas', /cost you/.test((await page.getByTestId('brief').textContent()) ?? '') && (await page.getByRole('button', { name: 'Key .' }).count()) === 1)
+  await typeNumber(page, 3)
   check('after the beat, the stall', await waitPhase(page, 'lab', 8000))
+  await page.waitForTimeout(300)
   check('level 2 has a mark-up and a discount dial, no price dial', (await page.getByTestId('markup-dial').count()) === 1 && (await page.getByTestId('discount-dial').count()) === 1 && (await page.getByTestId('price-dial').count()) === 0)
   check('the plate says what was paid wholesale', /₵180 for 60/.test((await page.getByTestId('stall-plate').textContent()) ?? ''))
   const g0 = await gauge(page)
-  check('the gauge has two cells: profit and left', g0 && g0.of === 2 && (await page.getByTestId('cell-profit').count()) === 1 && (await page.getByTestId('cell-left').count()) === 1)
+  check('the plates carry two targets: profit and left', g0 && g0.of === 2 && (await page.getByTestId('cell-profit').count()) === 1 && (await page.getByTestId('cell-left').count()) === 1)
   await nudge(page, 'Mark-up', 'ArrowRight', 2)
   check('the mark-up dial moves the kilo price', /\+40 %/.test((await page.getByTestId('stall-plate').textContent()) ?? ''))
   await nudge(page, 'Discount from 4 pm', 'ArrowRight', 4)
@@ -276,14 +412,26 @@ const linkFor = (level, band, s = seed) => {
   await page.waitForTimeout(600)
   check('a day runs on level 2', (await running(page)) === 'true')
   await tap(page, 'Close early')
-  check('Close early settles the day', await waitDayDone(page, 5000))
+  check('Close early settles the day on the closing card', await waitPhase(page, 'close', 5000))
+  check('level 2 reconstructs profit as till − paid, ÷ paid', /−/.test((await page.getByTestId('reconstruction').textContent()) ?? '') && /÷ ₵180/.test((await page.getByTestId('reconstruction').textContent()) ?? ''))
+  await page.getByTestId('close').getByRole('button').click()
+  await page.waitForTimeout(250)
+  check('level 2\'s question is the discount', /discount/.test((await page.getByTestId('explain').textContent()) ?? ''))
+  await page.locator('[data-testid=why-option][data-right=true]').click()
+  await page.waitForTimeout(200)
+  await tap(page, 'Back to the stall')
+  await page.waitForTimeout(300)
   const g1 = await gauge(page)
-  check('after a closed day the gauge reads a profit and a leftover', g1 && /%/.test(g1.text) && /Left in the basin/.test(g1.text))
+  check('after a closed day the plates read a profit and a leftover', g1 && /%/.test(g1.text) && /Left in the basin/.test(g1.text))
+  await page.getByTestId('edge-tab').click()
+  await page.waitForTimeout(250)
   check('a reading names the mark-up and the discount', /\+40 %/.test((await page.getByTestId('reading').first().textContent()) ?? '') && /−20 %/.test((await page.getByTestId('reading').first().textContent()) ?? ''))
+  await tap(page, 'Close the sheet')
+  await page.waitForTimeout(200)
   await tap(page, 'Hand in')
   await page.waitForTimeout(500)
   check('a hand-in on a miss says why, in the round\'s words', (await page.getByTestId('score').count()) === 1 && ((await page.getByTestId('score').getAttribute('data-hit')) === 'true' || (await page.getByTestId('bottleneck').count()) === 1))
-  check('a miss offers Play again, never a menu', (await page.getByRole('button', { name: 'Play again' }).count()) === 1)
+  check('a miss offers Play again, never a menu', (await page.getByRole('button', { name: 'Play again' }).count()) === 1 || (await page.getByRole('button', { name: 'Back to the stall' }).count()) === 1)
   await page.close()
 }
 
@@ -294,16 +442,19 @@ const linkFor = (level, band, s = seed) => {
   const harm = M.LEVEL_BY_ID['harmattan-price']
   const page = await open('analyst', { width: 1440, height: 900 }, linkFor(harm, 'analyst'))
   await page.getByTestId('play').click()
-  await page.waitForTimeout(400)
-  check('level 3 briefs on the ratio', /multiply/.test((await page.getByTestId('brief').textContent()) ?? ''))
-  await tap(page, 'Commit')
+  await page.waitForTimeout(500)
+  await tap(page, 'First, a number')
+  await page.waitForTimeout(300)
+  check('level 3 asks the ratio, typed with decimals', /multiply/.test((await page.getByTestId('brief').textContent()) ?? '') && (await page.getByRole('button', { name: 'Key .' }).count()) === 1)
+  await typeNumber(page, 1.15)
   check('after the beat, the board', await waitPhase(page, 'lab', 8000))
+  await page.waitForTimeout(300)
   check('four mornings on the board, no till to open', (await page.getByTestId('harmattan-board').count()) === 1 && (await page.getByRole('button', { name: 'Open the stall' }).count()) === 0)
   const seen = () => page.evaluate(() => document.body.innerText)
   const friday = M.harmattanFriday().toFixed(2)
   check('THE SPOILER CHECK — Friday\'s price is nowhere on screen before it is locked', !(await seen()).includes(friday))
   let g = await gauge(page)
-  check('the gauge: 0 of 2, carry the ratio', g && g.of === 2 && !g.hit && /carry/.test(g.text))
+  check('the plates: 0 of 2, carry the ratio', g && g.of === 2 && !g.hit && /carry/.test(g.text))
   await tap(page, 'Lock it in')
   await page.waitForTimeout(300)
   check('locking nothing is refused with a line, not a score', (await gauge(page)).met === 0 && /dial/.test(await coach(page)))
@@ -318,62 +469,71 @@ const linkFor = (level, band, s = seed) => {
   check('the board in the scene now says Friday', await page.evaluate(() => !!window.__marketScene))
   await tap(page, 'Hand in')
   await page.waitForTimeout(500)
-  check('one prediction, handed in', (await page.getByTestId('score').getAttribute('data-hit')) === 'true' && /Named in one/.test((await page.getByTestId('score').textContent()) ?? ''))
+  check('level 3 hands in through the reconstruction: 24 × 1.15⁴', (await phase(page)) === 'close' && /1\.15⁴/.test((await page.getByTestId('reconstruction').textContent()) ?? ''))
+  await page.getByTestId('close').getByRole('button').click()
+  await page.waitForTimeout(250)
+  check('level 3\'s question is the straight line', /straight line/.test((await page.getByTestId('explain').textContent()) ?? ''))
+  await page.locator('[data-testid=why-option][data-right=true]').click()
+  await page.waitForTimeout(200)
+  await tap(page, 'Back to the stall')
+  await page.waitForTimeout(400)
+  check('one prediction, handed in', (await phase(page)) === 'scored' && (await page.getByTestId('score').getAttribute('data-hit')) === 'true' && /Named in one/.test((await page.getByTestId('score').textContent()) ?? ''))
   await page.close()
 }
 
 /* ------------------------------------------------------------------ */
-/* The free stall, the tabs, Ploob's dock, the stand-ins               */
+/* The free stall, the edge tab, Ploob's chip, the stand-ins           */
 /* ------------------------------------------------------------------ */
 {
   const page = await open('scientist', { width: 1440, height: 900 }, '?standins=1')
   await tap(page, 'Run a stall on your own')
   await page.waitForTimeout(400)
-  check('the free stall opens with no target', (await phase(page)) === 'lab' && (await page.getByTestId('gauge').count()) === 0)
+  check('the free stall opens with no target', (await phase(page)) === 'lab' && (await gauge(page)).of === 0 && /none/.test(await plate(page, 'target')))
   check('no Hand in on the free stall', (await page.getByRole('button', { name: 'Hand in' }).count()) === 0)
+  check('the lever is free at the free stall', (await page.locator('[data-testid=price-dial][data-locked=true]').count()) === 0)
   check('with the props kept off, the stand-ins hold the scene', await page.evaluate(() => {
     const s = window.__marketScene
     return !!s && !!s.getObjectByName('subject') && !!s.getObjectByName('neighbours') && !!s.getObjectByName('shoppers')
   }))
   const dockOf = (pg) => pg.evaluate(() => document.querySelector('[data-testid=coach]')?.getAttribute('data-dock') ?? (document.querySelector('[data-testid=coach-chip]') ? 'hidden' : 'none'))
-  check('Ploob floats over the stall to start', (await dockOf(page)) === 'float')
-  await tap(page, 'Move Ploob to the left column')
-  await page.waitForTimeout(250)
-  check('Move sends Ploob to the left column', (await dockOf(page)) === 'left')
+  check('Ploob floats low over the stall — no columns to dock in', (await dockOf(page)) === 'float' && (await page.getByRole('button', { name: 'Move Ploob to the left column' }).count()) === 0)
   await tap(page, 'Close Ploob')
   await page.waitForTimeout(250)
   check('Close leaves a chip, never nothing', (await dockOf(page)) === 'hidden' && (await page.getByTestId('coach-chip').count()) === 1)
   await page.getByTestId('coach-chip').click()
   await page.waitForTimeout(250)
   check('the chip brings him back', (await dockOf(page)) !== 'hidden')
-  await page.getByRole('tab', { name: 'Days' }).click()
-  await page.waitForTimeout(200)
-  check('the Days tab selects', (await page.getByRole('tab', { name: 'Days' }).getAttribute('aria-selected')) === 'true')
   await tap(page, 'Open the stall')
-  check('a free day runs and closes', await waitDayDone(page, 20000))
-  check('and lands in Days', (await page.getByTestId('reading').count()) === 1)
+  check('a free day runs and closes at the stall, no card', await waitDayDone(page, 20000) && (await phase(page)) === 'lab')
+  await page.getByTestId('edge-tab').click()
+  await page.waitForTimeout(250)
+  check('and lands in Days behind the edge tab', (await page.getByTestId('reading').count()) === 1)
   await page.close()
 }
 
 /* ------------------------------------------------------------------ */
-/* Tablet landscape: the columns fit                                   */
+/* Tablet landscape: the plates, the board and the till clear each other */
 /* ------------------------------------------------------------------ */
 {
   const page = await open('scientist', { width: 1180, height: 820 })
   await page.getByTestId('play').click()
+  await page.waitForTimeout(400)
+  await tap(page, 'First, a number')
   await page.waitForTimeout(300)
-  await tap(page, 'Commit')
+  await typeNumber(page, 3)
   await waitPhase(page, 'lab', 8000)
+  await page.waitForTimeout(300)
   const fit = await page.evaluate(() => {
     const g = document.querySelector('[data-testid=gauge]')?.getBoundingClientRect()
     const t = document.querySelector('[data-testid=till-plate]')?.getBoundingClientRect()
-    const o = document.querySelector('[data-testid=our-space]')?.getBoundingClientRect()
-    if (!g || !t || !o) return 'missing'
-    if (g.right > o.left + 1) return `gauge under the right column (${g.right.toFixed(0)} > ${o.left.toFixed(0)})`
-    if (t.right > o.left + 1) return `till under the right column (${t.right.toFixed(0)} > ${o.left.toFixed(0)})`
+    const b = document.querySelector('[data-testid=stall-plate]')?.getBoundingClientRect()
+    if (!g || !t || !b) return 'missing'
+    if (g.bottom > b.top + 1) return `plates over the board (${g.bottom.toFixed(0)} > ${b.top.toFixed(0)})`
+    if (b.right > t.left + 1) return `board under the till (${b.right.toFixed(0)} > ${t.left.toFixed(0)})`
+    if (g.right > window.innerWidth) return 'plates off screen'
     return 'ok'
   })
-  check('tablet: the gauge and the till clear the right column', fit === 'ok', fit)
+  check('tablet: the plates, the board and the till clear each other', fit === 'ok', fit)
   await page.screenshot({ path: path.join(SHOTS, 'numberworks-tablet.png') })
   await page.close()
 }
@@ -384,9 +544,13 @@ const linkFor = (level, band, s = seed) => {
 {
   const page = await open('scientist', { width: 915, height: 412 })
   await page.getByTestId('play').click()
+  await page.waitForTimeout(400)
+  await tap(page, 'First, a number')
   await page.waitForTimeout(300)
-  await tap(page, 'Commit')
+  check('phone: the typed field and keypad fit', (await page.getByTestId('keypad').count()) === 1 && (await page.evaluate(() => { const r = document.querySelector('[data-testid=brief]')?.getBoundingClientRect(); return !!r && r.bottom <= window.innerHeight + 1 && r.top >= -1 })))
+  await typeNumber(page, 3)
   await waitPhase(page, 'lab', 8000)
+  await page.waitForTimeout(300)
   const dead = await page.evaluate(() => {
     const out = []
     for (const el of document.querySelectorAll('.hud button, .hud [role=tab], .hud a')) {
@@ -400,11 +564,11 @@ const linkFor = (level, band, s = seed) => {
   })
   check('phone: every HUD control is under the finger and at least the pointer-mode hit size', dead.length === 0, dead.join(', '))
   check('phone: the camera is told how tall the HUD is', Number(await root(page, 'data-hud-bottom')) > 100)
-  check('phone: no side columns', (await page.getByTestId('stall-plate').count()) === 0 && (await page.getByTestId('our-space').count()) === 0)
-  check('phone: the till and the gauge are on screen', (await page.getByTestId('till-plate').count()) === 1 && (await page.getByTestId('gauge').count()) === 1)
-  await page.getByRole('tab', { name: 'The Stall' }).click()
+  check('phone: no board panel on the world — a button', (await page.getByTestId('stall-plate').count()) === 0 && (await page.getByTestId('board-button').count()) === 1 && (await page.getByTestId('our-space').count()) === 0)
+  check('phone: the till and the plates are on screen', (await page.getByTestId('till-plate').count()) === 1 && (await page.getByTestId('gauge').count()) === 1)
+  await page.getByTestId('board-button').click()
   await page.waitForTimeout(250)
-  check('phone: the stall\'s dials open as a sheet', (await page.getByTestId('sheet-stall').count()) === 1 && (await page.getByTestId('stall-plate').count()) === 1)
+  check('phone: the board\'s dials open as a sheet', (await page.getByTestId('sheet-board').count()) === 1 && (await page.getByTestId('stall-plate').count()) === 1)
   const reach = await page.evaluate(() => {
     const el = document.querySelector('[data-testid=markup-dial] [role=slider]')
     if (!el) return 'no dial'
@@ -418,9 +582,9 @@ const linkFor = (level, band, s = seed) => {
   await page.keyboard.press('Escape')
   await page.mouse.click(10, 200)
   await page.waitForTimeout(200)
-  await page.getByRole('tab', { name: 'Our Space' }).click()
+  await page.getByTestId('edge-tab').click()
   await page.waitForTimeout(250)
-  check('phone: Our Space opens as a sheet', (await page.getByTestId('our-space').count()) === 1)
+  check('phone: Our Space opens from the edge tab', (await page.getByTestId('our-space').count()) === 1)
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)
   check('phone: nothing scrolls sideways', !overflow)
   await page.mouse.click(10, 200)
@@ -436,6 +600,11 @@ const linkFor = (level, band, s = seed) => {
   const page = await open('explorer', { width: 390, height: 844 })
   check('portrait: the welcome fits', (await page.getByTestId('play').count()) === 1)
   await page.getByTestId('play').click()
+  await page.waitForTimeout(400)
+  await tap(page, 'First, a number')
+  await page.waitForTimeout(300)
+  check('portrait: the keypad fits', await page.evaluate(() => { const r = document.querySelector('[data-testid=brief]')?.getBoundingClientRect(); return !!r && r.bottom <= window.innerHeight + 1 && r.right <= window.innerWidth + 1 }))
+  await typeNumber(page, 50)
   await waitPhase(page, 'gather', 8000)
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)
   check('portrait: nothing scrolls sideways during the catch', !overflow)

@@ -22,13 +22,19 @@ function texture(c: HTMLCanvasElement): THREE.CanvasTexture {
   return t
 }
 
-/** Red-and-cream stripes for the canopy. */
+/**
+ * Red-and-cream stripes for the canopy — sun-faded a third (review 1: the
+ * awnings dominated the composition; Ploob, the basin and the plates lead).
+ */
 export function stripesTexture(): THREE.CanvasTexture {
   const [c, ctx] = canvas(256, 64)
   for (let i = 0; i < 8; i++) {
-    ctx.fillStyle = i % 2 ? '#F4EBDD' : '#C0453C'
+    ctx.fillStyle = i % 2 ? '#EDE5D6' : '#B9605A'
     ctx.fillRect(i * 32, 0, 32, 64)
   }
+  // faded cloth: a warm wash over the whole thing
+  ctx.fillStyle = 'rgba(230, 205, 170, 0.18)'
+  ctx.fillRect(0, 0, 256, 64)
   // a little wear along the hem
   ctx.fillStyle = 'rgba(60, 30, 10, 0.12)'
   ctx.fillRect(0, 56, 256, 8)

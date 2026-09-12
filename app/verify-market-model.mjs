@@ -46,8 +46,9 @@ for (const l of M.LEVELS) {
   const shown = l.guess.step < 1 ? l.guess.answer.toFixed(2) : String(l.guess.answer)
   const printed = (s) => s.includes(shown) || new RegExp(`\\b${l.guess.answer}\\b`).test(s)
   check(`level ${l.id}: the brief never prints the number being guessed`, !printed(l.blurb) && !printed(l.title) && !printed(l.guess.question))
+  // Review 1: Ploob repeats the LEARNER's number back; the open line never answers.
   const WORDS = { 50: 'Fifty', 3: 'Three' }
-  check(`level ${l.id}: the open line answers it`, printed(l.open) || (WORDS[l.guess.answer] ? l.open.includes(WORDS[l.guess.answer]) : false))
+  check(`level ${l.id}: the open line never answers the brief`, !printed(l.open) && !(WORDS[l.guess.answer] && l.open.includes(WORDS[l.guess.answer])))
   check(`level ${l.id}: prices are in cedis on the board`, /₵/.test(l.blurb + l.guess.question + l.open) || l.kind === 'harmattan')
 }
 check('explorer opens on fill-the-till, scientist on wholesale-ratio, analyst on harmattan-price',
@@ -114,7 +115,8 @@ const fill = M.LEVEL_BY_ID['fill-the-till']
     if (bestThin < 200) dead += 1
   }
   check('level 1 is reachable with a full basin on every seed tried', reachable === 60, `${reachable} / 60`)
-  check('a thin catch is topped up a little past the sum, so the target stays reachable', M.topUp(12, fill).topped && M.topUp(12, fill).stock === 56 && !M.topUp(58, fill).topped)
+  check('a thin catch with no number is topped up a little past the sum (the free stall\'s rule)', M.topUp(12, fill).topped && M.topUp(12, fill).stock === 56 && !M.topUp(58, fill).topped)
+  check('a thin catch is topped up to the number the learner SAID — capped at the basin', M.topUp(12, fill, 50).stock === 50 && M.topUp(12, fill, 50).topped && M.topUp(54, fill, 50).stock === 54 && !M.topUp(54, fill, 50).topped && M.topUp(3, fill, 90).stock === 60)
   check('after a top-up level 1 is still reachable on every seed', dead === 0, `${dead} dead seeds`)
   const s0 = M.startStall(fill, 60)
   let g = M.gaugeFor(fill, s0)
@@ -207,7 +209,7 @@ const harm = M.LEVEL_BY_ID['harmattan-price']
 {
   const s = { ...M.startStall(fill, 60), day: M.simulateDay(A, 60, { price: 4, discount: 0 }) }
   const card = M.shareCardFor(fill, s, 'Ama', 2, 3)
-  check('the card names the venue and the figure in cedis', /Kejetia/.test(card.headline) && card.figure.startsWith('₵'))
+  check('the card is a strategy: the price in the headline, stock · sold · left under it, a mathematical dare', /selling at ₵4\.00/.test(card.headline) && card.figure.startsWith('₵') && /stocked/.test(card.sub) && /₵4\.20/.test(card.dare))
   check('empty in → "Someone"', M.shareCardFor(fill, s, '', 1, 1).headline.startsWith('Someone'))
   check('a phone number cannot ride in on a nickname', M.sendableNickname('Ama 0244123456') === 'Ama')
   check('a nickname is capped', M.cleanNickname('a'.repeat(60)).length === M.NICKNAME_MAX)
@@ -221,6 +223,95 @@ check('a hand-in records and reports whether the next door opened', M.isDoorHand
 check('door 1 reads done after a hand-in; best score kept', M.doorState(M.DOOR_BY_ID[1]) === 'done' && M.getNumberworksProgress().handedIn['fill-the-till'] === 800)
 M.recordHandIn('fill-the-till', 500)
 check('a worse hand-in never lowers the best', M.getNumberworksProgress().handedIn['fill-the-till'] === 800)
+/* ---- round A.2: the number first, the crowd as a lever, the day reconstructed ---- */
+{
+  const s0 = M.startStall(fill, 60)
+  check('a fresh stall has no number yet, on day 1', s0.guess === null && s0.tillGuess === null && s0.dayIndex === 1 && s0.lastHit === null)
+  const q1 = M.dayQuestion(fill, s0, A)
+  check('day 1 asks the count, at ₵4, board locked, and the answer is 200 ÷ 4', q1 && q1.kind === 'count' && q1.answer === 50 && q1.lockPrice === 4 && /How many tomatoes/.test(q1.question))
+  check('the question never prints its answer', q1 && !/\b50\b/.test(q1.question))
+  check('Ploob repeats the number back, whatever it is', /Forty/.test(M.repeatBack(q1, 40)) === false && /40\. Then let/.test(M.repeatBack(q1, 40)) && /50\. Then let/.test(M.repeatBack(q1, 50)))
+  // day 1's crowd is guaranteed: fifty at ₵4 sells fifty, on every link seed tried
+  let guaranteed = 0
+  for (let seed = 1; seed <= 40; seed++) {
+    const c = M.shoppersFor(M.crowdSeedFor(seed, fill, 1))
+    const r = M.simulateDay(c, 50, { price: 4, discount: 0 })
+    if (r.sold === 50 && r.till >= 200) guaranteed += 1
+  }
+  check('day 1\'s crowd proves a right first number on every seed (D5)', guaranteed === 40, `${guaranteed} / 40`)
+  check('later days are the seed\'s own (not the same crowd)', M.crowdSeedFor(7, fill, 2) !== M.crowdSeedFor(7, fill, 1) && M.crowdSeedFor(7, fill, 2) === M.crowdSeedFor(7, fill, 2))
+  // the day after a hit is the ₵4.50 experiment; after a miss, the count again
+  const hitDay = { ...s0, guess: 50, day: M.simulateDay(A, 56, { price: 4, discount: 0 }), lastHit: true, dayIndex: 2, stock: 56 }
+  const q2 = M.dayQuestion(fill, hitDay, A)
+  check('day 2 after a hit asks the till at ₵4.50, board locked', q2 && q2.kind === 'till' && q2.lockPrice === 4.5 && /4\.50/.test(q2.question))
+  const missDay = { ...s0, guess: 40, day: M.simulateDay(A, 40, { price: 4, discount: 0 }), lastHit: false, dayIndex: 2, stock: 40, price: 4 }
+  const q2m = M.dayQuestion(fill, missDay, A)
+  check('a day after a miss asks the count again — a guided retry, lever free', q2m && q2m.kind === 'count' && q2m.answer === 50 && q2m.lockPrice === null)
+  const day3 = { ...hitDay, dayIndex: 3, price: 4.2 }
+  const q3 = M.dayQuestion(fill, day3, A)
+  check('day 3 is the learner\'s own price, and the till is typed before opening', q3 && q3.kind === 'till' && q3.lockPrice === null && /4\.20/.test(q3.question))
+  // the lever: the alley thins as the price rises, a head-count
+  const d3 = M.demandAt(A, 3)
+  const d4 = M.demandAt(A, 4)
+  const d5 = M.demandAt(A, 5)
+  const d6 = M.demandAt(A, 5.6)
+  check('the alley thins as the price rises: ₵3 > ₵4 > ₵5 > nobody above ₵5.50', d3.stop === 40 && d3.stop > d4.stop && d4.stop > d5.stop && d6.stop === 0 && d4.of === 40)
+  // ₵4.50 is a near miss on most crowds; ₵4 with fifty hits on most; ₵5 fails
+  let hit4 = 0
+  let miss45 = 0
+  let fail5 = 0
+  for (let seed = 1; seed <= 60; seed++) {
+    const c = M.shoppersFor(seed)
+    if (M.simulateDay(c, 56, { price: 4, discount: 0 }).till >= 200) hit4 += 1
+    if (M.simulateDay(c, 56, { price: 4.5, discount: 0 }).till < 200) miss45 += 1
+    if (M.simulateDay(c, 56, { price: 5, discount: 0 }).till < 200) fail5 += 1
+  }
+  check('₵4 with 56 in the basin fills the till on at least nine crowds in ten', hit4 >= 54, `${hit4} / 60`)
+  check('₵4.50 is a near miss on many crowds and a hit on others — the experiment teaches', miss45 >= 20 && miss45 <= 50, `${miss45} / 60`)
+  check('₵5 fails on almost every crowd — what a child discovers on day 3', fail5 >= 57, `${fail5} / 60`)
+  // the four o'clock event: the run pauses exactly at four; the drop is a discount from four; one solve still holds
+  const run = M.startDay(A, 56, { price: 4, discount: 0 })
+  M.stepDay(run, M.EVENT_T)
+  check('the event is due at four when stock remains', M.eventDue(run, fill) === (run.unsold > 0))
+  const dropped = M.eventDrop(run)
+  check('the drop prices the rest at ₵3.50 from four', Math.abs(M.priceAt(dropped, M.EVENT_T + 0.01) - 3.5) < 0.006 && M.priceAt(dropped, M.EVENT_T - 0.01) === 4)
+  run.schedule = dropped
+  M.stepDay(run, 1)
+  const whole = M.simulateDay(A, 56, dropped)
+  check('a day that dropped at four is still one solve — replay = whole day', run.till === whole.till && run.sold === whole.sold)
+  check('the run records who walked on, in order', run.passes.length === run.passed && run.passes.every((i, k) => k === 0 || i > run.passes[k - 1]))
+  // the reconstruction: the product is the till, to the pesewa
+  const s1 = { ...s0, guess: 50, stock: 56, price: 4, day: M.simulateDay(A, 56, { price: 4, discount: 0 }) }
+  const rc = M.reconstructionOf(fill, s1)
+  check('the reconstruction says the sum that was said and the sum the day made', rc.lines.length >= 2 && rc.lines[0].text === '50 × ₵4.00 = ₵200' && rc.lines[1].text === `${s1.day.sold} × ₵4.00 = ${M.cedis(s1.day.till)}`)
+  check('the reconstruction\'s product is the till', s1.day.sold * 4 === s1.day.till)
+  check('the reconstruction\'s grid is sold of stocked', rc.grid && rc.grid.lit === s1.day.sold && rc.grid.of === 56)
+  check('a hit says "working strategy"; a miss says what is short, in cedis', /working strategy/.test(rc.headline) && /₵40 short/.test(M.reconstructionOf(fill, { ...s1, stock: 40, day: M.simulateDay(A, 40, { price: 4, discount: 0 }) }).headline))
+  // one why-question, three options, one right, every option answered from the day
+  const w = M.whyQuestion(fill, s1)
+  check('one why-question with three options and exactly one right', w.options.length === 3 && w.options.filter((o) => o.right).length === 1)
+  check('every option has a world-answer, never "wrong"', w.options.every((o) => o.answer.length > 10 && !/wrong/i.test(o.answer)))
+  check('the right option is the sum', /50 tomatoes at ₵4\.00 each is ₵200/.test(w.options.find((o) => o.right).text))
+  const wm = M.whyQuestion(fill, { ...s1, stock: 40, day: M.simulateDay(A, 40, { price: 4, discount: 0 }) })
+  check('a miss asks why it fell short', /fall short/.test(wm.question) && wm.options.filter((o) => o.right).length === 1)
+  // the stamp: four lines — prediction · action · observed · explanation
+  const st = M.stampOf(fill, s1, w.options[0])
+  check('the stamp is four lines: predicted · did · observed · explained', st.length === 4 && /^Predicted 50/.test(st[0]) && /^Stocked 56/.test(st[1]) && /sold/.test(st[2]) && /^Explained:/.test(st[3]))
+  check('an unexplained stamp says so on its fourth line', /still to choose/.test(M.stampOf(fill, s1, null)[3]))
+  // the count layer: rows of ten, the spare ghosted
+  check('rows of ten: 56 with 50 needed is 6 rows, 50 lit, 6 spare', JSON.stringify(M.rowsOf(56, 50)) === JSON.stringify({ rows: 6, full: 50, spare: 6 }))
+  check('rows of ten with no number: all lit', JSON.stringify(M.rowsOf(37, null)) === JSON.stringify({ rows: 4, full: 37, spare: 0 }))
+  // levels 2 and 3 inherit the reconstruction and the question
+  const rs0 = M.startStall(ratio, 60)
+  const ratioHit = { ...rs0, markup: 0.3, discount: 0.2, day: M.simulateDay(A, 60, M.scheduleOf(ratio, { ...rs0, markup: 0.3, discount: 0.2 })) }
+  const r2 = M.reconstructionOf(ratio, ratioHit)
+  check('level 2 reconstructs profit as till − paid, then ÷ paid', /−/.test(r2.lines[0].text) && /÷ ₵180/.test(r2.lines[1].text))
+  check('level 2\'s question is the discount', /discount/.test(M.whyQuestion(ratio, ratioHit).question))
+  const r3 = M.reconstructionOf(harm, { ...M.startStall(harm, 60), prediction: M.harmattanFriday(), bound: M.harmattanBound() })
+  check('level 3 reconstructs Friday as 24 × 1.15⁴', /24 × 1\.15⁴/.test(r3.lines[0].text) && r3.lines[0].text.includes(M.harmattanFriday().toFixed(2)))
+  check('level 3\'s question is the straight line', /straight line/.test(M.whyQuestion(harm, M.startStall(harm, 60)).question))
+}
+
 M.resetNumberworks()
 check('reset forgets the walk', !M.isDoorHandedIn(1))
 

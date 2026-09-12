@@ -86,7 +86,8 @@ export default function MarketWorld({ sim }: { sim: MarketSim }) {
   return (
     <group name="world">
       <Sky late={late} />
-      <fog attach="fog" args={[late ? '#E6C39E' : '#EBD8BE', 9, 26]} />
+      {/* depth haze from the mid-ground back — the neighbours sit two stops behind the stall (review 1) */}
+      <fog attach="fog" args={[late ? '#E6C39E' : '#EBD8BE', 6, 22]} />
       <hemisphereLight args={['#DDEBFF', '#9A6A3A', 0.95]} />
       <directionalLight
         position={late ? [-6, 5, 2] : [4, 7, 3]}

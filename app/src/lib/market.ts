@@ -14,9 +14,12 @@
  *    replays the same day in real time so the picture and the till cannot
  *    disagree. The shoppers come from the seed, so a link lands on the same
  *    crowd.
- * 2. **The guess comes before the day.** Every brief opens on a number the
- *    learner commits — how many tomatoes is ₵200 — and the answer is the first
- *    thing Ploob says. Recorded as a prediction, so it is evidence.
+ * 2. **The number comes before the world moves.** Every round opens on a
+ *    number the learner TYPES — how many tomatoes is ₵200 — at every depth,
+ *    Explorer included (review 1, 11 Sep: the recording opened on falling
+ *    tomatoes and the maths had gone missing). Ploob repeats the number back;
+ *    the day is what proves it. Recorded as a prediction, so it is evidence,
+ *    and it is the first line of the stamp. Later days ask for the till.
  * 3. **Score is not XP.** A hand-in awards a `ChallengeScore` and a journal
  *    card; XP comes only from recorded evidence.
  *
@@ -222,6 +225,8 @@ export interface DayRun {
   till: number
   unsold: number
   passed: number
+  /** Which shoppers looked at the board and walked on, in order. */
+  passes: number[]
   sales: Sale[]
   done: boolean
   /** The last thing that happened, for the picture and Ploob. */
@@ -229,7 +234,7 @@ export interface DayRun {
 }
 
 export function startDay(shoppers: Shopper[], stock: number, schedule: PriceSchedule): DayRun {
-  return { shoppers, stock0: Math.floor(stock), schedule, t: 0, next: 0, sold: 0, till: 0, unsold: Math.floor(stock), passed: 0, sales: [], done: false, last: null }
+  return { shoppers, stock0: Math.floor(stock), schedule, t: 0, next: 0, sold: 0, till: 0, unsold: Math.floor(stock), passed: 0, passes: [], sales: [], done: false, last: null }
 }
 
 /** Advance by a fraction of the day. Returns the run for chaining. */
@@ -245,6 +250,7 @@ export function stepDay(run: DayRun, dt: number): DayRun {
     const p = priceAt(run.schedule, s.at)
     if (p > s.limit + 1e-9) {
       run.passed += 1
+      run.passes.push(i)
       run.last = { kind: 'pass', shopper: i, n: 0 }
       continue
     }
@@ -372,7 +378,7 @@ export const LEVELS: Level[] = [
     target: { direction: 'atLeast', value: 200, tolerance: 0 },
     budget: { tomatoes: BASIN_MAX },
     gatherSeconds: 45,
-    open: `Fifty — ${cedis(200)} is fifty tomatoes at ${cedis(4)}. Fill the basin, write a price, and open the stall.`,
+    open: 'Open the stall, and let the alley check your number.',
     done: `${cedis(200)} in the till. Every tomato went out at a price a shopper would pay. Hand it in.`,
   },
   {
@@ -395,7 +401,7 @@ export const LEVELS: Level[] = [
     condition: 'fewLeft',
     budget: { tomatoes: BASIN_MAX },
     gatherSeconds: 0,
-    open: `Three cedis each — ${cedis(WHOLESALE.price)} shared sixty ways. Eight to a kilo, so a kilo cost you ${cedis(WHOLESALE.price / WHOLESALE.count * TOMATOES_PER_KG)}. Mark it up and open the stall.`,
+    open: `${cedis(WHOLESALE.price)} shared ${WHOLESALE.count} ways is what one tomato cost you; ${TOMATOES_PER_KG} to a kilo makes the kilo price. Mark it up and open the stall.`,
     done: 'A quarter up, and the basin near empty. The mark-up sets the profit per kilo; the ceiling sets how many kilos go. Hand it in.',
   },
   {
@@ -418,7 +424,7 @@ export const LEVELS: Level[] = [
     condition: 'boundsStated',
     budget: { predictions: 3 },
     gatherSeconds: 0,
-    open: `1.15 — and Wednesday is 1.15 times Tuesday again. Carry it to Friday, and say how far today's takings could be off, from what the scale can read.`,
+    open: `Tuesday over Monday is the ratio — and Wednesday is that ratio times Tuesday again. Carry it to Friday, and say how far today's takings could be off, from what the scale can read.`,
     done: 'Friday named, bounds stated. A fixed fraction a day is a sequence that multiplies, not a line that adds. Hand it in.',
   },
 ]
@@ -450,6 +456,14 @@ export interface StallState {
   prediction: number | null
   /** Level 3: the learner's stated half-width on today's takings, in cedis. */
   bound: number | null
+  /** The number typed at the brief (level 1: tomatoes to sell; 2: cost each; 3: the ratio). */
+  guess: number | null
+  /** Level 1, days after the first: the till the learner said this day would make. */
+  tillGuess: number | null
+  /** Which day of the level this is (1-based); the day's question depends on it. */
+  dayIndex: number
+  /** Whether the last day run met the target — the next day's question depends on it. */
+  lastHit: boolean | null
 }
 
 export function startStall(level: Level, stock: number): StallState {
@@ -461,6 +475,10 @@ export function startStall(level: Level, stock: number): StallState {
     day: null,
     prediction: null,
     bound: null,
+    guess: null,
+    tillGuess: null,
+    dayIndex: 1,
+    lastHit: null,
   }
 }
 
@@ -663,13 +681,16 @@ export function stockOf(caught: number): number {
   return Math.min(BASIN_MAX, Math.max(0, caught))
 }
 
-/** A thin catch is never a dead end: the basin is topped up to what the target needs, paid for in thrift. */
-export function topUp(caught: number, level: Level): { stock: number; topped: boolean } {
-  // Fifty at ₵4 is the arithmetic; the crowd is not that tidy. On a few seeds
-  // fifty tomatoes cannot reach ₵200 at any price, so the wholesaler tops up a
-  // little past the sum — the round is never a dead end, and the thrift term
-  // still knows the difference.
-  const need = level.kind === 'fill' ? Math.min(BASIN_MAX, Math.ceil(level.target.value / 4) + 6) : BASIN_MAX
+/**
+ * A thin catch is never a dead end: the wholesaler tops the basin up to the
+ * number the learner SAID they needed (their own prediction, capped at the
+ * basin), paid for in thrift. Before review 1 the top-up went to a fixed 56;
+ * now the learner's number is the target stock, and a wrong number is proved
+ * wrong by the day, never by a red mark. With no number (a free stall) the
+ * old rule stands.
+ */
+export function topUp(caught: number, level: Level, needed: number | null = null): { stock: number; topped: boolean } {
+  const need = level.kind === 'fill' ? Math.min(BASIN_MAX, needed !== null && needed > 0 ? Math.ceil(needed) : Math.ceil(level.target.value / 4) + 6) : BASIN_MAX
   const stock = stockOf(caught)
   return stock < need ? { stock: need, topped: true } : { stock, topped: false }
 }
@@ -765,12 +786,345 @@ export interface ShareCard {
 export function shareCardFor(level: Level, s: StallState, by: string | undefined, trials: number, stars: 0 | 1 | 2 | 3): ShareCard {
   const who = by && by.trim() ? by.trim() : 'Someone'
   if (level.kind === 'fill') {
+    // A strategy, not a score: price · stock · till · left, and a dare that is
+    // a piece of maths — beat it at a dearer price, or waste fewer.
     const till = s.day?.till ?? 0
-    return { headline: `${who} filled the till at ${VENUE.name}`, dare: `Beat ${cedis(till)} on this market day`, figure: cedis(till), sub: `${s.day?.sold ?? 0} tomatoes at ${cedis(s.price, 2)}`, trials, stars }
+    const left = s.day?.unsold ?? s.stock
+    const dearer = Math.round((s.price + 0.2) * 100) / 100
+    const dare = left > 0 ? `Waste fewer than ${left} — or beat ${cedis(till)} at ${cedis(dearer, 2)}?` : `Beat ${cedis(till)} at ${cedis(dearer, 2)}?`
+    return { headline: `${who} closed at ${cedis(till)} selling at ${cedis(s.price, 2)}`, dare, figure: cedis(till), sub: `${s.stock} stocked · ${s.day?.sold ?? 0} sold · ${left} left`, trials, stars }
   }
   if (level.kind === 'ratio') {
     const profit = s.day ? profitOf(s.day.till, WHOLESALE.price) * 100 : 0
     return { headline: `${who} made ${profit.toFixed(0)} % on the basin`, dare: `Beat ${profit.toFixed(0)} % with fewer left`, figure: `${profit.toFixed(0)} %`, sub: `mark-up ${Math.round(s.markup * 100)} %${s.discount ? `, ${Math.round(s.discount * 100)} % off at four` : ''}`, trials, stars }
   }
   return { headline: `${who} named Friday's price`, dare: 'Name it in one', figure: s.prediction === null ? '—' : cedis(s.prediction, 2), sub: 'a fixed fraction a day', trials, stars }
+}
+
+/* ------------------------------------------------------------------ */
+/* Round A.2 — after review 1: the number first, the crowd as a lever, */
+/* the day reconstructed before it is scored, one why-question         */
+/* ------------------------------------------------------------------ */
+
+/** The board on day 1 of level 1 is fixed here; day 2 is the experiment price. */
+export const DAY1_PRICE = 4
+export const EXPERIMENT_PRICE = 4.5
+
+/**
+ * What the alley does at a price, before the stall opens: how many of the
+ * day's crowd would stop, and how many tomatoes they would want between them.
+ * The lever shows the head-count only (a crowd, not a list — D2), so day 3
+ * still has to be reasoned, not scrolled.
+ */
+export function demandAt(shoppers: Shopper[], price: number): { stop: number; want: number; of: number } {
+  let stop = 0
+  let want = 0
+  for (const s of shoppers) {
+    if (price <= s.limit + 1e-9) {
+      stop += 1
+      want += s.want
+    }
+  }
+  return { stop, want, of: shoppers.length }
+}
+
+/**
+ * The crowd for a day. Day 1 of level 1 is guaranteed (D5): the first number
+ * the learner commits must be proved, or the beat is a coin toss — so the
+ * day-1 crowd is the first seed off the link's on which fifty at ₵4 sells
+ * every one of fifty. Later days are the seed's own, so an experiment can
+ * miss. Both friends on one link get the same sequence.
+ */
+export function crowdSeedFor(seed: number, level: Level | null, dayIndex: number): number {
+  const base = (seed ^ Math.imul(Math.max(1, dayIndex) - 1, 0x9e3779b1)) >>> 0
+  if (!level || level.kind !== 'fill' || dayIndex !== 1) return base
+  const need = Math.ceil(level.target.value / DAY1_PRICE)
+  for (let k = 0; k < 64; k++) {
+    const candidate = (base + k * 0x2545f491) >>> 0
+    const r = simulateDay(shoppersFor(candidate), need, { price: DAY1_PRICE, discount: 0 })
+    if (r.sold === need && r.till >= level.target.value - 1e-9) return candidate
+  }
+  return base
+}
+
+export type DayQuestionKind = 'count' | 'till'
+
+export interface DayQuestion {
+  kind: DayQuestionKind
+  /** The question, in Ploob's words. */
+  question: string
+  /** The number that turns out to be right (never shown before the day). */
+  answer: number
+  unit: string
+  /** The price the board is locked at for this day, or null when the lever is free. */
+  lockPrice: number | null
+  /** Whether typing accepts pesewas. */
+  decimals: boolean
+  /** The reason this day exists — Ploob's line after the number is typed. */
+  intent: string
+}
+
+/**
+ * Days are experiments. Day 1: observe at ₵4 — how many must we sell? A day
+ * that missed asks the count again (a guided retry). The day after a hit is
+ * the experiment: what if ₵4.50 — what will the till be? After that the
+ * lever is free and the learner names the till before opening.
+ */
+export function dayQuestion(level: Level, s: StallState, shoppers: Shopper[]): DayQuestion | null {
+  if (level.kind !== 'fill') return null
+  const target = level.target.value
+  if (s.dayIndex === 1 || s.lastHit === false) {
+    const price = s.dayIndex === 1 ? DAY1_PRICE : s.price
+    const answer = Math.ceil(target / price)
+    return {
+      kind: 'count',
+      question: s.dayIndex === 1 ? `We're selling at ${cedis(price)} each. The till needs ${cedis(target)}. How many tomatoes must we sell?` : `The till closed at ${cedis(s.day?.till ?? 0)}. At ${cedis(price, 2)} each, how many must we sell for ${cedis(target)}?`,
+      answer,
+      unit: 'tomatoes',
+      lockPrice: s.dayIndex === 1 ? DAY1_PRICE : null,
+      decimals: false,
+      intent: 'Then let’s make sure we have that many.',
+    }
+  }
+  if (s.dayIndex === 2) {
+    const price = EXPERIMENT_PRICE
+    const answer = simulateDay(shoppers, s.stock, { price, discount: 0 }).till
+    return {
+      kind: 'till',
+      question: `What if we charge ${cedis(price, 2)}? Fewer shoppers stop — but each sale is worth more. What will the till say at closing?`,
+      answer,
+      unit: 'in the till',
+      lockPrice: price,
+      decimals: false,
+      intent: 'Let’s see what the alley does with it.',
+    }
+  }
+  const answer = simulateDay(shoppers, s.stock, { price: s.price, discount: 0 }).till
+  return {
+    kind: 'till',
+    question: `Your price is ${cedis(s.price, 2)}, ${s.stock} in the basin. What will the till say at closing?`,
+    answer,
+    unit: 'in the till',
+    lockPrice: null,
+    decimals: false,
+    intent: 'Your stall, your price. Open it.',
+  }
+}
+
+/** Ploob repeats the number back — whatever it is. The day is what checks it. */
+export function repeatBack(q: DayQuestion, typed: number): string {
+  const n = q.decimals ? typed.toFixed(2) : String(Math.round(typed))
+  if (q.kind === 'count') return `${n}. Then let’s catch at least ${n}.`
+  return `${cedis(typed)}. ${q.intent}`
+}
+
+/** The four o'clock event: the day pauses at DISCOUNT_HOUR when stock remains. */
+export const EVENT_T = dayFractionOfHour(DISCOUNT_HOUR)
+export const EVENT_DROP_TO = 3.5
+
+/** Whether the day should stop at four for a decision. */
+export function eventDue(run: DayRun, level: Level | null): boolean {
+  return !!level && level.kind === 'fill' && run.unsold > 0 && run.t >= EVENT_T - 1e-9 && !run.done
+}
+
+/** Drop the board to EVENT_DROP_TO from four o'clock: a discount, as the model already prices one. */
+export function eventDrop(run: DayRun): PriceSchedule {
+  const p = run.schedule.price
+  const discount = p > EVENT_DROP_TO ? Math.round((1 - EVENT_DROP_TO / p) * 1000) / 1000 : 0
+  return { price: p, discount }
+}
+
+/** What the event card says: keep, or drop — both are sums. */
+export function eventLines(run: DayRun, target: number): { headline: string; keep: string; drop: string } {
+  const p = run.schedule.price
+  const short = Math.max(0, target - run.till)
+  const keepN = Math.ceil(short / p)
+  const dropN = Math.ceil(short / EVENT_DROP_TO)
+  return {
+    headline: `${clockLabel(run.t)} · ${run.unsold} left, the sun is going.`,
+    keep: short > 0 ? `${keepN} more sale${keepN === 1 ? '' : 's'} at ${cedis(p, 2)}` : `${cedis(p, 2)} — the target is met`,
+    drop: short > 0 ? `${dropN} at ${cedis(EVENT_DROP_TO, 2)} — and they all go` : `${cedis(EVENT_DROP_TO, 2)} — sell the rest`,
+  }
+}
+
+export interface Reconstruction {
+  /** "You found a working strategy." or "Not yet — ₵40 short." */
+  headline: string
+  rows: Array<[string, string]>
+  /** The two products, side by side: what was said, what the day made. */
+  lines: Array<{ text: string; tone: 'said' | 'made' }>
+  /** The array the layer draws: sold of stocked. */
+  grid: { lit: number; of: number } | null
+}
+
+/** The five-second reconstruction: the sum first, the score never on this card. */
+export function reconstructionOf(level: Level, s: StallState): Reconstruction {
+  const d = s.day
+  if (level.kind === 'fill') {
+    const target = level.target.value
+    const hit = !!d && d.till >= target - 1e-9
+    const price = d ? (d.sales.length ? Math.round((d.sales[0].paid / d.sales[0].n) * 100) / 100 : s.price) : s.price
+    const need = Math.ceil(target / price)
+    const rows: Array<[string, string]> = [
+      s.tillGuess !== null ? ['You said the till', cedis(s.tillGuess)] : ['You said we needed', s.guess === null ? '—' : `${s.guess}`],
+      ['Selling price', cedis(price, 2)],
+      ['You stocked', `${s.stock}`],
+      ['Walked past', `${d?.passed ?? 0}`],
+      ['You sold', `${d?.sold ?? 0}`],
+      ['Left in the basin', `${d?.unsold ?? s.stock}`],
+    ]
+    const lines: Reconstruction['lines'] = []
+    if (s.tillGuess !== null) lines.push({ text: `you said ${cedis(s.tillGuess)}`, tone: 'said' })
+    else lines.push({ text: `${need} × ${cedis(price, 2)} = ${cedis(need * price)}`, tone: 'said' })
+    // The sum the day made. A day that dropped the price at four is two
+    // products, and the card says both — never a product that is not the till.
+    if (d) {
+      const byPrice = new Map<number, number>()
+      for (const x of d.sales) {
+        const each = Math.round((x.paid / x.n) * 100) / 100
+        byPrice.set(each, (byPrice.get(each) ?? 0) + x.n)
+      }
+      const parts = [...byPrice.entries()].sort((a, b) => b[0] - a[0]).map(([each, n]) => `${n} × ${cedis(each, 2)}`)
+      lines.push({ text: parts.length ? `${parts.join(' + ')} = ${cedis(d.till)}` : `0 × ${cedis(price, 2)} = ${cedis(0)}`, tone: 'made' })
+    } else lines.push({ text: '—', tone: 'made' })
+    return {
+      headline: hit ? 'You found a working strategy.' : d ? `Not yet — ${cedis(target - d.till)} short.` : 'No day run yet.',
+      rows,
+      lines,
+      grid: d ? { lit: d.sold, of: s.stock } : null,
+    }
+  }
+  if (level.kind === 'ratio') {
+    const till = d?.till ?? 0
+    const profit = till - WHOLESALE.price
+    const pct = profitOf(till, WHOLESALE.price) * 100
+    const hit = !!d && pct >= level.target.value - 1e-9 && d.unsold <= FEW_LEFT
+    return {
+      headline: hit ? 'A quarter up, and the basin near empty.' : d ? `${pct.toFixed(0)} % with ${d.unsold} left.` : 'No day run yet.',
+      rows: [
+        ['Paid wholesale', cedis(WHOLESALE.price)],
+        ['Kilo price', cedis(kiloPrice(scheduleOf(level, s).price), 2)],
+        ['Till at closing', cedis(till)],
+        ['Discount at four', s.discount ? `−${Math.round(s.discount * 100)} %` : 'none'],
+        ['You sold', `${d?.sold ?? 0}`],
+        ['Left in the basin', `${d?.unsold ?? s.stock}`],
+      ],
+      lines: [
+        { text: `${cedis(till)} − ${cedis(WHOLESALE.price)} = ${cedis(profit)}`, tone: 'made' },
+        { text: `${cedis(profit)} ÷ ${cedis(WHOLESALE.price)} = ${pct.toFixed(0)} %`, tone: 'made' },
+      ],
+      grid: d ? { lit: d.sold, of: s.stock } : null,
+    }
+  }
+  const friday = harmattanFriday()
+  return {
+    headline: s.prediction !== null && Math.abs(s.prediction - friday) <= level.target.tolerance ? 'Friday named.' : 'Friday, still to name.',
+    rows: [
+      ['Monday', cedis(harmattanPrice(0), 2)],
+      ['Thursday', cedis(harmattanPrice(3), 2)],
+      ['The ratio', `× ${HARMATTAN.r}`],
+      ['You said Friday', s.prediction === null ? '—' : cedis(s.prediction, 2)],
+      ['Scale reads to', `${HARMATTAN.scaleStep * 1000} g`],
+      ['Your bound', s.bound === null ? '—' : `± ${cedis(s.bound, 2)}`],
+    ],
+    lines: [
+      { text: `${cedis(HARMATTAN.p0)} × ${HARMATTAN.r}⁴ = ${cedis(friday, 2)}`, tone: 'made' },
+      { text: `${HARMATTAN.scaleStep / 2} kg × ${cedis(harmattanPrice(3), 2)} = ± ${cedis(harmattanBound(), 2)}`, tone: 'made' },
+    ],
+    grid: null,
+  }
+}
+
+export interface WhyOption {
+  text: string
+  right: boolean
+  /** Ploob's answer, from the day's own numbers — never "wrong". */
+  answer: string
+}
+
+export interface WhyQuestion {
+  question: string
+  options: WhyOption[]
+}
+
+/**
+ * One question after the day, not another sum. Two explanations are things
+ * the day itself disproves; Ploob answers each from the numbers.
+ */
+export function whyQuestion(level: Level, s: StallState): WhyQuestion {
+  const d = s.day
+  if (level.kind === 'fill') {
+    const target = level.target.value
+    const price = s.price
+    const need = Math.ceil(target / price)
+    const hit = !!d && d.till >= target - 1e-9
+    const sold = d?.sold ?? 0
+    const passed = d?.passed ?? 0
+    return {
+      question: hit ? `Why did ${cedis(price, 2)} work?` : `Why did ${cedis(price, 2)} fall short?`,
+      options: hit
+        ? [
+            { text: `${need} tomatoes at ${cedis(price, 2)} each is ${cedis(need * price)} — and ${sold} sold.`, right: true, answer: `That is the sum that held: ${sold} × ${cedis(price, 2)} = ${cedis(d?.till ?? 0)}.` },
+            { text: 'Every shopper who came bought tomatoes.', right: false, answer: passed > 0 ? `${passed} looked at the board and walked on. The sum held anyway.` : 'Look again at the alley: some always walk on. The sum is what held.' },
+            { text: `${cedis(price, 2)} was the most anyone would pay.`, right: false, answer: `Some would pay up to ${cedis(PRICE_CEILING, 2)} — the dial's ceiling. ${cedis(price, 2)} worked because ${need} at ${cedis(price, 2)} is ${cedis(need * price)}.` },
+          ]
+        : [
+            { text: `Only ${sold} sold — ${sold} × ${cedis(price, 2)} is under ${cedis(target)}.`, right: true, answer: `${sold} × ${cedis(price, 2)} = ${cedis(d?.till ?? 0)}. ${cedis(target)} needs ${need} at this price.` },
+            { text: 'The shoppers had no money.', right: false, answer: `${passed} walked on because the board was above their limit, not because they had nothing. ${sold} did buy.` },
+            { text: 'The market closed early.', right: false, answer: 'The market ran to six. What ran out was buyers at this price, or tomatoes.' },
+          ],
+    }
+  }
+  if (level.kind === 'ratio') {
+    return {
+      question: 'Why does the four o’clock discount raise profit?',
+      options: [
+        { text: 'It sells the kilos the ceiling was refusing.', right: true, answer: 'Yes — a kilo unsold is ₵0; a kilo at a smaller mark-up is still above cost.' },
+        { text: 'It raises the price per kilo.', right: false, answer: 'It lowers it. What it raises is the number of kilos that go.' },
+        { text: 'Shoppers always wait for four.', right: false, answer: 'They arrive all day; the discount only changes what the late ones see.' },
+      ],
+    }
+  }
+  return {
+    question: 'Why does a straight line from four mornings undershoot Friday?',
+    options: [
+      { text: 'Each day multiplies the last by the same number.', right: true, answer: `Yes — × ${HARMATTAN.r} each morning. The steps grow; a line keeps them the same.` },
+      { text: 'The ratio shrinks every day.', right: false, answer: 'The ratio is the one thing that does not change on the board.' },
+      { text: 'The scale rounds up.', right: false, answer: 'The scale sets the bounds on today, not the price on Friday.' },
+    ],
+  }
+}
+
+/** The four-line stamp: prediction · action · observed · explanation. */
+export function stampOf(level: Level, s: StallState, chosen: WhyOption | null): string[] {
+  const d = s.day
+  if (level.kind === 'fill') {
+    return [
+      `Predicted ${s.guess === null ? '—' : s.guess} at ${cedis(s.price, 2)}${s.tillGuess !== null ? ` · said the till would make ${cedis(s.tillGuess)}` : ''}`,
+      `Stocked ${s.stock} and opened at ${cedis(s.price, 2)}`,
+      d ? `${d.sold} sold, ${d.passed} walked past, ${cedis(d.till)} in the till, ${d.unsold} left` : 'No day run',
+      chosen ? `Explained: ${chosen.text}` : 'Explanation still to choose',
+    ]
+  }
+  if (level.kind === 'ratio') {
+    return [
+      `Predicted ${s.guess === null ? '—' : cedis(s.guess, 2)} each from ${cedis(WHOLESALE.price)} for ${WHOLESALE.count}`,
+      `Marked up ${Math.round(s.markup * 100)} %${s.discount ? `, ${Math.round(s.discount * 100)} % off at four` : ''}`,
+      d ? `${cedis(d.till)} in the till, ${d.unsold} left — ${(profitOf(d.till, WHOLESALE.price) * 100).toFixed(0)} %` : 'No day run',
+      chosen ? `Explained: ${chosen.text}` : 'Explanation still to choose',
+    ]
+  }
+  return [
+    `Predicted the ratio ${s.guess === null ? '—' : s.guess.toFixed(2)}`,
+    `Named Friday ${s.prediction === null ? '—' : cedis(s.prediction, 2)}, bound ${s.bound === null ? '—' : `± ${cedis(s.bound, 2)}`}`,
+    `Friday is ${cedis(harmattanFriday(), 2)}; half a step is ± ${cedis(harmattanBound(), 2)}`,
+    chosen ? `Explained: ${chosen.text}` : 'Explanation still to choose',
+  ]
+}
+
+/** The rows the count layer draws: ten to a row, the spare ghosted. */
+export function rowsOf(n: number, need: number | null): { rows: number; full: number; spare: number } {
+  const count = Math.max(0, Math.floor(n))
+  const needed = need === null ? count : Math.max(0, Math.min(count, Math.floor(need)))
+  return { rows: Math.ceil(count / 10), full: needed, spare: count - needed }
 }
