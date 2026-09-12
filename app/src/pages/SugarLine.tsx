@@ -1796,7 +1796,19 @@ export default function SugarLine() {
           cabinet, but a `getByRole('button').first()` walks the DOM — and with
           the welcome last, "Start the line" resolved to a mission tile behind
           the overlay and every suite's opening click was intercepted. */}
-      {!started && <Welcome onPlay={handlePlay} onStart={handleStart} onDemo={startDemo} />}
+      {!started && (
+        <Welcome
+          onPlay={handlePlay}
+          onStart={handleStart}
+          onDemo={startDemo}
+          onBook={() => {
+            // The chapter is the other way in: the free lab, with the guide open
+            // at the door the campaign opens on.
+            handleStart()
+            window.setTimeout(() => openGuide(), 50)
+          }}
+        />
+      )}
 
       {/* The gather round takes the whole screen: it is played by dragging
           across the canvas, and any panel is both in the way of the finger and

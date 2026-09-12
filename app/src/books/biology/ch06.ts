@@ -138,13 +138,13 @@ export const CH06: Chapter = {
           title: { en: 'A leaf in section' },
           text: {
             explorer: {
-              en: 'Top: a waxy {cuticle:figure/cuticle} and the {upper skin:figure/upper|upper epidermis}. Then tall {palisade cells:figure/palisade}, packed with chloroplasts. Then loose {spongy cells:figure/spongy} with {air spaces:figure/airspaces} between them. Underneath, the {lower skin:figure/lower|lower epidermis} with its {stomata:figure/stoma}. A {vein:figure/bundle|vascular bundle} runs through the middle.',
+              en: 'Top: a waxy {cuticle:figure/cuticle} and the {upper skin:figure/upperEpidermis|upper epidermis}. Then tall {palisade cells:figure/palisade}, packed with chloroplasts. Then loose {spongy cells:figure/spongy} with {air spaces:figure/airSpaces} between them. Underneath, the {lower skin:figure/lowerEpidermis|lower epidermis} with its {stomata:figure/stoma}. A {vein:figure/vascular|vascular bundle} runs through the middle.',
             },
             scientist: {
-              en: 'Under the waxy {cuticle:figure/cuticle} and the {upper epidermis:figure/upper} sit the {palisade mesophyll:figure/palisade} cells, tall and packed with chloroplasts. Below them the {spongy mesophyll:figure/spongy} is loose, with {air spaces:figure/airspaces} that carry gas to and from the {stomata:figure/stoma} in the {lower epidermis:figure/lower}. A {vascular bundle:figure/bundle} — xylem and phloem — runs through the middle.',
+              en: 'Under the waxy {cuticle:figure/cuticle} and the {upper epidermis:figure/upperEpidermis} sit the {palisade mesophyll:figure/palisade} cells, tall and packed with chloroplasts. Below them the {spongy mesophyll:figure/spongy} is loose, with {air spaces:figure/airSpaces} that carry gas to and from the {stomata:figure/stoma} in the {lower epidermis:figure/lowerEpidermis}. A {vascular bundle:figure/vascular} — xylem and phloem — runs through the middle.',
             },
             analyst: {
-              en: 'The {cuticle:figure/cuticle} is waterproof; the {upper epidermis:figure/upper} is transparent, so light reaches the {palisade mesophyll:figure/palisade} — the cells with most chloroplasts, stacked where the light is strongest. The {spongy mesophyll:figure/spongy} and its {air spaces:figure/airspaces} give a large internal surface for gas exchange; the {stomata:figure/stoma} in the {lower epidermis:figure/lower} set the trade. The {vascular bundle:figure/bundle} brings water by xylem and takes sucrose away by phloem.',
+              en: 'The {cuticle:figure/cuticle} is waterproof; the {upper epidermis:figure/upperEpidermis} is transparent, so light reaches the {palisade mesophyll:figure/palisade} — the cells with most chloroplasts, stacked where the light is strongest. The {spongy mesophyll:figure/spongy} and its {air spaces:figure/airSpaces} give a large internal surface for gas exchange; the {stomata:figure/stoma} in the {lower epidermis:figure/lowerEpidermis} set the trade. The {vascular bundle:figure/vascular} brings water by xylem and takes sucrose away by phloem.',
             },
           },
         },

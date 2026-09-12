@@ -40,6 +40,8 @@ import { readAloud, stopNarration, narrationAvailable } from '@/lib/narrator'
 import { explainHandIn, pendingFor, stampCheck, useCurriculum, type Grade } from '@/lib/curriculum'
 import { Tile } from '@/components/ui/tile'
 import { Chip } from '@/components/sugar/hud/AtlasKit'
+import SectionFigure from './SectionFigure'
+import { FIGURE_LAYERS, type FigureKind } from './figures'
 
 export interface GuideLocation {
   sectionId: string
@@ -63,71 +65,16 @@ interface Props {
 /* The figure verbs the page answers itself                            */
 /* ------------------------------------------------------------------ */
 
-const FIGURE_LAYERS: Record<string, { label: string; job: string }> = {
-  cuticle: { label: 'cuticle', job: 'a waxy, waterproof skin that stops the leaf drying out' },
-  upper: { label: 'upper epidermis', job: 'transparent — light passes straight through to the cells below' },
-  palisade: { label: 'palisade mesophyll', job: 'tall, tightly packed cells with the most chloroplasts, where most photosynthesis happens' },
-  spongy: { label: 'spongy mesophyll', job: 'loosely packed cells with air spaces between them for gas exchange' },
-  airspaces: { label: 'air spaces', job: 'carry carbon dioxide to every cell and water vapour away' },
-  lower: { label: 'lower epidermis', job: 'the underside, with most of the stomata' },
-  stoma: { label: 'stoma', job: 'a pore between two guard cells — the leaf\'s only door' },
-  bundle: { label: 'vascular bundle', job: 'xylem brings water; phloem takes the sugar away' },
+/** Which of the page's own figures a set of `figure/<layer>` verbs belongs to. */
+function figureKindFor(keys: string[]): FigureKind | null {
+  for (const kind of Object.keys(FIGURE_LAYERS) as FigureKind[])
+    if (keys.some((k) => FIGURE_LAYERS[kind].some((l) => l.key === k))) return kind
+  return null
 }
 
-function LeafSectionFigure({ lit, onLayer }: { lit: string | null; onLayer: (layer: string) => void }) {
-  const on = (l: string) => (lit === l ? 1 : lit ? 0.35 : 0.9)
-  const ring = (l: string) => (lit === l ? '#D9A441' : 'none')
-  return (
-    <svg
-      viewBox="0 0 300 126"
-      role="img"
-      aria-label="A leaf in section: cuticle, upper epidermis, palisade mesophyll, spongy mesophyll with air spaces, lower epidermis with a stoma, and a vascular bundle"
-      className="block w-full"
-      data-testid="leaf-figure"
-      data-lit={lit ?? ''}
-    >
-      <g onClick={() => onLayer('cuticle')} style={{ cursor: 'pointer' }}>
-        <rect x="10" y="8" width="280" height="6" fill="#E9E0C8" opacity={on('cuticle')} stroke={ring('cuticle')} />
-      </g>
-      <g onClick={() => onLayer('upper')} style={{ cursor: 'pointer' }}>
-        <rect x="10" y="14" width="280" height="10" fill="#EDE6D6" opacity={on('upper')} stroke={lit === 'upper' ? '#D9A441' : '#D9CFBB'} />
-      </g>
-      <g onClick={() => onLayer('palisade')} style={{ cursor: 'pointer' }} opacity={on('palisade')}>
-        {[12, 31, 50, 69, 88, 215, 234, 253, 272].map((x) => (
-          <rect key={x} x={x} y="25" width="16" height="34" rx="3" fill="#4E8A4A" stroke={ring('palisade')} />
-        ))}
-      </g>
-      <g onClick={() => onLayer('bundle')} style={{ cursor: 'pointer' }} opacity={on('bundle')}>
-        <rect x="108" y="25" width="104" height="34" fill="#F3DFB2" stroke={lit === 'bundle' ? '#D9A441' : '#C98A1E'} />
-        <circle cx="150" cy="42" r="9" fill="#3F7FBF" />
-        <circle cx="170" cy="42" r="8" fill="#C98A1E" />
-      </g>
-      <g onClick={() => onLayer('spongy')} style={{ cursor: 'pointer' }} opacity={on('spongy')}>
-        {[
-          [30, 76],
-          [70, 82],
-          [120, 74],
-          [200, 80],
-          [250, 74],
-          [280, 84],
-        ].map(([cx, cy]) => (
-          <ellipse key={cx} cx={cx} cy={cy} rx="14" ry="9" fill="#D9E8D3" stroke={lit === 'spongy' ? '#D9A441' : '#4E8A4A'} />
-        ))}
-      </g>
-      <g onClick={() => onLayer('airspaces')} style={{ cursor: 'pointer' }}>
-        <rect x="10" y="62" width="280" height="32" fill={lit === 'airspaces' ? '#F3DFB2' : 'transparent'} opacity={lit === 'airspaces' ? 0.55 : 1} stroke={ring('airspaces')} strokeDasharray="3 3" />
-      </g>
-      <g onClick={() => onLayer('lower')} style={{ cursor: 'pointer' }}>
-        <rect x="10" y="94" width="280" height="10" fill="#EDE6D6" opacity={on('lower')} stroke={lit === 'lower' ? '#D9A441' : '#D9CFBB'} />
-      </g>
-      <g onClick={() => onLayer('stoma')} style={{ cursor: 'pointer' }}>
-        <ellipse cx="160" cy="99" rx={lit === 'stoma' ? 11 : 9} ry="5" fill="#FBF8F1" stroke={lit === 'stoma' ? '#D9A441' : '#4E8A4A'} strokeWidth={lit === 'stoma' ? 2 : 1} />
-      </g>
-      <text x="12" y="118" fontSize="7.5" fill="#8B8471" fontFamily="inherit">
-        {lit ? `${FIGURE_LAYERS[lit]?.label} — ${FIGURE_LAYERS[lit]?.job}` : 'tap a term, or a layer'}
-      </text>
-    </svg>
-  )
+function figureSays(kind: FigureKind, key: string | null): string {
+  if (!key) return 'tap a term, or a layer'
+  return FIGURE_LAYERS[kind].find((l) => l.key === key)?.says ?? ''
 }
 
 /* ------------------------------------------------------------------ */
@@ -365,7 +312,8 @@ export function PageCard({ book, band, cabinet, where, onNavigate, onClose, onSt
   const layer = page.text ? layerFor(page.text, band) : null
   const segments = useMemo(() => (layer ? segment(lineIn(layer)) : []), [layer])
   const extSegments = useMemo(() => (page.ext && band === 'analyst' ? segment(lineIn(page.ext)) : []), [page.ext, band])
-  const hasFigure = segments.some((s) => s.token.kind === 'term' && s.token.verb.startsWith('figure/'))
+  const figureKeys = segments.filter((s) => s.token.kind === 'term' && s.token.verb.startsWith('figure/')).map((s) => (s.token as { verb: string }).verb.slice('figure/'.length))
+  const figureKind = figureKeys.length ? figureKindFor(figureKeys) : null
 
   // A new page: stop reading, clear the highlight, set the page's own figure.
   const figureRan = useRef<string | null>(null)
@@ -503,9 +451,10 @@ export function PageCard({ book, band, cabinet, where, onNavigate, onClose, onSt
       <div className={cn('mt-2 pr-0.5', compact ? '' : 'min-h-0 flex-1 overflow-y-auto')}>
         {layer && <Terms segments={segments} now={now} onTerm={onTerm} compact={compact} />}
 
-        {hasFigure && (
-          <div className="mt-2 rounded-lg border border-[#E4DCC9] bg-[#FCFAF4] p-1.5">
-            <LeafSectionFigure lit={lit} onLayer={(l) => fire(`figure/${l}`)} />
+        {figureKind && (
+          <div className="mt-2 rounded-lg border border-[#E4DCC9] bg-[#FCFAF4] p-1.5" data-testid="leaf-figure" data-lit={lit ?? ''}>
+            <SectionFigure kind={figureKind} lit={lit} onTap={(l) => fire(`figure/${l}`)} />
+            <p className="mt-1 px-1 text-[10.5px] leading-snug text-[#8B8471]">{figureSays(figureKind, lit)}</p>
           </div>
         )}
 

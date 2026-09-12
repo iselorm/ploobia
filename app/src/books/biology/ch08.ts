@@ -113,6 +113,22 @@ export const CH08: Chapter = {
           },
         },
         {
+          id: '8.2.rule',
+          kind: 'rule',
+          title: { en: 'A root in section' },
+          text: {
+            explorer: {
+              en: 'The {soil:figure/soil} holds water between its grains. {Root hairs:figure/rootHair} reach into it and drink — thousands of them, so the root has a huge surface. The water crosses the {cortex:figure/cortex} cell by cell and reaches the {xylem:figure/rootXylem} in the middle of the root. From there it is on the line up to the leaves.',
+            },
+            scientist: {
+              en: 'Water and mineral ions in the {soil:figure/soil} enter the {root hair cells:figure/rootHair}, whose length gives the root a very large surface area for uptake. The water then passes through the {root cortex cells:figure/cortex} to the {xylem:figure/rootXylem}, which sits at the centre of a root — unlike a stem, where the vascular bundles form a ring. The pathway: root hair cells → root cortex cells → xylem → mesophyll cells.',
+            },
+            analyst: {
+              en: 'Root hair cells ({root hairs:figure/rootHair}) are extensions of epidermal cells: a large surface area, a thin wall, and a water potential lower than the {soil:figure/soil} solution, so water enters by osmosis while mineral ions are taken up partly by active transport. Water crosses the {cortex:figure/cortex} and enters the central {xylem:figure/rootXylem}; a stain stood in the water later colours only the xylem, never the phloem between its arms — the evidence for the route.',
+            },
+          },
+        },
+        {
           id: '8.2.practical',
           kind: 'practical',
           title: { en: 'The Roots' },
