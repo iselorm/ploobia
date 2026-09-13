@@ -1322,6 +1322,11 @@ export default function SugarLine() {
     }
   }, [handleCatch])
 
+  /** Whether the finger has swept yet this round — the demonstration stays up until it has. */
+  const [gatherMoved, setGatherMoved] = useState(false)
+  useEffect(() => {
+    if (!gathering) setGatherMoved(false)
+  }, [gathering])
   const gatherProps = useMemo(
     () =>
       gathering && run.challenge
@@ -1330,6 +1335,7 @@ export default function SugarLine() {
             running: true,
             kinds: (['light', 'co2', 'water'] as SugarResource[]).filter((k) => run.challenge!.budget[k] !== undefined),
             onCatch: handleCatch,
+            onFirstMove: () => setGatherMoved(true),
           }
         : null,
     [gathering, run.challenge, handleCatch],
@@ -2318,6 +2324,7 @@ export default function SugarLine() {
           total={run.challenge.gatherSeconds}
           readyLeft={run.readyLeft}
           ready={run.phase === 'ready'}
+          moved={gatherMoved}
           bank={run.bank}
           budget={run.challenge.budget}
           caught={caught}

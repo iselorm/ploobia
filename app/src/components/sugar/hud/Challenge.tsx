@@ -27,6 +27,7 @@ import {
   type SugarResource,
 } from '@/lib/sugarchallenge'
 import { isStageOpen } from '@/lib/campaign'
+import { useInputMode } from '@/lib/input'
 import { AtlasButton, Chip, Dial, Meter } from './AtlasKit'
 
 /**
@@ -542,6 +543,45 @@ function gatherLine(
 }
 
 /**
+ * The gesture, shown rather than named: a finger sweeping through falling
+ * light with the ring trailing it, looping until the learner has done it
+ * once. SMIL rather than CSS keyframes so it needs no stylesheet and stays
+ * inside the plate; motion stops with `prefers-reduced-motion` via the
+ * `atlas-arrive` rule's media query in index.css.
+ */
+function SweepDemo({ touch }: { touch: boolean }) {
+  return (
+    <svg viewBox="0 0 120 64" width="120" height="64" aria-hidden="true" className="shrink-0" data-testid="sweep-demo">
+      <rect x="0" y="0" width="120" height="64" rx="8" fill="#EEF4E6" />
+      {[18, 44, 70, 96].map((x, i) => (
+        <g key={x} stroke="#E8A33D" strokeWidth="1.2" opacity="0.7">
+          <line x1={x} y1="2" x2={x} y2="62" strokeDasharray="2 4" />
+          <circle cx={x} cy="0" r="2.6" fill="#FFD98A" stroke="none">
+            <animate attributeName="cy" from="-4" to="66" dur="2.4s" begin={`${i * 0.6}s`} repeatCount="indefinite" />
+          </circle>
+        </g>
+      ))}
+      <g>
+        <circle r="9" fill="none" stroke="#6FBF8A" strokeWidth="2" opacity="0.9">
+          <animateMotion dur="2.4s" repeatCount="indefinite" path="M 14 40 C 40 20, 80 60, 106 30" />
+        </circle>
+        {touch ? (
+          <g>
+            <animateMotion dur="2.4s" repeatCount="indefinite" path="M 14 40 C 40 20, 80 60, 106 30" />
+            <path d="M 0 0 l 0 -12 a 3 3 0 0 1 6 0 l 0 12 l 3 -3 a 3 3 0 0 1 4 4 l -6 9 l -8 0 l -5 -6 a 3 3 0 0 1 4 -4 z" fill="#FBF8F1" stroke="#2A2823" strokeWidth="1" transform="translate(-2 3)" />
+          </g>
+        ) : (
+          <g>
+            <animateMotion dur="2.4s" repeatCount="indefinite" path="M 14 40 C 40 20, 80 60, 106 30" />
+            <path d="M 0 0 l 0 14 l 4 -4 l 3 6 l 3 -1 l -3 -6 l 5 0 z" fill="#FBF8F1" stroke="#2A2823" strokeWidth="1" transform="translate(1 1)" />
+          </g>
+        )}
+      </g>
+    </svg>
+  )
+}
+
+/**
  * The gather round's own HUD: a clock, three filling jars, and a voice.
  *
  * Kept out of the drawer and off the sides on purpose. During this round the
@@ -556,6 +596,7 @@ export function GatherHud({
   total,
   readyLeft,
   ready,
+  moved = true,
   bank,
   budget,
   caught,
@@ -567,6 +608,12 @@ export function GatherHud({
   /** The get-ready countdown, while `ready` is true. */
   readyLeft: number
   ready: boolean
+  /**
+   * Whether the finger has swept yet. The demonstration card stays up until
+   * it has — a countdown that ends before the gesture has been found leaves
+   * a first-timer dragging the ring (Selorm, 12 Sep).
+   */
+  moved?: boolean
   bank: ResourceBudget
   budget: ResourceBudget
   /** The most recent catch, for the little flash. */
@@ -579,6 +626,7 @@ export function GatherHud({
   const urgent = !ready && secondsLeft <= 5
   const night = !!challenge && dayWorldOf(challenge).night
   const line = gatherLine(bank, budget, secondsLeft, ready, night)
+  const touch = useInputMode() === 'touch'
   return (
     <div className="pointer-events-none fixed inset-0 z-30" data-testid="gather-hud">
       <div className="absolute inset-x-3 top-3 mx-auto flex max-w-[36rem] flex-col gap-2">
@@ -609,23 +657,31 @@ export function GatherHud({
       {/* The get-ready beat. The clock waits for it, or for the first catch —
           whichever comes first — so a learner who has found the gesture is
           never held up by a countdown telling them about it. */}
-      {ready && (
+      {(ready || !moved) && (
         <div className="absolute inset-x-4 top-[8.6rem] flex justify-center">
           <div
             data-testid="get-ready"
+            data-moved={moved ? 'true' : 'false'}
             className="atlas-plate atlas-arrive w-full max-w-[22rem] px-4 py-3 text-center"
           >
-            <span
-              className="atlas-serif block text-[44px] leading-none font-semibold text-[#2F6134] tabular-nums"
-              aria-live="polite"
-            >
-              {Math.max(1, Math.ceil(readyLeft))}
-            </span>
+            <div className="flex items-center justify-center gap-3">
+              <SweepDemo touch={touch} />
+              {ready ? (
+                <span
+                  className="atlas-serif block text-[44px] leading-none font-semibold text-[#2F6134] tabular-nums"
+                  aria-live="polite"
+                >
+                  {Math.max(1, Math.ceil(readyLeft))}
+                </span>
+              ) : (
+                <span className="atlas-serif block text-[15px] leading-tight font-semibold text-[#96591C]">the clock is running</span>
+              )}
+            </div>
             <p className="mt-1 text-[13px] leading-snug font-black text-[#2A2823]">
-              Drag the ring through the light.
+              {touch ? 'Sweep your finger anywhere on the screen.' : 'Sweep the mouse anywhere across the screen.'}
             </p>
             <p className="mt-0.5 text-[11.5px] leading-snug font-semibold text-[#8B8471]">
-              A leaf does not grab. It holds out area and catches what falls through it.
+              The ring follows you — nothing to drag. A leaf holds out area and catches what falls through it.
             </p>
           </div>
         </div>

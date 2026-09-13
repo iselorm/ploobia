@@ -96,6 +96,7 @@ export default function GatherRound({
   running,
   kinds,
   onCatch,
+  onFirstMove,
 }: {
   rig: SugarRig
   seed: number
@@ -105,6 +106,13 @@ export default function GatherRound({
   kinds?: SugarResource[]
   /** Fired for each catch, so the HUD can bank it and celebrate. */
   onCatch: (kind: SugarResource, amount: number) => void
+  /**
+   * Fired once, the first time the finger sweeps. The HUD keeps its "sweep
+   * anywhere" demonstration up until then: a first-timer who saw a glowing
+   * ring in the middle of the screen tried to *drag the ring* (Selorm,
+   * 12 Sep) — the gesture has to be shown, not named.
+   */
+  onFirstMove?: () => void
 }) {
   const meshRef = useRef<THREE.InstancedMesh>(null)
   const ringRef = useRef<THREE.Mesh>(null)
@@ -268,8 +276,12 @@ export default function GatherRound({
       ringRef.current.position.copy(state.camera.position).addScaledVector(dir, 3.2)
       ringRef.current.quaternion.copy(state.camera.quaternion)
       ringRef.current.visible = running
-      const pulse = 1 + Math.sin(state.clock.elapsedTime * 4) * 0.04
-      ringRef.current.scale.setScalar(0.62 * pulse)
+      // Before the first sweep the ring breathes hard — it is announcing
+      // itself as the thing that will follow the finger. Once the learner has
+      // moved it settles to a faint pulse so it never hides what they aim at.
+      const settled = moved.current.yes === 1
+      const pulse = 1 + Math.sin(state.clock.elapsedTime * (settled ? 4 : 2.6)) * (settled ? 0.04 : 0.16)
+      ringRef.current.scale.setScalar((settled ? 0.62 : 0.78) * pulse)
     }
 
     const mo = motion.current
@@ -284,6 +296,7 @@ export default function GatherRound({
       moved.current.y = py
     } else if (!moved.current.yes && Math.abs(px - moved.current.x) + Math.abs(py - moved.current.y) > 0.02) {
       moved.current.yes = 1
+      onFirstMove?.()
     }
     const canCatch = running && moved.current.yes === 1
 

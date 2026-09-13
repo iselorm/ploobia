@@ -1307,7 +1307,7 @@ export default function PlantStage({
    * which is the whole promise of the opt-in mode: with no challenge, not one
    * line of this file behaves differently.
    */
-  gather?: { seed: number; running: boolean; kinds?: SugarResource[]; onCatch: (kind: SugarResource, amount: number) => void } | null
+  gather?: { seed: number; running: boolean; kinds?: SugarResource[]; onCatch: (kind: SugarResource, amount: number) => void; onFirstMove?: () => void } | null
 }) {
   const specimen = useMemo(
     () => SPECIMEN_BY_ID[specimenId] ?? SPECIMEN_BY_ID[DEFAULT_SPECIMEN],
@@ -1364,6 +1364,7 @@ export default function PlantStage({
           running={gather.running}
           kinds={gather.kinds}
           onCatch={gather.onCatch}
+          onFirstMove={gather.onFirstMove}
         />
       )}
     </group>

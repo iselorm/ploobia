@@ -432,6 +432,7 @@ interface Props {
     running: boolean
     kinds?: SugarResource[]
     onCatch: (kind: SugarResource, amount: number) => void
+    onFirstMove?: () => void
   } | null
   onContextLost: () => void
 }
