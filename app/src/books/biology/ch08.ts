@@ -65,7 +65,11 @@ export const CH08: Chapter = {
           practical: {
             door: 'stem',
             level: { explorer: 'night-shift', scientist: 'cut-the-ring', analyst: 'time-the-sugar' },
-            stamps: ['0610:8.1.1', '0610:8.1.2'],
+            // A hit at the Line is evidence for what the pipes do (8.1.1), not
+            // for identifying them in sections of roots, stems AND leaves
+            // (8.1.2): the stem stage shows a stem. Until a page asks for the
+            // identification and commits an answer, the ledger says "not here".
+            stamps: ['0610:8.1.1'],
             line: { en: 'Route the sugar: send it, stop it, or time it.' },
           },
         },

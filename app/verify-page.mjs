@@ -114,7 +114,13 @@ for (const band of ['explorer', 'scientist', 'analyst']) {
   check(`[${band}] the page card takes the parts column`, (await page.getByLabel(/^Specimen: /).count()) === 0)
   check(`[${band}] the ledger sits in the right column`, (await page.getByTestId('section-ledger').count()) === 1)
   check(`[${band}] no syllabus number on the page card`, !/\b\d\.\d\.\d+\b/.test(await page.getByTestId('page-card').innerText()))
-  check(`[${band}] the ledger carries the numbers`, /6\.1\.1/.test(await page.getByTestId('section-ledger').innerText()))
+  check(`[${band}] the ledger names statements in words, no numbers, until asked`, (await page.getByTestId('section-ledger').getAttribute('data-syllabus')) === 'off' && !/\b\d\.\d\.\d+\b/.test(await page.getByTestId('section-ledger').innerText()) && /Photosynthesis: the process/.test(await page.getByTestId('section-ledger').innerText()), (await page.getByTestId('section-ledger').innerText()).slice(0, 100))
+  await page.getByTestId('ledger-syllabus').click({ force: true })
+  await page.waitForTimeout(150)
+  check(`[${band}] the Syllabus toggle turns the numbers and the verbatim statements on`, /6\.1\.1/.test(await page.getByTestId('section-ledger').innerText()) && /synthesise carbohydrates/.test(await page.getByTestId('section-ledger').innerText()))
+  await page.getByTestId('ledger-syllabus').click({ force: true })
+  await page.waitForTimeout(150)
+  check(`[${band}] and off again`, !/6\.1\.1/.test(await page.getByTestId('section-ledger').innerText()))
   const ext = await page.getByTestId('guide-ext').count()
   check(`[${band}] the Extended block shows only at Analyst`, band === 'analyst' ? ext === 1 : ext === 0)
 
@@ -292,7 +298,7 @@ for (const band of ['explorer', 'scientist', 'analyst']) {
       JSON.stringify({
         stamps: {},
         pending: {
-          'cut-the-ring': { cabinet: 'photosynthesis', source: 'cut-the-ring', prediction: '0.4 (it is 0.5)', action: 'light 60 %, ring cut', observed: 'export 0.42', stamps: ['0610:8.1.1', '0610:8.1.2', '0610:8.4.1', '0610:8.4.2'], at: Date.now() },
+          'cut-the-ring': { cabinet: 'photosynthesis', source: 'cut-the-ring', prediction: '0.4 (it is 0.5)', action: 'light 60 %, ring cut', observed: 'export 0.42', stamps: ['0610:8.1.1', '0610:8.4.1', '0610:8.4.2'], at: Date.now() },
         },
       }),
     )
@@ -321,9 +327,15 @@ for (const band of ['explorer', 'scientist', 'analyst']) {
   await page.waitForTimeout(300)
   check('the explanation closes the record and stamps', (await page.getByTestId('guide-stamped').count()) === 1)
   const ledger = await page.evaluate(() => JSON.parse(localStorage.getItem('ploobia.curriculum.v1')))
-  check('every statement the hand-in named is stamped, with all four lines', ['0610:8.1.1', '0610:8.1.2', '0610:8.4.1', '0610:8.4.2'].every((id) => ledger.stamps[id]?.[0]?.explanation && ledger.stamps[id][0].prediction && ledger.stamps[id][0].observed))
+  check('every statement the hand-in named is stamped, with all four lines', ['0610:8.1.1', '0610:8.4.1', '0610:8.4.2'].every((id) => ledger.stamps[id]?.[0]?.explanation && ledger.stamps[id][0].prediction && ledger.stamps[id][0].observed))
+  check('8.1.2 is not stamped by the Line — a stem stage is not roots, stems and leaves', !ledger.stamps['0610:8.1.2'])
   check('the pending slot is cleared', Object.keys(ledger.pending).length === 0)
   check('the ledger reads "stamped"', (await page.getByTestId('section-ledger').locator('[data-statement="8.1.1"]').getAttribute('data-how')) === 'stamped')
+  check('the ledger says "not here" for 8.1.2', (await page.getByTestId('section-ledger').locator('[data-statement="8.1.2"]').getAttribute('data-how')) === 'none' && /not here/i.test(await page.getByTestId('section-ledger').locator('[data-statement="8.1.2"]').innerText()))
+  await page.getByTestId('section-ledger').locator('[data-statement="8.1.1"] [data-testid="ledger-row"]').click({ force: true })
+  await page.waitForTimeout(200)
+  const rec = await page.getByTestId('stamp-record').innerText().catch(() => '(no record)')
+  check('a stamped row opens to its four lines', /GUESSED/.test(rec) && /0\.4 \(it is 0\.5\)/.test(rec) && /SET/.test(rec) && /ring cut/.test(rec) && /SAW/.test(rec) && /export 0\.42/.test(rec) && /EXPLAINED/.test(rec), rec.slice(0, 160))
   check('the chip stops inviting', !/Explain it/.test(await page.getByTestId('guide-chip').innerText()))
   await page.close()
 }

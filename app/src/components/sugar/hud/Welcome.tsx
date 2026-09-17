@@ -27,7 +27,7 @@ export default function Welcome({
   onPlay: (stage: CampaignStage) => void
   onStart: () => void
   onDemo: () => void
-  /** Open the book's contents — the chapter is the other way in. */
+  /** Open the field guide — the chapter is the other way in. */
   onBook?: () => void
 }) {
   const [band] = useBand()
@@ -115,22 +115,22 @@ export default function Welcome({
             {onBook && phone && (
               <Tile
                 onClick={onBook}
-                aria-label="Read the chapter"
+                aria-label="Read the field guide"
                 className="flex flex-1 items-center justify-center gap-1.5 rounded-full border border-[#EAD0A0] bg-[#FBEBD2] px-3 py-1.5 text-[12px] font-extrabold text-[#8A5A0B] transition-all hover:bg-[#F6E1BD] active:scale-95"
               >
                 <BookOpen className="h-3.5 w-3.5" />
-                Read the chapter
+                Field guide
               </Tile>
             )}
           </div>
           {onBook && !phone && (
             <Tile
               onClick={onBook}
-              aria-label="Read the chapter"
+              aria-label="Read the field guide"
               className="mx-auto flex items-center gap-1.5 rounded-full border border-[#EAD0A0] bg-[#FBEBD2] px-4 py-1.5 text-[11.5px] font-extrabold text-[#8A5A0B] transition-all hover:bg-[#F6E1BD] active:scale-95"
             >
               <BookOpen className="h-3.5 w-3.5" />
-              or read the chapter — Biology 0610, chapters 6 and 8
+              or open the field guide — photosynthesis and transport, chapters 6 and 8
             </Tile>
           )}
         </div>

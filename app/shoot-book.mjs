@@ -41,7 +41,7 @@ const shots = [
 for (const [tier, w, h, touch] of shots) {
   const page = await open(w, h, touch, tier === 'phone' ? 'explorer' : 'analyst')
   await shot(page, `${tier}-welcome`)
-  await page.getByRole('button', { name: 'Read the chapter', exact: true }).click({ force: true }).catch(() => {})
+  await page.getByRole('button', { name: 'Read the field guide', exact: true }).click({ force: true }).catch(() => {})
   await page.waitForTimeout(800)
   await shot(page, `${tier}-contents`)
   await openSection(page, '8.1', 0)
