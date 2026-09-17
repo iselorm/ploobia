@@ -23,6 +23,9 @@ fs.writeFileSync(
   `export * from '${path.resolve('src/lib/market').replace(/\\/g, '/')}'
 export * from '${path.resolve('src/lib/numberworkscampaign').replace(/\\/g, '/')}'
 export * from '${path.resolve('src/lib/challenge').replace(/\\/g, '/')}'
+export * from '${path.resolve('src/lib/page').replace(/\\/g, '/')}'
+export { BOOK_0580 } from '${path.resolve('src/books/maths/index').replace(/\\/g, '/')}'
+export { MATHS_STATEMENTS, NACCA_STRAND, CAMBRIDGE_STRAND, strandFor } from '${path.resolve('src/lib/curriculum').replace(/\\/g, '/')}'
 `,
 )
 execSync(`npx esbuild "${path.join(TMP, 'market-barrel.ts')}" --bundle --format=esm --outfile="${OUT}" --alias:@=${path.resolve('src')}`, { stdio: 'pipe' })
@@ -310,6 +313,197 @@ check('a worse hand-in never lowers the best', M.getNumberworksProgress().handed
   const r3 = M.reconstructionOf(harm, { ...M.startStall(harm, 60), prediction: M.harmattanFriday(), bound: M.harmattanBound() })
   check('level 3 reconstructs Friday as 24 × 1.15⁴', /24 × 1\.15⁴/.test(r3.lines[0].text) && r3.lines[0].text.includes(M.harmattanFriday().toFixed(2)))
   check('level 3\'s question is the straight line', /straight line/.test(M.whyQuestion(harm, M.startStall(harm, 60)).question))
+}
+
+/* ---- round A.3, after review 2: the alley adds up, the replay, three whys, best for what ---- */
+{
+  const fill = M.LEVEL_BY_ID['fill-the-till']
+  const seed = 1000
+  const rec = (i, price, stock, discount = 0, tillGuess = null) => {
+    const crowdSeed = M.crowdSeedFor(seed, fill, i)
+    return { dayIndex: i, crowdSeed, stock, guess: i === 1 ? 50 : null, tillGuess, result: M.simulateDay(M.shoppersFor(crowdSeed), stock, { price, discount }), explained: null }
+  }
+  const d1 = rec(1, 4, 50)
+  const d2 = rec(2, 4.5, 50, 0, 200)
+  const d3 = rec(3, 4.2, 56)
+  // people and tomatoes
+  for (const d of [d1, d2, d3]) {
+    const r = d.result
+    check(`day ${d.dayIndex}: the alley adds up — buyers + walked past + too late = forty`, r.buyers + r.passed + r.missed === M.SHOPPERS_PER_DAY, `${r.buyers} + ${r.passed} + ${r.missed}`)
+    check(`day ${d.dayIndex}: buyers are people, sold is tomatoes — sold ≥ buyers, and the sales list is the buyers`, r.sold >= r.buyers && r.sales.length === r.buyers && r.sales.reduce((a, x) => a + x.n, 0) === r.sold)
+  }
+  check('seed 1000, day 1 at ₵4: 22 bought 50, 15 walked past, 3 too late, ₵200 (the storyboard\'s numbers)', d1.result.buyers === 22 && d1.result.sold === 50 && d1.result.passed === 15 && d1.result.missed === 3 && near(d1.result.till, 200))
+  check('a day that did not sell out has nobody "too late"', d2.result.unsold > 0 && d2.result.missed === 0)
+  check('the run replayed step by step counts the same three states as the whole-day solve', (() => {
+    const run = M.startDay(M.shoppersFor(d1.crowdSeed), 50, { price: 4, discount: 0 })
+    for (let i = 0; i < 200; i++) M.stepDay(run, 0.005)
+    const r = M.resultOf(run)
+    return r.buyers === d1.result.buyers && r.passed === d1.result.passed && r.missed === d1.result.missed && near(r.till, d1.result.till)
+  })())
+  check('the result keeps the schedule it was sold at', d2.result.schedule.price === 4.5 && d2.result.schedule.discount === 0)
+  // the replay — the hero
+  const cfs = M.replaysFor(fill, [d1, d2])
+  check('after day 2 the market has two replays: the price not chosen first, four o\'clock second', cfs.length === 2 && cfs[0].kind === 'price' && cfs[1].kind === 'event')
+  const c = cfs[0]
+  check('the price replay is today\'s crowd at yesterday\'s board — ₵4 on day 2\'s forty', c.other.schedule.price === 4 && c.other.schedule.discount === 0 && c.chosen.result === d2.result)
+  check('seed 1000: you chose ₵4.50 → ₵198 (17 bought 44, 23 walked past, 6 left); same market at ₵4 → ₵200 (19 bought 50, 11 walked past, 10 too late)',
+    near(c.chosen.result.till, 198) && c.chosen.result.buyers === 17 && c.chosen.result.sold === 44 && c.chosen.result.passed === 23 && c.chosen.result.unsold === 6 && near(c.other.result.till, 200) && c.other.result.buyers === 19 && c.other.result.sold === 50 && c.other.result.passed === 11 && c.other.result.missed === 10)
+  check('the replay\'s verdict is from the numbers and on nobody\'s side', /₵2 more/.test(c.verdict) && /19 bought instead of 17/.test(c.verdict) && !/should|better/.test(c.verdict))
+  check('the replay run is the same crowd at the other board, and settles to the counterfactual to the pesewa', (() => {
+    const run = M.replayRun(c, d2.crowdSeed, d2.stock)
+    for (let i = 0; i < 200; i++) M.stepDay(run, 0.005)
+    return near(run.till, c.other.result.till) && run.sold === c.other.result.sold
+  })())
+  const e = cfs[1]
+  check('the four o\'clock replay: kept ₵4.50 → ₵198 · 6 left, dropped to ₵3.50 → ₵217 · sold out', /kept/.test(e.chosen.label) && /dropped/.test(e.other.label) && near(e.other.result.till, 217) && e.other.result.unsold === 0)
+  const d2d = rec(2, 4.5, 50, M.eventDrop({ schedule: { price: 4.5, discount: 0 } }).discount, 200)
+  const ed = M.eventCounterfactual(d2d)
+  check('a day that dropped replays the kept price instead', ed && /dropped/.test(ed.chosen.label) && /kept/.test(ed.other.label) && near(ed.other.result.till, 198))
+  const s777 = M.crowdSeedFor(777, fill, 2)
+  const e777 = M.eventCounterfactual({ dayIndex: 2, crowdSeed: s777, stock: 50, guess: null, tillGuess: null, result: M.simulateDay(M.shoppersFor(s777), 50, { price: 4.5, discount: 0 }), explained: null })
+  check('seed 777: dropping LOSES (₵188 against ₵198) and the verdict says so', e777 && e777.other.result.till < e777.chosen.result.till && /less/.test(e777.verdict), e777 && `${e777.chosen.result.till} vs ${e777.other.result.till}`)
+  check('day 1 has no price to replay (no day before it)', M.priceCounterfactual(d1, null) === null)
+  check('a day sold out before four has no four o\'clock to replay', M.eventCounterfactual(rec(1, 3.5, 20)) === null)
+  check('the same price two days running has no price replay', M.priceCounterfactual(rec(2, 4, 50), d1) === null)
+  check('levels 2 and 3 have no replays', M.replaysFor(M.LEVEL_BY_ID['wholesale-ratio'], [d1]).length === 0 && M.replaysFor(M.LEVEL_BY_ID['harmattan-price'], [d1, d2]).length === 0)
+  // three whys, no counter
+  const st1 = { ...M.startStall(fill, 50), price: 4, day: d1.result, guess: 50 }
+  const w1 = M.whyFor(fill, st1, [d1], null)
+  check('day 1\'s why is the sum, headed "What happened today?" — no "1 of 3"', w1.kind === 'sum' && w1.eyebrow === 'What happened today?' && !/of 3/.test(w1.eyebrow + w1.question))
+  const st2 = { ...st1, price: 4.5, day: d2.result, dayIndex: 2, tillGuess: 200, lastHit: false }
+  const w2 = M.whyFor(fill, st2, [d1, d2], c)
+  check('day 2\'s why is the scenario, headed "Something strange happened…" on a miss', w2.kind === 'scenario' && w2.eyebrow === 'Something strange happened…' && /You said ₵200/.test(w2.question) && /17 people bought 44/.test(w2.question))
+  check('the scenario\'s options: the sum (right), a smaller crowd (the same forty), the same at ₵4 (the replay says otherwise)', w2.options.length === 3 && w2.options[0].right && /45 instead of 50/.test(w2.options[0].text) && /forty/.test(w2.options[1].answer) && /buy 50/.test(w2.options[2].answer))
+  check('a scenario on a hit is headed without "strange"', M.whyFor(fill, { ...st2, day: { ...d2.result, till: 205 } }, [d1, d2], c).eyebrow === 'Something happened today…')
+  check('the day after a miss at the same price asks the sum again', M.whyFor(fill, { ...st1, dayIndex: 2, day: rec(2, 4, 50).result }, [d1, rec(2, 4, 50)], null).kind === 'sum')
+  const st3 = { ...st2, price: 4.2, stock: 56, day: d3.result, dayIndex: 3 }
+  const w3 = M.whyFor(fill, st3, [d1, d2, d3], null)
+  check('the third why is "best for what?" — four lenses, all right, headed "Three market days later…"', w3.kind === 'best' && w3.eyebrow === 'Three market days later…' && w3.options.length === 4 && w3.options.every((o) => o.right) && w3.lenses.length === 4)
+  const L = Object.fromEntries(w3.lenses.map((l) => [l.id, l]))
+  check('most in the till → day 3 (₵235.20)', L.till.winners.join() === '3' && /₵235\.20/.test(L.till.value))
+  check('nearest the target → day 1 (₵200 exactly)', L.target.winners.join() === '1' && /exactly/.test(L.target.value))
+  check('most per tomato → day 2 (₵4.50 kept all day)', L.each.winners.join() === '2' && /₵4\.50/.test(L.each.value))
+  check('least left over → a tie between days 1 and 3, and the line says so', L.left.winners.join() === '1,3' && /days 1 and 3/.test(L.left.line))
+  check('a lens option stamps which "best" was meant', /^best for most in the till — day 3/.test(w3.options[0].stamp))
+  check('with a dropped day 2, most per tomato moves to ₵4.34 and least-left becomes all three', (() => {
+    const ls = Object.fromEntries(M.bestFor(fill, [d1, d2d, d3]).map((l) => [l.id, l]))
+    return /₵4\.34/.test(ls.each.value) && ls.left.winners.length === 3 && /all three/.test(ls.left.line)
+  })())
+  check('the stamp\'s third line is people AND tomatoes', /22 bought — 50 sold, 15 walked past, 3 too late/.test(M.stampOf(fill, st1, null)[2]))
+  check('the stamp\'s first line on a till day says what was said', /^Said the till would make ₵200 at ₵4\.50/.test(M.stampOf(fill, st2, null)[0]))
+  check('the reconstruction rows name bought as people and sold as tomatoes, and the too-late', (() => {
+    const rows = M.reconstructionOf(fill, st1).rows.map((r) => r.join(' '))
+    return rows.some((r) => /Bought 22 people/.test(r)) && rows.some((r) => /You sold 50 tomatoes/.test(r)) && rows.some((r) => /Too late — basin empty 3/.test(r))
+  })())
+}
+
+/* ---- the Stall Book: a field journal filled from the days ---- */
+{
+  const fill = M.LEVEL_BY_ID['fill-the-till']
+  const seed = 1000
+  const rec = (i, price, stock, discount = 0, guess = null, tillGuess = null) => {
+    const crowdSeed = M.crowdSeedFor(seed, fill, i)
+    return { dayIndex: i, crowdSeed, stock, guess, tillGuess, result: M.simulateDay(M.shoppersFor(crowdSeed), stock, { price, discount }), explained: null }
+  }
+  const d1 = rec(1, 4, 50, 0, 50)
+  const d2 = rec(2, 4.5, 50, 0, null, 200)
+  const d3 = rec(3, 4.2, 56)
+  const s1 = { ...M.startStall(fill, 50), price: 4, guess: 50, day: d1.result }
+  const one = M.discoveriesOf(fill, s1, [d1])
+  check('one day writes two pages and no more — how many, and the till', Object.keys(one).sort().join() === 'how-many,the-till', Object.keys(one).join())
+  check('the till page is the learner\'s own product', one['the-till'].sum === '50 × ₵4.00 = ₵200' && /22 people bought 50 tomatoes/.test(one['the-till'].note))
+  check('the how-many page is the division they did before the stall opened', one['how-many'].sum === '₵200 ÷ ₵4.00 = 50' && /you said 50/.test(one['how-many'].note))
+  check('every key a page asks for is filled', (() => {
+    const need = ['target', 'price', 'need', 'said']
+    return need.every((k) => one['how-many'].keys[k])
+  })())
+  const two = M.discoveriesOf(fill, { ...s1, price: 4.5, day: d2.result }, [d1, d2])
+  check('a second price writes the alley page — two boards, the buyers on each', !!two['the-alley'] && /19 bought/.test(two['the-alley'].sum) === false && /₵4\.00 → 22 bought/.test(two['the-alley'].sum), two['the-alley']?.sum)
+  check('the alley page counts PEOPLE, and says how many fewer stopped', /buyers fewer|buyer fewer/.test(two['the-alley'].note), two['the-alley']?.note)
+  const dropped = rec(2, 4.5, 50, M.eventDrop({ schedule: { price: 4.5, discount: 0 } }).discount, null, 200)
+  const three = M.discoveriesOf(fill, { ...s1, price: 4.5, day: dropped.result }, [d1, dropped])
+  check('a day that dropped at four writes the four o\'clock page as a percentage off', /₵4\.50 − 22 % = ₵3\.50/.test(three['four-oclock'].sum), three['four-oclock']?.sum)
+  check('… and says how many went after four', /tomatoes went after four/.test(three['four-oclock'].note))
+  const all = M.discoveriesOf(fill, { ...s1, price: 4.2, stock: 56, day: d3.result }, [d1, d2, d3])
+  check('three days write "best for what" with the first lens as its line', /Most in the till → day 3/.test(all['best-for-what'].sum))
+  check('the four lenses are the page\'s keys', ['till', 'target', 'each', 'left'].every((k) => all['best-for-what'].keys[k]))
+  check('no day, no page: an empty book', Object.keys(M.discoveriesOf(fill, M.startStall(fill, 50), [])).length === 0)
+  check('level 2 writes profit, not the Market\'s pages', (() => {
+    const ratio = M.LEVEL_BY_ID['wholesale-ratio']
+    const rs = { ...M.startStall(ratio, 60), markup: 0.3, day: M.simulateDay(M.shoppersFor(1000), 60, M.scheduleOf(ratio, { ...M.startStall(ratio, 60), markup: 0.3 })) }
+    const d = M.discoveriesOf(ratio, rs, [])
+    return !!d['profit'] && !d['the-till'] && /÷ ₵180/.test(d['profit'].sum)
+  })())
+  check('level 3 writes Friday only once a prediction is named', (() => {
+    const harm = M.LEVEL_BY_ID['harmattan-price']
+    const none = M.discoveriesOf(harm, M.startStall(harm, 60), [])
+    const named = M.discoveriesOf(harm, { ...M.startStall(harm, 60), prediction: M.harmattanFriday() }, [])
+    return Object.keys(none).length === 0 && /24 × 1\.15⁴/.test(named['friday'].sum)
+  })())
+}
+
+/* ---- the book as a build artefact: terms, keys, locked pages, lenses ---- */
+{
+  const pages = M.sectionsOf(M.BOOK_0580).flatMap((s) => s.pages)
+  const journal = pages.filter((p) => p.journal)
+  check('the Stall Book is seven journal pages, all of them journal pages', journal.length === 7 && journal.length === pages.length, `${journal.length}`)
+  const verbs = new Set(M.STALL_VERBS)
+  const terms = []
+  for (const p of journal) {
+    for (const layered of [p.journal.names, p.journal.how]) for (const l of Object.values(layered)) if (l) terms.push(...M.verbsIn(l.en))
+    for (const t of p.journal.tryIt ?? []) terms.push(t.verb)
+  }
+  check('every term and every "try it" chip names a verb the stall can answer', terms.length > 0 && terms.every((v) => verbs.has(v)), terms.filter((v) => !verbs.has(v)).join() || `${terms.length} terms`)
+  check('every verb the stall declares is used by the book at least once', M.STALL_VERBS.every((v) => terms.includes(v)), M.STALL_VERBS.filter((v) => !terms.includes(v)).join())
+  // The keys a page asks for must be keys the discovery supplies — or the
+  // page would print a hole at a child.
+  const fill = M.LEVEL_BY_ID['fill-the-till']
+  const ratio = M.LEVEL_BY_ID['wholesale-ratio']
+  const harm = M.LEVEL_BY_ID['harmattan-price']
+  const seed = 1000
+  const rec = (i, price, stock, discount = 0, guess = null, tillGuess = null) => {
+    const crowdSeed = M.crowdSeedFor(seed, fill, i)
+    return { dayIndex: i, crowdSeed, stock, guess, tillGuess, result: M.simulateDay(M.shoppersFor(crowdSeed), stock, { price, discount }), explained: null }
+  }
+  const days = [rec(1, 4, 50, 0, 50), rec(2, 4.5, 50, M.eventDrop({ schedule: { price: 4.5, discount: 0 } }).discount, null, 200), rec(3, 4.2, 56)]
+  const s1 = { ...M.startStall(fill, 56), price: 4.2, stock: 56, guess: 50, day: days[2].result }
+  const found = {
+    ...M.discoveriesOf(fill, s1, days),
+    ...M.discoveriesOf(ratio, { ...M.startStall(ratio, 60), markup: 0.3, day: M.simulateDay(M.shoppersFor(seed), 60, { price: 3.9, discount: 0 }) }, []),
+    ...M.discoveriesOf(harm, { ...M.startStall(harm, 60), prediction: M.harmattanFriday(), bound: M.harmattanBound() }, []),
+  }
+  check('a full walk fills all seven pages', Object.keys(found).length === 7, Object.keys(found).join())
+  const holes = []
+  for (const p of journal) {
+    const d = found[p.id]
+    if (!d) continue
+    const keys = { ...d.keys, sum: d.sum, note: d.note }
+    for (const layered of [p.journal.names, p.journal.how]) for (const l of Object.values(layered)) if (l) for (const k of M.fillKeys(l.en)) if (!(k in keys)) holes.push(`${p.id}:${k}`)
+    for (const l of [p.journal.discovery, p.journal.provenance, p.journal.notation]) if (l) for (const k of M.fillKeys(l.en)) if (!(k in keys)) holes.push(`${p.id}:${k}`)
+  }
+  check('no page can print a ${key} it has no figure for', holes.length === 0, holes.join())
+  check('a locked page says a NAME and nothing else — never a formula', journal.every((p) => {
+    const t = M.lineIn(p.journal.locked)
+    return t.length > 0 && !/[=×÷%]|\$\{/.test(t)
+  }))
+  check('every page names the statements it is evidence for, and they exist', journal.every((p) => (p.journal.stamps ?? []).length > 0 && p.journal.stamps.every((id) => M.MATHS_STATEMENTS.some((s) => s.id === id))))
+  check('each statement has a strand name under both lenses — one quiet label, never a code on the page', M.MATHS_STATEMENTS.every((s) => M.strandFor(s.id, 'cambridge') && M.strandFor(s.id, 'ghana')))
+  check('no page carries a syllabus code or a lens name in its words', journal.every((p) => {
+    const words = [p.journal.locked, p.journal.discovery, p.journal.provenance, p.journal.notation].filter(Boolean).map((l) => l.en).join(' ') + Object.values(p.journal.names).concat(Object.values(p.journal.how)).filter(Boolean).map((l) => l.en).join(' ')
+    return !/0580|NaCCA|Cambridge|C1\.\d/.test(words)
+  }))
+  check('the Analyst notation is folded under "show me how", never a page of its own', journal.filter((p) => p.journal.notation).length >= 6)
+}
+
+/* ---- the plates never truncate: every cell carries a short, true name ---- */
+{
+  const cells = [
+    ...M.gaugeFor(M.LEVEL_BY_ID['fill-the-till'], M.startStall(M.LEVEL_BY_ID['fill-the-till'], 50)).cells,
+    ...M.gaugeFor(M.LEVEL_BY_ID['wholesale-ratio'], M.startStall(M.LEVEL_BY_ID['wholesale-ratio'], 60)).cells,
+    ...M.gaugeFor(M.LEVEL_BY_ID['harmattan-price'], M.startStall(M.LEVEL_BY_ID['harmattan-price'], 60)).cells,
+  ]
+  check('every gauge cell has a plate name short enough not to truncate', cells.length === 5 && cells.every((c) => c.short && c.short.length <= 10), cells.map((c) => `${c.short}(${c.short?.length})`).join(' '))
+  check('the full label is still there for the board and the score card', cells.every((c) => c.label && c.label.length > 0))
 }
 
 M.resetNumberworks()

@@ -422,7 +422,7 @@ export function OurSpace({ entries, incoming, onPlay, onRemix, compact }: { entr
 /* Score                                                               */
 /* ------------------------------------------------------------------ */
 
-export function MarketScore({ level, stall, score, trials, opened, why, strategy, onNext, onSend, onAgain, onNextDay, nextDayLabel, onClose }: { level: Level; stall: StallState; score: ChallengeScore; trials: number; opened: Door | null; why: string; strategy?: ShareCard | null; onNext: () => void; onSend: () => void; onAgain: () => void; onNextDay?: () => void; nextDayLabel?: string; onClose: () => void }) {
+export function MarketScore({ level, stall, score, trials, opened, why, strategy, taught, onBook, onNext, onSend, onAgain, onNextDay, nextDayLabel, onClose }: { level: Level; stall: StallState; score: ChallengeScore; trials: number; opened: Door | null; why: string; strategy?: ShareCard | null; taught?: string[]; onBook?: () => void; onNext: () => void; onSend: () => void; onAgain: () => void; onNextDay?: () => void; nextDayLabel?: string; onClose: () => void }) {
   const g = gaugeFor(level, stall)
   const unit = level.kind === 'harmattan' ? 'predictions' : 'days'
   // The three words, explained through the stall (D3): how near the till
@@ -485,6 +485,22 @@ export function MarketScore({ level, stall, score, trials, opened, why, strategy
           </div>
         ) : (
           g.hit && <p className="mt-3 text-[11px] font-bold text-[#8B8471]">Handed in. Your day went into the journal.</p>
+        )}
+        {onBook && taught && taught.length > 0 && (
+          <div className="mt-3 flex items-center gap-3 rounded-xl border border-[#C8DFC2] bg-[#FBF8EF] px-3 py-2" data-testid="taught">
+            <span className="text-[18px]" aria-hidden>
+              📖
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[12px] font-black text-[#2A2823]">What Kejetia taught you</p>
+              <p className="truncate text-[10.5px] font-extrabold text-[#8B8471]">
+                {taught.length} page{taught.length === 1 ? '' : 's'} carry your numbers now: {taught.join(' · ')}
+              </p>
+            </div>
+            <AtlasButton onClick={onBook} tone="quiet" className="shrink-0 py-1.5" ariaLabel="Open the Stall Book">
+              Open the book
+            </AtlasButton>
+          </div>
         )}
         {strategy && g.hit && (
           <div className="mt-3 rounded-xl border border-[#E4DCC9] bg-[#FBF8EF] px-3 py-2" data-testid="strategy">

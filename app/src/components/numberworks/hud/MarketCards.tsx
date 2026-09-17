@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronRight, Delete, Users, X } from 'lucide-react'
 import { Tile } from '@/components/ui/tile'
 import Ploob2 from '@/components/brand/Ploob2'
@@ -16,6 +16,8 @@ import {
   type Level,
   type Reconstruction,
   type StallState,
+  type Counterfactual,
+  type DayRecord,
   type WhyOption,
   type WhyQuestion,
 } from '@/lib/market'
@@ -68,10 +70,10 @@ export function Plates({ level, stall, live, gather, compact }: { level: Level |
     plates.push({ id: 'till', label: 'Till', value: cedis(till), unit: live ? 'so far' : stall.day ? 'at closing' : 'empty', sub: live ? clockLabel(live.t) : target !== null && stall.day && till < target ? `${cedis(target - till)} short` : undefined, progress: target === null ? (till > 0 ? 1 : 0) : Math.min(1, till / target), color: TINT })
   } else if (level.kind === 'ratio' && g) {
     const till = live ? live.till : (stall.day?.till ?? 0)
-    for (const c of g.cells) plates.push({ id: c.id, label: c.label, value: c.value, unit: c.want, sub: c.met ? undefined : c.todo, progress: c.progress, color: c.met ? '#2F6134' : '#D99B2B', met: c.met })
+    for (const c of g.cells) plates.push({ id: c.id, label: c.short, value: c.value, unit: c.want, sub: c.met ? undefined : c.todo, progress: c.progress, color: c.met ? '#2F6134' : '#D99B2B', met: c.met })
     plates.push({ id: 'till', label: 'Till', value: cedis(till), unit: live ? 'so far' : `paid ${cedis(180)}`, sub: live ? clockLabel(live.t) : undefined, progress: Math.min(1, till / 300), color: TINT })
   } else if (g) {
-    for (const c of g.cells) plates.push({ id: c.id, label: c.label, value: c.value, unit: c.want, sub: c.met ? undefined : c.todo, progress: c.progress, color: c.met ? '#2F6134' : '#D99B2B', met: c.met })
+    for (const c of g.cells) plates.push({ id: c.id, label: c.short, value: c.value, unit: c.want, sub: c.met ? undefined : c.todo, progress: c.progress, color: c.met ? '#2F6134' : '#D99B2B', met: c.met })
   }
   return (
     <div className={cn('pointer-events-auto flex max-w-full items-stretch gap-1.5 sm:gap-2', compact && 'gap-1')} data-testid="gauge" data-met={g?.met ?? 0} data-of={g?.of ?? 0} data-hit={g?.hit ? 'true' : 'false'}>
@@ -356,13 +358,45 @@ export function CloseCard({ level, recon, hit, dayIndex, onNext }: { level: Leve
 /* Explain — one question, answered by the day                         */
 /* ------------------------------------------------------------------ */
 
-export function ExplainCard({ why, stamp, chosen, onChoose, onDone }: { why: WhyQuestion; stamp: string[]; chosen: WhyOption | null; onChoose: (o: WhyOption) => void; onDone: () => void }) {
+/**
+ * The why, after the day. Review 2: no "1 of 3" — the eyebrow is the day's
+ * own question. For the third why the days sit above the lenses as a table,
+ * and the button hands over to the replay when the market has one to show.
+ */
+export function ExplainCard({ why, eyebrow, kind, days, stamp, chosen, next, taught, onBook, onChoose, onDone }: { why: WhyQuestion; eyebrow: string; kind: 'sum' | 'scenario' | 'best'; days: DayRecord[]; stamp: string[]; chosen: WhyOption | null; next: string | null; taught?: string[]; onBook?: () => void; onChoose: (o: WhyOption) => void; onDone: () => void }) {
   return (
     <div data-focus-layer="" className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-[#2A2823]/38 p-3 backdrop-blur-[2px]">
-      <div className="atlas-plate atlas-arrive max-h-[92vh] w-full max-w-[26rem] overflow-y-auto p-4" data-testid="explain" data-chosen={chosen ? (chosen.right ? 'right' : 'other') : 'none'}>
-        <span className="atlas-eyebrow">One question — not another sum</span>
+      <div className="atlas-plate atlas-arrive max-h-[92vh] w-full max-w-[26rem] overflow-y-auto p-4" data-testid="explain" data-kind={kind} data-chosen={chosen ? (chosen.right ? 'right' : 'other') : 'none'}>
+        <span className="atlas-eyebrow">{eyebrow}</span>
         <h2 className="atlas-serif text-[19px] leading-tight font-semibold text-[#2A2823]">{why.question}</h2>
-        <div className="mt-2 flex flex-col gap-1.5">
+        {kind === 'best' && days.length > 0 && (
+          <div className="mt-2 grid grid-cols-[auto_1fr_auto_auto_auto] gap-x-3 gap-y-0.5 text-[10.5px] font-extrabold tabular-nums" data-testid="days-table">
+            <span className="atlas-eyebrow">day</span>
+            <span className="atlas-eyebrow">price · stock</span>
+            <span className="atlas-eyebrow">till</span>
+            <span className="atlas-eyebrow">each</span>
+            <span className="atlas-eyebrow">left</span>
+            {days.map((d) => (
+              <Fragment key={d.dayIndex}>
+                <span>{d.dayIndex}</span>
+                <span className="truncate">
+                  {cedis(d.result.schedule.price, 2)}
+                  {d.result.schedule.discount > 0 ? ` → ${cedis(EVENT_DROP_TO, 2)} at 4` : ''} · {d.stock}
+                </span>
+                <span>{cedis(d.result.till, 2)}</span>
+                <span>{d.result.sold > 0 ? cedis(d.result.till / d.result.sold, 2) : '—'}</span>
+                <span>{d.result.unsold}</span>
+              </Fragment>
+            ))}
+          </div>
+        )}
+        {kind === 'best' && (
+          <div className="mt-2 flex items-center gap-2">
+            <Ploob2 size={22} />
+            <span className="text-[12px] font-black text-[#2A2823]">Best for what?</span>
+          </div>
+        )}
+        <div className={cn('mt-2 gap-1.5', kind === 'best' ? 'grid grid-cols-2' : 'flex flex-col')}>
           {why.options.map((o, i) => (
             <Tile
               key={i}
@@ -395,8 +429,120 @@ export function ExplainCard({ why, stamp, chosen, onChoose, onDone }: { why: Why
             ))}
           </ol>
         </div>
-        <AtlasButton onClick={onDone} tone="primary" invite={!!chosen} disabled={!chosen} className="mt-3 w-full py-2.5 text-[13px]" ariaLabel="Back to the stall">
-          {chosen?.right ? 'Stamped — back to the stall' : chosen ? 'Noted — back to the stall' : 'Choose one'} <ChevronRight className="h-4 w-4" />
+        {kind === 'best' && chosen && onBook && taught && taught.length > 0 && (
+          <div className="mt-2 flex items-center gap-2 rounded-[12px] border border-[#C8DFC2] bg-[#FBF8EF] px-3 py-2" data-testid="explain-book">
+            <span className="text-[15px]" aria-hidden>
+              📖
+            </span>
+            <div className="min-w-0 flex-1">
+              <b className="block text-[11px] font-black text-[#2A2823]">What Kejetia taught you</b>
+              <span className="block truncate text-[10px] font-extrabold text-[#8B8471]">
+                {taught.length} page{taught.length === 1 ? '' : 's'} carry your numbers: {taught.join(' · ')}
+              </span>
+            </div>
+            <AtlasButton onClick={onBook} tone="quiet" className="shrink-0 py-1" ariaLabel="Open the Stall Book">
+              Open the book
+            </AtlasButton>
+          </div>
+        )}
+        {next && chosen && <p className="mt-2 text-[11px] font-extrabold text-[#8B8471]">Now the market replays the price you did not choose — on the same forty.</p>}
+        <AtlasButton onClick={onDone} tone="primary" invite={!!chosen} disabled={!chosen} className="mt-3 w-full py-2.5 text-[13px]" ariaLabel={next && chosen ? next : 'Back to the stall'}>
+          {next && chosen ? next : chosen?.right ? 'Stamped — back to the stall' : chosen ? 'Noted — back to the stall' : 'Choose one'} <ChevronRight className="h-4 w-4" />
+        </AtlasButton>
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* The replay — review 2's hero: the same forty, the other board         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * While the replay runs the chrome is gone: one banner naming what is being
+ * replayed, and the till counting in a corner. The world does the rest.
+ */
+export function ReplayBanner({ c, till, t }: { c: Counterfactual; till: number; t: number }) {
+  return (
+    <div className="pointer-events-none fixed inset-x-0 top-0 z-30 flex flex-col items-center" data-testid="replay-banner">
+      <div className="flex w-full items-center justify-center gap-3 bg-[#2A2823]/85 px-3 py-2 text-[11px] font-black tracking-[0.1em] text-[#FCFAF4] uppercase">
+        <span>Same market · same forty · {c.kind === 'price' ? `at ${c.other.label}` : c.other.label}</span>
+        <span className="opacity-60">{clockLabel(t)}</span>
+      </div>
+      <div className="atlas-plate mt-2 flex items-baseline gap-1.5 self-end px-3 py-1.5 mr-3" style={{ color: '#2F6134' }}>
+        <span className="atlas-serif text-[20px] leading-none font-semibold tabular-nums" data-testid="replay-till">
+          {cedis(till, 2)}
+        </span>
+        <span className="text-[9.5px] font-black tracking-[0.08em] text-[#8B8471] uppercase">counting</span>
+      </div>
+    </div>
+  )
+}
+
+function Half({ eyebrow, till, sub, tone }: { eyebrow: string; till: number; sub: string; tone: 'chosen' | 'other' }) {
+  const c = tone === 'chosen' ? { bg: '#FBEBD0', border: '#F0D39A', ink: '#8A5A12' } : { bg: '#E7F1E3', border: '#C8DFC2', ink: '#2F6134' }
+  return (
+    <div className="min-w-0 rounded-[12px] border px-3 py-2" style={{ background: c.bg, borderColor: c.border }} data-testid={`replay-${tone}`}>
+      <span className="atlas-eyebrow block" style={{ color: c.ink }}>
+        {eyebrow}
+      </span>
+      <div className="atlas-serif text-[26px] leading-none font-semibold tabular-nums" style={{ color: c.ink }} data-till={till.toFixed(2)}>
+        {cedis(till)}
+      </div>
+      <div className="mt-1 text-[10px] font-extrabold text-[#5F5A4E]">{sub}</div>
+    </div>
+  )
+}
+
+function alleyOf(r: Counterfactual['other']['result']): string {
+  return `${r.buyers} bought ${r.sold} · ${r.passed} walked past${r.missed ? ` · ${r.missed} too late` : ''}${r.unsold ? ` · ${r.unsold} left` : ''}`
+}
+
+/**
+ * After the replay: the split result, the market's one line, the other four
+ * o'clock branch if there was one, and the stamp — closed here, after the
+ * child has SEEN the answer, not before.
+ */
+export function ReplayCard({ c, second, stamp, onDone }: { c: Counterfactual; second: Counterfactual | null; stamp: string[]; onDone: () => void }) {
+  return (
+    <div data-focus-layer="" className="pointer-events-auto fixed inset-0 z-40 flex items-end justify-center bg-gradient-to-t from-[#2A2823]/85 via-[#2A2823]/40 to-transparent p-3 sm:items-center">
+      <div className="atlas-plate atlas-arrive max-h-[92vh] w-full max-w-[26rem] overflow-y-auto p-4" data-testid="replay-card">
+        <span className="atlas-eyebrow">The same forty, the other board</span>
+        <div className="mt-1 grid grid-cols-2 gap-2">
+          <Half eyebrow={c.kind === 'price' ? `You chose ${c.chosen.label}` : `You ${c.chosen.label}`} till={c.chosen.result.till} sub={alleyOf(c.chosen.result)} tone="chosen" />
+          <Half eyebrow={c.kind === 'price' ? `Same market at ${c.other.label}` : `Same market, ${c.other.label}`} till={c.other.result.till} sub={alleyOf(c.other.result)} tone="other" />
+        </div>
+        <div className="mt-2 flex items-start gap-2" data-testid="replay-verdict">
+          <Ploob2 size={26} />
+          <p className="text-[11.5px] font-extrabold text-[#2A2823]">{c.verdict}</p>
+        </div>
+        {second && (
+          <div className="mt-2 rounded-[12px] border border-[#E4DCC9] bg-[#F6F2E8] px-3 py-2" data-testid="replay-second">
+            <span className="atlas-eyebrow">And at four o’clock</span>
+            <div className="mt-0.5 flex items-baseline justify-between text-[11px] font-extrabold">
+              <span className="text-[#5F5A4E]">You {second.chosen.label}</span>
+              <span className="tabular-nums text-[#8A5A12]">
+                {cedis(second.chosen.result.till)} · {second.chosen.result.unsold} left
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between text-[11px] font-extrabold">
+              <span className="text-[#5F5A4E]">Had you {second.other.label}</span>
+              <span className="tabular-nums text-[#2F6134]">
+                {cedis(second.other.result.till)} · {second.other.result.unsold} left
+              </span>
+            </div>
+          </div>
+        )}
+        <div className="mt-3 rounded-[12px] border border-dashed border-[#D8D0BC] bg-[#F6F2E8] px-3 py-2" data-testid="stamp">
+          <span className="atlas-eyebrow">Your stamp · four lines</span>
+          <ol className="mt-0.5 list-none space-y-0.5 text-[10.5px] font-bold text-[#5F5A4E]">
+            {stamp.map((l, i) => (
+              <li key={i}>{l}</li>
+            ))}
+          </ol>
+        </div>
+        <AtlasButton onClick={onDone} tone="primary" invite className="mt-3 w-full py-2.5 text-[13px]" ariaLabel="Stamped — back to the stall">
+          Stamped — back to the stall <ChevronRight className="h-4 w-4" />
         </AtlasButton>
       </div>
     </div>

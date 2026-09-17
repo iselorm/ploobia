@@ -127,6 +127,16 @@ const throughTheDay = async (page, timeout = 25000) => {
   }
   return (await phase(page)) === 'close'
 }
+/** Leave the why: through the replay when the market has one (day 2+, or a four o'clock choice), else straight back. */
+const leaveExplain = async (page) => {
+  const btn = page.locator('[data-testid=explain] button[aria-label^="Replay"]')
+  if ((await btn.count()) === 1) {
+    await btn.click()
+    await waitFor(async () => (await root(page, 'data-replay')) === 'done', 15000)
+    await tap(page, 'Stamped — back to the stall')
+  } else await tap(page, 'Back to the stall')
+  await page.waitForTimeout(300)
+}
 const plate = (page, id) => page.evaluate((i) => document.querySelector(`[data-testid=cell-${i}]`)?.textContent ?? '', id)
 const typeNumber = async (page, n) => {
   await page.getByTestId('typed').fill(String(n))
@@ -206,9 +216,14 @@ const throughTheNumber = async (page, n) => {
   check('the closing card reconstructs before it scores — the product is the till', (await page.getByTestId('close').getAttribute('data-hit')) === 'true' && /working strategy/.test((await page.getByTestId('close-headline').textContent()) ?? '') && new RegExp(`= ${M.cedis(expected).replace('₵', '₵')}`).test((await page.getByTestId('reconstruction').textContent()) ?? ''))
   check('no score on the closing card', !/\/ 1000/.test((await page.getByTestId('close').textContent()) ?? ''))
   await page.screenshot({ path: path.join(SHOTS, 'numberworks-close.png') })
+  const closeText = (await page.getByTestId('close').textContent()) ?? ''
+  const alley = ['Bought', 'Walked past', 'Too late'].map((k) => Number((closeText.match(new RegExp(`${k}[^0-9]*(\\d+)`)) ?? [])[1]))
+  check('the alley adds up to forty on the closing card — bought · walked past · too late (review 2)', alley.every((n) => Number.isFinite(n)) && alley[0] + alley[1] + alley[2] === M.SHOPPERS_PER_DAY, alley.join(' + '))
+  check('buyers are people, sold is tomatoes — both on the card', /people/.test(closeText) && /tomatoes/.test(closeText))
   await tap(page, 'Why did it work?')
   await page.waitForTimeout(300)
   check('then one why-question, three options', (await phase(page)) === 'explain' && (await page.getByTestId('why-option').count()) === 3)
+  check('day 1 asks "What happened today?" — never "1 of 3" (review 2)', /What happened today\?/.test((await page.getByTestId('explain').textContent()) ?? '') && !/1 of 3/.test((await page.getByTestId('explain').textContent()) ?? '') && (await page.getByTestId('explain').getAttribute('data-kind')) === 'sum')
   check('the stamp\'s fourth line is still open', /still to choose/.test((await page.getByTestId('stamp').textContent()) ?? ''))
   await page.locator('[data-testid=why-option][data-right=false]').first().click()
   await page.waitForTimeout(250)
@@ -220,8 +235,17 @@ const throughTheNumber = async (page, n) => {
     const raw = localStorage.getItem('ploobia.events.v1')
     return (raw ? JSON.parse(raw) : []).filter((e) => e.type === 'writeup.completed' && e.cabinet === 'numberworks').length >= 1
   }))
+  // Day 1's board was locked, so the only choice made was four o'clock — if the day paused there, that is what replays.
+  const day1Replay = (await page.getByRole('button', { name: 'Replay four o’clock the other way ›' }).count()) === 1
+  check('day 1 has no price to replay — only the four o\'clock choice, when there was one', day1Replay || (await page.getByRole('button', { name: 'Back to the stall' }).count()) === 1)
   await page.screenshot({ path: path.join(SHOTS, 'numberworks-explain.png') })
-  await tap(page, 'Back to the stall')
+  if (day1Replay) {
+    await tap(page, 'Replay four o’clock the other way ›')
+    check('the four o\'clock replay runs with the chrome gone', (await waitFor(async () => (await root(page, 'data-replay')) === 'running', 3000)) && (await page.getByTestId('gauge').count()) === 0)
+    check('… and ends on the split result — kept against dropped', await waitFor(async () => (await root(page, 'data-replay')) === 'done', 15000))
+    check('the four o\'clock split names both branches', /You kept ₵4\.00/.test((await page.getByTestId('replay-card').textContent()) ?? '') && /dropped to ₵3\.50/.test((await page.getByTestId('replay-card').textContent()) ?? ''))
+    await tap(page, 'Stamped — back to the stall')
+  } else await tap(page, 'Back to the stall')
   await page.waitForTimeout(300)
   g = await gauge(page)
   check('back at the stall the plates read the day: 1 of 1, hit', (await phase(page)) === 'lab' && g && g.hit && g.met === 1)
@@ -325,8 +349,7 @@ const throughTheNumber = async (page, n) => {
   await page.waitForTimeout(250)
   await page.locator('[data-testid=why-option][data-right=true]').click()
   await page.waitForTimeout(200)
-  await tap(page, 'Back to the stall')
-  await page.waitForTimeout(300)
+  await leaveExplain(page)
   check('after day 1 the next move is another day', (await page.getByRole('button', { name: 'Run another day' }).count()) === 1)
   await tap(page, 'Run another day')
   await page.waitForTimeout(300)
@@ -348,12 +371,37 @@ const throughTheNumber = async (page, n) => {
   }
   check('the closing card says what was said and what the day made', /you said ₵200/.test((await page.getByTestId('reconstruction').textContent()) ?? ''))
   await page.screenshot({ path: path.join(SHOTS, 'numberworks-day2-close.png') })
+  const day2Till = await till(page)
   await page.getByTestId('close').getByRole('button').click()
   await page.waitForTimeout(250)
-  await page.locator('[data-testid=why-option]').first().click()
+  const ex2 = (await page.getByTestId('explain').textContent()) ?? ''
+  check('day 2\'s why is the scenario — "Something … happened" — with the alley as people and tomatoes', (await page.getByTestId('explain').getAttribute('data-kind')) === 'scenario' && /happened/.test(ex2) && /people bought/.test(ex2) && !/2 of 3/.test(ex2), ex2.slice(0, 80))
+  await page.locator('[data-testid=why-option][data-right=false]').first().click()
   await page.waitForTimeout(200)
-  await tap(page, 'Back to the stall')
+  check('the scenario\'s distractor is answered by the same forty', /forty/.test((await page.getByTestId('why-answer').textContent()) ?? ''))
+  check('the button hands over to the replay at ₵4.00 — the price not chosen', (await page.getByRole('button', { name: 'Replay it at ₵4.00 ›' }).count()) === 1)
+  await tap(page, 'Replay it at ₵4.00 ›')
+  await page.waitForTimeout(400)
+  check('the replay runs with the chrome gone: no plates, no board, no edge tab, no Ploob', (await root(page, 'data-replay')) === 'running' && (await page.getByTestId('gauge').count()) === 0 && (await page.getByTestId('stall-plate').count()) === 0 && (await page.getByTestId('edge-tab').count()) === 0 && (await page.getByTestId('coach').count()) === 0)
+  check('a banner names the replay — same market, same forty, ₵4.00 — and the till counts', (await page.getByTestId('replay-banner').count()) === 1 && /same forty/i.test((await page.getByTestId('replay-banner').textContent()) ?? '') && /₵4\.00/.test((await page.getByTestId('replay-banner').textContent()) ?? ''))
+  check('the replay is flagged in the sim and recorded nowhere', await page.evaluate(() => window.__marketSim?.replay === true && !!window.__marketSim?.run))
+  check('the buyers show what they take — a count over the head', await waitFor(async () => /takes \d/.test((await page.locator('[data-testid=bubble]').allTextContents()).join(' ')), 8000))
+  await page.screenshot({ path: path.join(SHOTS, 'numberworks-replay.png') })
+  check('the replay ends on its own in about eight seconds', await waitFor(async () => (await root(page, 'data-replay')) === 'done', 15000))
+  const rc = (await page.getByTestId('replay-card').textContent()) ?? ''
+  check('the split result: you chose ₵4.50 · same market at ₵4.00', (await page.getByTestId('replay-chosen').count()) === 1 && (await page.getByTestId('replay-other').count()) === 1 && /You chose ₵4\.50/.test(rc) && /Same market at ₵4\.00/.test(rc))
+  const chosenTill = Number(await page.locator('[data-testid=replay-chosen] [data-till]').getAttribute('data-till'))
+  check('the chosen half is the day as it was sold, to the pesewa', Math.abs(chosenTill - day2Till) < 0.006, `${chosenTill} vs ${day2Till}`)
+  check('the market\'s one line is from the numbers, on nobody\'s side', /same forty would have left/.test(rc) || /same till either way/.test(rc))
+  check('the stamp closes here, after the child has seen the answer', /Your stamp/.test(rc) && !/still to choose/.test(rc))
+  check('nothing from the replay became a day: still one day-2 reading', await page.evaluate(() => {
+    const raw = localStorage.getItem('ploobia.events.v1')
+    return (raw ? JSON.parse(raw) : []).filter((e) => e.type === 'reading.recorded' && e.cabinet === 'numberworks').length === 2
+  }))
+  await page.screenshot({ path: path.join(SHOTS, 'numberworks-replay-card.png') })
+  await tap(page, 'Stamped — back to the stall')
   await page.waitForTimeout(300)
+  check('after the replay, the stall — the sim is a stall again, not a replay', (await phase(page)) === 'lab' && (await root(page, 'data-replay')) === 'no' && (await page.evaluate(() => window.__marketSim?.run === null)))
   await tap(page, 'Run another day')
   await page.waitForTimeout(300)
   const q3 = (await page.getByTestId('brief').textContent()) ?? ''
@@ -383,6 +431,79 @@ const throughTheNumber = async (page, n) => {
   const cheap = await heads()
   const dbg = await page.evaluate(() => { const m = window.__marketSim; const s = window.__marketScene; const g = s?.getObjectByName('shoppers'); return JSON.stringify({ preview: m?.previewPrice, run: !!m?.run, n: g?.children.length, vis: g?.children.filter((c) => c.visible).length, crowd: m?.shoppers?.length, phase: document.querySelector('[data-testid=numberworks]')?.getAttribute('data-phase'), stock: m?.stock }) })
   check('the lever thins the alley: fewer heads at a dearer price (a head-count, not a list)', p2 < p1 && cheap > dear, `${cheap} at ${p2} vs ${dear} at ${p1} · ${dbg}`)
+  // day 3, at the learner's own price: the third why is "best for what?"
+  await tap(page, 'Run another day')
+  await page.waitForTimeout(300)
+  const q3b = (await page.getByTestId('brief').textContent()) ?? ''
+  check('day 3 opens on the till at the learner\'s price — still day 3, the question closed earlier did not spend a day', (await phase(page)) === 'predict' && /Your price is ₵3\.30|how many must we sell/.test(q3b) && (await root(page, 'data-day')) === '3', `${await root(page, 'data-day')} · ${q3b.slice(0, 60)}`)
+  await typeNumber(page, 200)
+  await page.waitForTimeout(500)
+  // A till day opens the stall itself; a count day (the retry after a miss) hands
+  // the stall back, and the same button then OPENS today rather than asking again.
+  if ((await running(page)) !== 'true') {
+    await tap(page, 'Run another day')
+    await page.waitForTimeout(500)
+    check('a day already answered opens when asked again — never the same question twice', (await running(page)) === 'true' && (await root(page, 'data-day')) === '3', `${await phase(page)} · day ${await root(page, 'data-day')}`)
+  }
+  check('day 3 runs and closes', await throughTheDay(page), `${await phase(page)} · running ${await running(page)}`)
+  await page.getByTestId('close').getByRole('button').click()
+  await page.waitForTimeout(250)
+  const ex3 = (await page.getByTestId('explain').textContent()) ?? ''
+  check('three market days later: "best for what?" — four lenses over a table of the three days', (await page.getByTestId('explain').getAttribute('data-kind')) === 'best' && /Three market days later/.test(ex3) && /Best for what\?/.test(ex3) && (await page.getByTestId('why-option').count()) === 4 && (await page.getByTestId('days-table').count()) === 1 && /3 of 3/.test(ex3) === false)
+  await page.locator('[data-testid=why-option]').first().click()
+  await page.waitForTimeout(200)
+  const ans3 = (await page.getByTestId('why-answer').textContent()) ?? ''
+  check('a lens names its own computed winner — a day, or a tie — never a hard-coded best', /Most in the till → (day \d|days [\d, and]+|all three)/.test(ans3), ans3)
+  check('the stamp records which "best" was meant', /Explained: best for most in the till/.test((await page.getByTestId('stamp').textContent()) ?? ''))
+
+  /* ---- the Stall Book: a field journal, filled by the days ---- */
+  check('the third why offers the book, with the pages it has filled', (await page.getByTestId('explain-book').count()) === 1 && /What Kejetia taught you/.test((await page.getByTestId('explain-book').textContent()) ?? ''))
+  await tap(page, 'Open the Stall Book')
+  await page.waitForTimeout(400)
+  check('the book opens on its contents — seven pages, named', (await page.getByTestId('stall-book').count()) === 1 && (await page.getByTestId('book-page-row').count()) === 7)
+  const rows = await page.locator('[data-testid=book-page-row]').evaluateAll((els) => els.map((e) => ({ page: e.getAttribute('data-page'), found: e.getAttribute('data-found') === 'true', text: e.textContent ?? '' })))
+  check('the pages the days wrote are filled, in the learner\'s own numbers', rows.filter((r) => r.found).length >= 3 && /you discovered/.test(rows.find((r) => r.page === 'the-till')?.text ?? ''), rows.filter((r) => r.found).map((r) => r.page).join())
+  check('a page nobody has earned shows its NAME and nothing else — never the formula', rows.filter((r) => !r.found).every((r) => /not discovered yet/.test(r.text) && !/[=×÷%]/.test(r.text)) && rows.some((r) => r.page === 'profit' && !r.found))
+  check('no syllabus chips anywhere in the book (review 2: the lens retreats)', !/Cambridge|Ghana|0580|NaCCA/.test((await page.getByTestId('stall-book').textContent()) ?? ''))
+  await page.locator('[data-testid=book-page-row][data-page=the-till]').click()
+  await page.waitForTimeout(300)
+  const pageText = (await page.getByTestId('book-page').textContent()) ?? ''
+  check('a page opens on the discovery, then the name — not on a rule', (await page.getByTestId('book-discovery').count()) === 1 && /You discovered/.test(pageText) && /× ₵4\.00 = ₵200/.test(pageText) && /This is called/.test(pageText))
+  check('the method is FOLDED until asked for', (await page.getByTestId('book-how').count()) === 0 && (await page.getByTestId('book-how-toggle').count()) === 1 && !/price × sold/.test(pageText))
+  await tap(page, 'Show me how')
+  await page.waitForTimeout(250)
+  const opened = (await page.getByTestId('book-page').textContent()) ?? ''
+  check('"Show me how →" unfolds the method in their figures, with the notation under it', (await page.getByTestId('book-how').count()) === 1 && /price × sold = till/.test(opened) && /₵4\.00 × 50 = ₵200/.test(opened) && /R = p × q/.test(opened))
+  check('one quiet strand label, and it is a name, never a code', (await page.getByTestId('book-strand').count()) === 1 && !/0580|C1\./.test((await page.getByTestId('book-strand').textContent()) ?? ''))
+  check('read-aloud is a tap, never automatic (D6)', (await page.getByTestId('book-read').count()) <= 1 && (await page.evaluate(() => !window.speechSynthesis || !window.speechSynthesis.speaking)))
+  // the remote control: a term sends the reader back into the world
+  check('the stall declares exactly the verbs the book asks for', await page.evaluate(() => {
+    const want = ['board/price', 'alley/replay', 'till/count', 'basin/count', 'scale/weigh']
+    const have = window.__ploobiaVerbs?.list() ?? []
+    return want.every((v) => have.includes(v))
+  }))
+  const before = await page.evaluate(() => window.__ploobiaVerbs?.runs().runs ?? -1)
+  await page.locator('[data-testid=book-term][data-verb="till/count"]').first().click()
+  await page.waitForTimeout(400)
+  check('tapping a term fires the stall\'s verb and the book says what the world did', (await page.evaluate(() => window.__ploobiaVerbs?.runs().runs ?? -1)) > before && /coins count up to/.test((await page.getByTestId('book-echo').textContent()) ?? ''))
+  await page.locator('[data-testid=book-try][data-verb="alley/replay"]').first().click()
+  await page.waitForTimeout(500)
+  check('"Try it · replay the alley" replays the day behind the page — flagged, and recorded nowhere', await page.evaluate(() => window.__marketSim?.replay === true && !!window.__marketSim?.run))
+  const readings = await page.evaluate(() => {
+    const raw = localStorage.getItem('ploobia.events.v1')
+    return (raw ? JSON.parse(raw) : []).filter((e) => e.type === 'reading.recorded' && e.cabinet === 'numberworks').length
+  })
+  check('a replay from the book is not a day: the readings are unchanged', readings === 3, `${readings}`)
+  await page.screenshot({ path: path.join(SHOTS, 'numberworks-book-page.png') })
+  await tap(page, 'Contents')
+  await page.waitForTimeout(250)
+  await page.locator('[data-testid=book-page-row][data-page=profit]').click()
+  await page.waitForTimeout(250)
+  check('an undiscovered page is a name and an invitation — no formula, no preview', (await page.getByTestId('book-locked').count()) === 1 && !/[=×÷]/.test((await page.getByTestId('book-page').textContent()) ?? ''))
+  await page.screenshot({ path: path.join(SHOTS, 'numberworks-book-contents.png') })
+  await tap(page, 'Close the Stall Book')
+  await page.waitForTimeout(300)
+  check('closing the book leaves the stall where it was', (await page.getByTestId('stall-book').count()) === 0 && (await phase(page)) === 'explain')
   await page.close()
 }
 
@@ -422,7 +543,8 @@ const throughTheNumber = async (page, n) => {
   await tap(page, 'Back to the stall')
   await page.waitForTimeout(300)
   const g1 = await gauge(page)
-  check('after a closed day the plates read a profit and a leftover', g1 && /%/.test(g1.text) && /Left in the basin/.test(g1.text))
+  check('after a closed day the plates read a profit and a leftover', g1 && /%/.test(g1.text) && /Left/.test(g1.text) && (await page.getByTestId('cell-left').count()) === 1, g1?.text?.slice(0, 60))
+  check('the plates never truncate a label: the short names fit (review 2 owed)', await page.evaluate(() => [...document.querySelectorAll('[data-testid^=cell-] .atlas-eyebrow')].every((e) => e.scrollWidth <= e.clientWidth + 1)))
   await page.getByTestId('edge-tab').click()
   await page.waitForTimeout(250)
   check('a reading names the mark-up and the discount', /\+40 %/.test((await page.getByTestId('reading').first().textContent()) ?? '') && /−20 %/.test((await page.getByTestId('reading').first().textContent()) ?? ''))

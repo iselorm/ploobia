@@ -60,11 +60,16 @@ interface Bubble {
   until: number
 }
 
-/** What a settlement says over the head. One in four is a thought, not a sum. */
-function bubbleFor(kind: 'sale' | 'pass', n: number, paid: number, seq: number): Bubble {
-  const think = seq % 4 === 3
+/**
+ * What a settlement says over the head. One in four is a thought, not a sum.
+ * In a replay (review 2's hero) every buyer shows the COUNT they take —
+ * buyers are people, sold is tomatoes, and the alley must be seen to add up.
+ */
+function bubbleFor(kind: 'sale' | 'pass', n: number, paid: number, seq: number, replay: boolean): Bubble {
+  const think = !replay && seq % 4 === 3
   if (kind === 'sale') {
     const each = n > 0 ? Math.round((paid / n) * 100) / 100 : paid
+    if (replay) return { text: `takes ${n} · ${cedis(paid, 2)}`, tone: 'buy', until: 0 }
     return { text: think ? `${cedis(each, 2)} ✓` : n > 1 ? `${n} × ${cedis(each, 2)} = ${cedis(paid, 2)}` : `${cedis(paid, 2)}`, tone: think ? 'think' : 'buy', until: 0 }
   }
   return { text: think ? 'too much' : 'walks on', tone: think ? 'think' : 'pass', until: 0 }
@@ -165,7 +170,7 @@ function Bubbles({ sim }: { sim: MarketSim }) {
     for (const r of sim.recent) {
       if (r.seq <= seen.current) continue
       seen.current = r.seq
-      next = [...next, { ...bubbleFor(r.kind, r.n, r.paid, r.seq), seq: r.seq, at: r.at, until: r.at + BUBBLE_S }].slice(-4)
+      next = [...next, { ...bubbleFor(r.kind, r.n, r.paid, r.seq, sim.replay), seq: r.seq, at: r.at, until: r.at + BUBBLE_S }].slice(-4)
       changed = true
     }
     if (sim.time - lastSweep.current > 0.2) {

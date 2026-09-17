@@ -14,6 +14,7 @@ import {
   DAY1_PRICE,
   DOORS,
   DOOR_BY_ID,
+  EVENT_DROP_TO,
   EXPERIMENT_PRICE,
   LEVELS,
   TOMATOES_PER_KG,
@@ -25,6 +26,7 @@ import {
   closeDay,
   crowdSeedFor,
   dayQuestion,
+  discoveriesOf,
   eventDrop,
   gaugeFor,
   harmattanBoard,
@@ -34,6 +36,10 @@ import {
   ploobLine,
   reconstructionOf,
   repeatBack,
+  replayRun,
+  rowsOf,
+  replaysFor,
+  resultOf,
   scheduleOf,
   sendableNickname,
   shareCardFor,
@@ -44,9 +50,12 @@ import {
   startStall,
   stockOf,
   topUp,
-  whyQuestion,
+  whyFor,
   type Aim,
+  type Discovery,
+  type Counterfactual,
   type DayQuestion,
+  type DayRecord,
   type DayResult,
   type DayRun,
   type Level,
@@ -54,6 +63,10 @@ import {
   type WhyOption,
 } from '@/lib/market'
 import { createMarketSim, beginRun, resumeRun, type MarketSim, type MarketViewId } from '@/lib/marketsim'
+import { registerVerbs } from '@/lib/verbs'
+import { getLens } from '@/lib/curriculum'
+import { BOOK_0580 } from '@/books/maths'
+import { StallBook } from '@/components/numberworks/hud/StallBook'
 import { setAssetsDisabled } from '@/lib/marketassets'
 import { nextDoor, recordHandIn } from '@/lib/numberworkscampaign'
 import { COACH_KEY, type CoachDock } from '@/components/atoms/game/coachDock'
@@ -66,19 +79,24 @@ import { Tile } from '@/components/ui/tile'
 import type { StallVerb } from '@/components/numberworks/Stall'
 import type { Neighbour } from '@/components/numberworks/Neighbours'
 import { DaysPlate, MarketBeat, MarketScore, MarketSend, MarketWelcome, OurSpace, StallPlate, TillPlate, type DayReading, type JournalEntry, type StallControls } from '@/components/numberworks/hud/MarketHud'
-import { CloseCard, CountLift, EdgeTab, EventCard, ExplainCard, MissionCard, Plates, PredictCard, SaidChip, SideSheet } from '@/components/numberworks/hud/MarketCards'
+import { CloseCard, CountLift, EdgeTab, EventCard, ExplainCard, MissionCard, Plates, PredictCard, ReplayBanner, ReplayCard, SaidChip, SideSheet } from '@/components/numberworks/hud/MarketCards'
 
 const MarketScene = lazy(() => import('@/components/numberworks/MarketScene'))
 
 /**
- * The Numberworks — Door 1, The Market. Round A.2, after review 1.
+ * The Numberworks — Door 1, The Market. Round A.3, after review 2.
  *
  * The storyboard "The Market: say the number, then make the market prove it",
  * as a phase machine:
  *
  *   welcome → mission → predict → beat → (gather → count) → lab
- *          → [a day runs; four o'clock may pause it] → close → explain → lab
+ *          → [a day runs; four o'clock may pause it] → close → explain
+ *          → (replay — the same forty at the board not chosen) → lab
  *          → hand in → scored → send
+ *
+ * Review 2's hero is the replay: after the why is answered, the chrome goes,
+ * the market runs today's crowd at the price the child did not choose, and
+ * the split result sits over the alley. Nothing from it is recorded as a day.
  *
  * Play is the front door. At EVERY depth the round opens on a number the
  * learner types — how many tomatoes is ₵200 — and Ploob repeats it back; the
@@ -92,7 +110,7 @@ const MarketScene = lazy(() => import('@/components/numberworks/MarketScene'))
  * A link (`?c=…`) is the whole world: same seed, same crowd sequence, the
  * dare on the plates. Nothing here talks to a server.
  */
-type Phase = 'welcome' | 'mission' | 'predict' | 'beat' | 'gather' | 'count' | 'lab' | 'close' | 'explain' | 'scored' | 'send'
+type Phase = 'welcome' | 'mission' | 'predict' | 'beat' | 'gather' | 'count' | 'lab' | 'close' | 'explain' | 'replay' | 'scored' | 'send'
 
 const SESSION_CODE = String((Date.now() ^ 0x5eed0bad) >>> 0)
 const JOURNAL_KEY = 'ploobia.numberworks.journal.v1'
@@ -303,6 +321,14 @@ export default function Numberworks() {
   /** The day's question, while the predict card is up — and the number typed, kept on screen. */
   const [question, setQuestion] = useState<DayQuestion | null>(null)
   const [said, setSaid] = useState<{ q: DayQuestion; typed: number } | null>(null)
+  /**
+   * Which day index the learner has already answered for. A day the question
+   * was answered on but that has not been run yet is still TODAY — the stall
+   * opens it rather than asking the same question again (which, on a retry
+   * day after a miss, was a loop: the count set the number and handed the
+   * stall back, and both buttons asked for it again).
+   */
+  const [answeredDay, setAnsweredDay] = useState(0)
   const [caught, setCaught] = useState(0)
   const [rain, setRain] = useState<{ seed: number; startAt: number; startedAtMs: number; seconds: number } | null>(null)
   const [gatherLeft, setGatherLeft] = useState(0)
@@ -315,8 +341,17 @@ export default function Numberworks() {
   const [score, setScore] = useState<ChallengeScore | null>(null)
   const [opened, setOpened] = useState<number | null>(null)
   const [chosen, setChosen] = useState<WhyOption | null>(null)
+  /** The level's days, as the whys and the book read them — one record per day run. */
+  const [days, setDays] = useState<DayRecord[]>([])
+  /** The replay on screen (the first of today's counterfactuals) and whether it has finished. */
+  const [replayTill, setReplayTill] = useState<{ t: number; till: number } | null>(null)
+  const [replayDone, setReplayDone] = useState(false)
   const [journal, setJournal] = useState<JournalEntry[]>(() => read<JournalEntry[]>(JOURNAL_KEY, []))
   const [sheet, setSheet] = useState<'board' | 'space' | null>(null)
+  /** The Stall Book: null = shut, a number = that page, 'contents' = the contents. */
+  const [book, setBook] = useState<number | 'contents' | null>(null)
+  /** What the last tapped term did in the world, said inside the book. */
+  const [echo, setEcho] = useState('')
   const [hovered, setHovered] = useState<StallVerb | null>(null)
   const [contextLost, setContextLost] = useState(false)
   const [line, setLine] = useState('')
@@ -326,6 +361,50 @@ export default function Numberworks() {
     logEvent('numberworks', getBand(), 'session.started', {})
   }, [])
 
+  /**
+   * The book's terms are a remote control for the stall (review 2): a term on
+   * a page fires a verb here, the world answers behind the page, and the book
+   * says what it did — so a word is never a dead handle.
+   */
+  useEffect(
+    () =>
+      registerVerbs('numberworks', {
+        // Keep in step with STALL_VERBS — the suites check both ends.
+
+        'board/price': () => {
+          setSimView(sim, 'board')
+          setEcho(`The board is lit: ${cedis(stallRef.current.price, 2)} each.`)
+        },
+        'alley/replay': () => {
+          const d = days[days.length - 1]
+          if (!d) {
+            setEcho('No day to replay yet — open the stall first.')
+            return
+          }
+          setSimView(sim, 'alley')
+          beginRun(sim, startDay(shoppersFor(d.crowdSeed), d.stock, d.result.schedule), Date.now(), false, true)
+          setEcho(`Day ${d.dayIndex} again: ${d.result.buyers} stop, ${d.result.passed} walk past.`)
+        },
+        'till/count': () => {
+          setSimView(sim, 'stall')
+          ringTill(sim)
+          const d = stallRef.current.day
+          setEcho(d ? `The coins count up to ${cedis(d.till)}.` : 'The till is empty — nothing to count yet.')
+        },
+        'basin/count': () => {
+          setSimView(sim, 'stall')
+          const s = stallRef.current
+          const r = rowsOf(s.day ? s.day.sold : s.stock, s.guess)
+          setEcho(`${r.rows} row${r.rows === 1 ? '' : 's'} of ten${r.spare ? `, ${r.spare} spare` : ''}.`)
+        },
+        'scale/weigh': () => {
+          setSimView(sim, 'stall')
+          setEcho(`${TOMATOES_PER_KG} tomatoes make about a kilo here.`)
+        },
+      }),
+    [sim, days],
+  )
+
   /* ---- starting a level ---- */
   const begin = useCallback(
     (lvl: Level, c: Challenge) => {
@@ -333,6 +412,9 @@ export default function Numberworks() {
       setChallenge(c)
       setTrials(0)
       setReadings([])
+      setDays([])
+      setReplayDone(false)
+      setReplayTill(null)
       setScore(null)
       setOpened(null)
       setChosen(null)
@@ -378,6 +460,7 @@ export default function Numberworks() {
     setEventRun(null)
     setTrials(0)
     setReadings([])
+    setDays([])
     setSaid(null)
     const s = startStall(LEVELS[0], BASIN_MAX)
     setStall(s)
@@ -402,6 +485,7 @@ export default function Numberworks() {
       const first = phase === 'predict' && stall.day === null && stall.dayIndex === 1 && q.kind === 'count'
       logEvent('numberworks', band, 'prediction.committed', { variable: `${q.kind === 'count' ? 'guess' : 'till'}:${level.id}:day${stall.dayIndex}`, x: level.tier, predicted: typed, kind: 'point' })
       setSaid({ q, typed })
+      setAnsweredDay(stall.dayIndex)
       setQuestion(null)
       if (level.kind !== 'fill') {
         // Levels 2 and 3: the brief's number, then the beat, then the dials.
@@ -527,7 +611,7 @@ export default function Numberworks() {
       // Level 1: every day opens on a number. Day 1's was the brief; a day
       // after that asks for the till (or the count again, after a miss).
       const q = dayQuestion(level, stall, sim.shoppers)
-      if (q && (stall.day !== null || stall.guess === null)) {
+      if (q && answeredDay !== stall.dayIndex && (stall.day !== null || stall.guess === null)) {
         setQuestion(q)
         setPhase('predict')
         return
@@ -540,7 +624,7 @@ export default function Numberworks() {
     setRunning(true)
     setLive({ t: 0, till: 0, sold: 0, unsold: run.stock0 })
     setLine('')
-  }, [running, phase, level, sim, stall])
+  }, [running, phase, level, sim, stall, answeredDay])
   const closeEarly = useCallback(() => {
     if (sim.run) closeDay(sim.run)
     if (sim.paused) resumeRun(sim, Date.now())
@@ -567,7 +651,7 @@ export default function Numberworks() {
         // cleanup below runs after the re-render, and a long frame (a prop
         // arriving mid-day) can let a second tick see the same done run.
         clearInterval(id)
-        const day: DayResult = { sold: run.sold, till: run.till, unsold: run.unsold, passed: run.passed, sales: run.sales }
+        const day: DayResult = resultOf(run)
         const t = trials + 1
         const s = stallRef.current
         const hit = level ? gaugeFor(level, { ...s, day }).hit : null
@@ -575,6 +659,7 @@ export default function Numberworks() {
         setTrials(t)
         setStall(next)
         setReadings((r) => [readingOf(t, level, s, day), ...r].slice(0, 12))
+        if (level && challenge) setDays((d) => [...d, { dayIndex: s.dayIndex, crowdSeed: crowdSeedFor(challenge.seed, level, s.dayIndex), stock: s.stock, guess: s.guess, tillGuess: s.tillGuess, result: day, explained: null }])
         setLive(null)
         setRunning(false)
         setEventRun(null)
@@ -602,11 +687,26 @@ export default function Numberworks() {
       }
     }, LIVE_MS)
     return () => clearInterval(id)
-  }, [running, sim, trials, level, band])
+  }, [running, sim, trials, level, band, challenge])
 
   /* ---- another day: the question changes ---- */
   const nextDay = useCallback(() => {
     if (!level || !challenge || level.kind !== 'fill') return
+    // A day that was set up but never run is still today: ask its number
+    // again if it was never answered, and otherwise just open the stall.
+    if (days.length > 0 && days[days.length - 1].dayIndex < stall.dayIndex) {
+      if (answeredDay === stall.dayIndex) {
+        const run = startDay(sim.shoppers, stall.stock, { price: stall.price, discount: 0 })
+        beginRun(sim, run, Date.now(), true)
+        setRunning(true)
+        setLive({ t: 0, till: 0, sold: 0, unsold: run.stock0 })
+        setLine('')
+        return
+      }
+      setQuestion(dayQuestion(level, stall, sim.shoppers))
+      setPhase('predict')
+      return
+    }
     const dayIndex = stall.dayIndex + 1
     const lock = stall.lastHit === false ? null : dayIndex === 2 ? EXPERIMENT_PRICE : null
     const s: StallState = { ...stall, dayIndex, tillGuess: null, discount: 0, price: lock ?? stall.price }
@@ -616,7 +716,7 @@ export default function Numberworks() {
     setChosen(null)
     setQuestion(dayQuestion(level, s, shoppersFor(crowdSeedFor(challenge.seed, level, dayIndex))))
     setPhase('predict')
-  }, [level, challenge, stall, sim])
+  }, [level, challenge, stall, sim, days, answeredDay])
 
   /* ---- level 3: lock a prediction ---- */
   const lock = useCallback(() => {
@@ -636,26 +736,75 @@ export default function Numberworks() {
 
   /* ---- the reconstruction, the question, the stamp ---- */
   const recon = useMemo(() => (level ? reconstructionOf(level, stall) : null), [level, stall])
-  const why = useMemo(() => (level ? whyQuestion(level, stall) : null), [level, stall])
+  /** What the market can replay after today: the price not chosen first, the other four o'clock branch second. */
+  const replays = useMemo<Counterfactual[]>(() => (level ? replaysFor(level, days) : []), [level, days])
+  const why = useMemo(() => (level ? whyFor(level, stall, days, replays[0] ?? null) : null), [level, stall, days, replays])
   const stamp = useMemo(() => (level ? stampOf(level, stall, chosen) : []), [level, stall, chosen])
   const choose = useCallback(
     (o: WhyOption) => {
       if (!level) return
       setChosen(o)
+      setDays((d) => (d.length ? [...d.slice(0, -1), { ...d[d.length - 1], explained: o.stamp ?? o.text }] : d))
       logEvent('numberworks', band, 'writeup.completed', { variable: level.metric.id, claim: o.text, reason: o.answer, limitations: o.right ? [] : ['the day says otherwise'], ownWords: false })
     },
     [level, band],
   )
+  const backToStall = useCallback(() => {
+    if (!level) return
+    const g = gaugeFor(level, stall)
+    setLine(g.hit ? level.done : level.kind === 'fill' ? (stall.lastHit === false ? 'Another day, then. Same board — how many this time?' : '') : '')
+    setPhase('lab')
+  }, [level, stall])
   const explainDone = useCallback(() => {
     if (!level) return
     if (level.kind === 'harmattan') {
       setPhase('scored')
       return
     }
-    const g = gaugeFor(level, stall)
-    setLine(g.hit ? level.done : level.kind === 'fill' ? (stall.lastHit === false ? 'Another day, then. Same board — how many this time?' : '') : '')
-    setPhase('lab')
-  }, [level, stall])
+    const c = replays[0]
+    const today = days[days.length - 1]
+    if (c && today) {
+      // The hero: the same forty, the other board, watched — then the stamp.
+      beginRun(sim, replayRun(c, today.crowdSeed, today.stock), Date.now(), false, true)
+      setReplayDone(false)
+      setReplayTill({ t: 0, till: 0 })
+      setSheet(null)
+      // Nothing is logged: a replay is the market answering, not a reading.
+      setPhase('replay')
+      return
+    }
+    backToStall()
+  }, [level, replays, days, sim, backToStall])
+  // The replay runs on the wall clock like a day; when it is done the split
+  // result comes up. Nothing here touches the stall, the readings or the days.
+  useEffect(() => {
+    if (phase !== 'replay') return
+    const id = setInterval(() => {
+      const run = sim.run
+      if (!run) return
+      setReplayTill({ t: run.t, till: run.till })
+      if (run.done) {
+        clearInterval(id)
+        endSimRun(sim, stallRef.current.price)
+        setReplayDone(true)
+      }
+    }, LIVE_MS)
+    return () => clearInterval(id)
+  }, [phase, sim])
+  // A replay fired from a book term runs behind the page and then lets the
+  // crowd go — nothing about it is recorded, and the stall is a stall again.
+  useEffect(() => {
+    if (book === null) return
+    const id = setInterval(() => {
+      if (sim.replay && sim.run?.done) endSimRun(sim, stallRef.current.price)
+    }, LIVE_MS)
+    return () => clearInterval(id)
+  }, [book, sim])
+  const replayDoneBack = useCallback(() => {
+    setReplayTill(null)
+    setReplayDone(false)
+    backToStall()
+  }, [backToStall])
 
   /* ---- hand in ---- */
   const handIn = useCallback(() => {
@@ -727,6 +876,10 @@ export default function Numberworks() {
 
   useBackHandler(
     useCallback(() => {
+      if (book !== null) {
+        setBook(null)
+        return true
+      }
       if (sheet) {
         setSheet(null)
         return true
@@ -745,10 +898,12 @@ export default function Numberworks() {
         return true
       }
       return false
-    }, [sheet, phase, score, stall.day]),
+    }, [sheet, book, phase, score, stall.day]),
   )
 
   /* ---- derived ---- */
+  const replaying = phase === 'replay'
+  const showHud = phase !== 'welcome' && !replaying
   const hudBottom = tier === 'phone' ? 150 : tier === 'tablet' ? 80 : 40
   const inGame = level !== null
   const free = !inGame && phase === 'lab'
@@ -759,14 +914,19 @@ export default function Numberworks() {
     return aimFor(level, stall, 'lab')
   }, [level, free, stall, phase, running])
   const aimVerb = verbOfAim(aim)
-  const board = useMemo(() => boardOf(level, stall), [level, stall])
+  // During the replay the chalk board in the scene shows the OTHER price — the
+  // one thing that changed. Everything else about the day is the same.
+  const board = useMemo(() => {
+    const c = replaying ? replays[0] : undefined
+    if (c) return { eyebrow: 'each · the replay', big: cedis(c.other.schedule.price, 2), small: c.other.schedule.discount > 0 ? `${cedis(EVENT_DROP_TO, 2)} after four` : undefined }
+    return boardOf(level, stall)
+  }, [level, stall, replaying, replays])
   const stallForPlate = useMemo<StallState>(
     () => (level?.kind === 'harmattan' ? { ...stall, prediction: draft.prediction ?? stall.prediction, bound: draft.bound ?? stall.bound } : stall),
     [level, stall, draft],
   )
   const priceLock = priceLockOf(level, stall)
   const shownLine = phase === 'lab' ? line || (level ? ploobLine(level, stall, sim.run) : freeLine(stall, sim.run)) : phase === 'gather' || phase === 'count' ? line : ''
-  const showHud = phase !== 'welcome'
   const doorOpened = opened ? DOOR_BY_ID[opened] ?? null : null
   const shortWhy = useMemo(() => {
     if (!level) return ''
@@ -782,6 +942,18 @@ export default function Numberworks() {
     setPhase('send')
   }, [level, play])
   const meta = BAND_META[band]
+  /** What the days have written into the Stall Book so far. */
+  const discoveries = useMemo<Record<string, Discovery>>(() => (level ? discoveriesOf(level, stall, days) : {}), [level, stall, days])
+  const taught = useMemo(() => {
+    const titles: Record<string, string> = { 'how-many': 'How many', 'the-till': 'The till', 'the-alley': 'The alley', 'four-oclock': 'Four o’clock', 'best-for-what': 'Best for what', profit: 'Profit', friday: 'Friday' }
+    return Object.keys(discoveries).map((id) => titles[id] ?? id)
+  }, [discoveries])
+  const lens = useMemo(() => getLens(), [])
+  const openBook = useCallback((at: number | 'contents' = 'contents') => {
+    setBook(at)
+    setEcho('')
+    setSheet(null)
+  }, [])
 
   const ourSpace = (
     <OurSpace
@@ -834,7 +1006,7 @@ export default function Numberworks() {
   )
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-[#E9CFA3]" data-phase={phase} data-hud-bottom={hudBottom} data-running={running ? 'true' : 'false'} data-day={stall.dayIndex} data-till={(live ? live.till : (stall.day?.till ?? 0)).toFixed(2)} data-testid="numberworks">
+    <div className="fixed inset-0 overflow-hidden bg-[#E9CFA3]" data-phase={phase} data-hud-bottom={hudBottom} data-running={running ? 'true' : 'false'} data-day={stall.dayIndex} data-till={(live ? live.till : (stall.day?.till ?? 0)).toFixed(2)} data-replay={replaying ? (replayDone ? 'done' : 'running') : 'no'} data-testid="numberworks">
       <SceneErrorBoundary>
         <Suspense fallback={<SceneFallback />}>
           <MarketScene
@@ -913,6 +1085,24 @@ export default function Numberworks() {
 
       {/* level 3 of the HUD: the sheet from the edge */}
       <SideSheet open={sheet === 'space'} onClose={() => setSheet(null)} title="Days · Our Space">
+        {inGame && (
+          <Tile
+            onClick={() => openBook('contents')}
+            aria-label="Open the Stall Book"
+            data-testid="book-tab"
+            className="atlas-plate-quiet pointer-events-auto flex w-full items-center justify-between gap-2 rounded-[12px] px-3 py-2 text-left"
+          >
+            <span className="min-w-0">
+              <b className="block text-[12px] font-black text-[#2A2823]">The Stall Book</b>
+              <span className="block truncate text-[10.5px] font-extrabold text-[#8B8471]">
+                {taught.length ? `${taught.length} page${taught.length === 1 ? '' : 's'} in your numbers: ${taught.join(' · ')}` : 'Empty — a day at the stall writes the first page'}
+              </span>
+            </span>
+            <span className="shrink-0 text-[16px]" aria-hidden>
+              📖
+            </span>
+          </Tile>
+        )}
         <div className="min-h-[9rem]">{daysPlate}</div>
         <div className="min-h-0 flex-1">{ourSpace}</div>
       </SideSheet>
@@ -959,7 +1149,23 @@ export default function Numberworks() {
       {phase === 'close' && level && recon && (
         <CloseCard level={level} recon={recon} hit={gaugeFor(level, stall).hit} dayIndex={stall.dayIndex} onNext={() => setPhase('explain')} />
       )}
-      {phase === 'explain' && level && why && <ExplainCard why={why} stamp={stamp} chosen={chosen} onChoose={choose} onDone={explainDone} />}
+      {phase === 'explain' && level && why && (
+        <ExplainCard
+          why={why}
+          eyebrow={why.eyebrow}
+          kind={why.kind}
+          days={days}
+          stamp={stamp}
+          chosen={chosen}
+          next={level.kind === 'fill' && replays[0] ? (replays[0].kind === 'price' ? `Replay it at ${replays[0].other.label} ›` : 'Replay four o’clock the other way ›') : null}
+          taught={taught}
+          onBook={taught.length ? () => openBook('contents') : undefined}
+          onChoose={choose}
+          onDone={explainDone}
+        />
+      )}
+      {replaying && replays[0] && !replayDone && <ReplayBanner c={replays[0]} till={replayTill?.till ?? 0} t={replayTill?.t ?? 0} />}
+      {replaying && replays[0] && replayDone && <ReplayCard c={replays[0]} second={replays[1] ?? null} stamp={stamp} onDone={replayDoneBack} />}
       {phase === 'scored' && level && score && (
         <MarketScore
           level={level}
@@ -969,6 +1175,8 @@ export default function Numberworks() {
           opened={doorOpened}
           why={shortWhy}
           strategy={card}
+          taught={taught}
+          onBook={taught.length ? () => openBook('contents') : undefined}
           onNext={() => {
             const door = nextDoor()
             if (door.built && doorOpened && door.id === doorOpened.id) {
@@ -985,6 +1193,23 @@ export default function Numberworks() {
           onClose={() => setPhase('lab')}
         />
       )}
+      <StallBook
+        book={BOOK_0580}
+        band={band as Band}
+        lens={lens}
+        discoveries={discoveries}
+        open={book !== null}
+        at={book === 'contents' ? null : book}
+        echo={echo}
+        onAt={(next) => {
+          setBook(next === null ? 'contents' : next)
+          setEcho('')
+        }}
+        onClose={() => {
+          setBook(null)
+          setEcho('')
+        }}
+      />
       {phase === 'send' && card && <MarketSend card={card} link={link} by={by} onBy={setBy} onClose={() => setPhase(score ? 'scored' : 'lab')} />}
 
       <span className="sr-only" data-testid="doors">{DOORS.map((d) => d.name).join(' · ')}</span>

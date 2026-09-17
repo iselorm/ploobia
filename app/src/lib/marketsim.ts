@@ -53,6 +53,12 @@ export interface MarketSim {
   /** The last few settlements, for the bubbles over the shoppers' heads. */
   recent: Array<{ shopper: number; kind: 'sale' | 'pass'; n: number; paid: number; at: number; seq: number }>
   recentSeq: number
+  /**
+   * Review 2's hero: the run is a REPLAY — the same crowd at the board the
+   * learner did not choose. The scene draws it with the chrome gone and the
+   * buyers' counts over their heads; the page records nothing from it.
+   */
+  replay: boolean
 }
 
 export function createMarketSim(): MarketSim {
@@ -79,6 +85,7 @@ export function createMarketSim(): MarketSim {
     previewPrice: null,
     recent: [],
     recentSeq: 0,
+    replay: false,
   }
 }
 
@@ -127,8 +134,9 @@ export function resumeRun(sim: MarketSim, nowMs: number): void {
   sim.eventPending = false
 }
 
-export function beginRun(sim: MarketSim, run: DayRun, nowMs: number, withEvent = false): void {
+export function beginRun(sim: MarketSim, run: DayRun, nowMs: number, withEvent = false, replay = false): void {
   sim.run = run
+  sim.replay = replay
   sim.runStartedMs = nowMs
   sim.runSteppedTo = 0
   sim.stock = run.stock0

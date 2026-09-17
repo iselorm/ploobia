@@ -39,7 +39,39 @@ export interface Layered {
   analyst?: Localised
 }
 
-export type PageKind = 'story' | 'rule' | 'practical' | 'check'
+export type PageKind = 'story' | 'rule' | 'practical' | 'check' | 'journal'
+
+/**
+ * A journal page (The Stall Book, review 2, 13 Sep).
+ *
+ * A field guide explains and then asks; a field JOURNAL records what you
+ * found and then names it. So the order on the page is fixed: the discovery
+ * in the learner's own numbers, one sentence that gives it a name, and only
+ * then — folded, behind "Show me how →" — the method, the prose and the
+ * Analyst's notation. A page nobody has earned shows its name and nothing
+ * else: never the formula before the day that produced it.
+ *
+ * `${key}` in any line is replaced from the learner's own record by `fill`.
+ * A page with no record is LOCKED: `locked` is all that is shown.
+ */
+export interface JournalPage {
+  /** What the day proved, big, in their numbers — `${sum}` is the usual fill. */
+  discovery: Localised
+  /** Which day it came from, and what the alley did. */
+  provenance: Localised
+  /** One sentence that names it. Page markup: the term is a verb. */
+  names: Layered
+  /** Folded under "Show me how →": the method with `${key}` fills. */
+  how: Layered
+  /** The Analyst's notation, folded with the method, never missing. */
+  notation?: Localised
+  /** The remote control back into the world: label → verb id. */
+  tryIt?: Array<{ label: Localised; verb: string }>
+  /** What an undiscovered page says — a name, and no more. */
+  locked: Localised
+  /** Which syllabus statements a filled page is evidence for (ledger only). */
+  stamps?: string[]
+}
 
 export interface Practical {
   /** The cabinet door, by campaign stage tab (`plant`, `hatches`, `stem` …). */
@@ -96,6 +128,7 @@ export interface Page {
   figure?: string
   practical?: Practical
   check?: Check
+  journal?: JournalPage
 }
 
 export interface Section {
@@ -230,6 +263,22 @@ export function sectionsOf(book: Book): Section[] {
 
 export function findSection(book: Book, id: string): Section | undefined {
   return sectionsOf(book).find((s) => s.id === id)
+}
+
+/**
+ * Substitute `${key}` from a record of the learner's own figures. A key with
+ * no value leaves the page honest rather than wrong: the line is dropped by
+ * the caller (a locked page), never printed with a hole in it.
+ */
+export function fill(src: string, keys: Record<string, string>): string {
+  return src.replace(/\$\{([a-zA-Z0-9_]+)\}/g, (whole, k: string) => keys[k] ?? whole)
+}
+
+/** Every `${key}` a line asks for. */
+export function fillKeys(src: string): string[] {
+  const out = new Set<string>()
+  for (const m of src.matchAll(/\$\{([a-zA-Z0-9_]+)\}/g)) out.add(m[1])
+  return [...out]
 }
 
 /** The pages a band sees: the check page only where that band has one. */
