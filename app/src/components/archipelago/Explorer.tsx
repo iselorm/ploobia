@@ -4,8 +4,13 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { CapsuleCollider, RigidBody, useRapier, type RapierRigidBody } from '@react-three/rapier'
 import {
   CARRY_KG,
+  craneDrive,
+  craneEnter,
+  craneLeave,
   crossPortal,
+  enterRoom,
   fixPipe,
+  leaveRoom,
   getWorld,
   interactables,
   lightHearth,
@@ -17,6 +22,7 @@ import {
 } from '@/lib/archipelago'
 import { SPAWNS, control, live } from './live'
 import { bodies } from './bodies'
+import { craneGrabOrRelease } from './crane'
 
 /**
  * The explorer — a kinematic character on Rapier's controller, driven by the
@@ -63,7 +69,23 @@ export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void
     if (!b) return
     const dt = Math.min(0.05, dtRaw)
     const s = getWorld()
-    const playing = s.phase === 'play'
+    // Step out of a mode on Escape.
+    if (control.exit) {
+      control.exit = false
+      if (s.crane.active) craneLeave()
+      else if (s.room !== 'none') leaveRoom()
+    }
+    // At the crane the keys drive the crane; in a room the room's controls take over.
+    if (s.crane.active && s.phase === 'play') {
+      craneDrive(control.x, control.y, dt)
+      if (control.interact) {
+        control.interact = false
+        craneGrabOrRelease()
+      }
+      control.jump = false
+      control.lens = false
+    }
+    const playing = s.phase === 'play' && s.room === 'none' && !s.crane.active
 
     // A zone change is a teleport to that zone's spawn — the load is the walk.
     if (zoneRef.current !== s.zone) {
@@ -182,6 +204,7 @@ export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void
     if (g) {
       g.position.set(nx, ny, nz)
       g.rotation.y = live.facing
+      g.visible = s.room === 'none'
     }
   })
 
@@ -243,7 +266,10 @@ export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void
         else window.dispatchEvent(new CustomEvent('ploobia:lookfirst'))
         return
       case 'feed':
-        window.dispatchEvent(new CustomEvent('ploobia:feed'))
+        enterRoom('furnace')
+        return
+      case 'crane':
+        craneEnter()
         return
       case 'portal': {
         const to = id.slice('portal.'.length) as ZoneId

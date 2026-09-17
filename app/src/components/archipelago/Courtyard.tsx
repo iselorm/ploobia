@@ -8,11 +8,15 @@ import {
   FUEL_ORDER,
   fedBlock,
   getWorld,
+  CRANE,
+  craneTip,
+  noteLanding,
   registerInteractable,
   useWorld,
   type FuelId,
 } from '@/lib/archipelago'
 import { bodies, registerBody } from './bodies'
+import { interactables as interactableMap } from '@/lib/archipelago'
 import Sky from './Sky'
 
 /**
@@ -30,6 +34,9 @@ import Sky from './Sky'
 const BELT = { x0: -10, x1: -2, z: -6, halfW: 0.7, top: 0.5, speed: 1.6 }
 const MOUTH_X = -2.4
 
+/** Where the explorer stands to drive the crane. */
+const CRANE_POST: [number, number, number] = [-8.6, 0, -9.4]
+
 export default function Courtyard() {
   const s = useWorld()
   useEffect(() => {
@@ -38,6 +45,7 @@ export default function Courtyard() {
       registerInteractable({ id: 'build.pipe', verb: 'build', label: 'Fix the pipe', pos: [3.2, 0, -7], radius: 1.7 }),
       registerInteractable({ id: 'portal.landing', verb: 'portal', label: 'Back to the Landing', pos: [0, 0, 12.6], radius: 1.1 }),
       registerInteractable({ id: 'talk.foreman', verb: 'talk', label: 'The Foreman', pos: [3.2, 0, 8], radius: 1.4 }),
+      registerInteractable({ id: 'crane.controls', verb: 'crane', label: 'Drive the crane', pos: CRANE_POST, radius: 1.4 }),
     ]
     return () => offs.forEach((f) => f())
   }, [])
@@ -81,7 +89,7 @@ export default function Courtyard() {
 
         {/* the furnace */}
         <CuboidCollider args={[2, 2, 1.5]} position={[0, 2, -8.5]} />
-        <mesh position={[0, 2, -8.5]} castShadow receiveShadow>
+        <mesh position={[0, 2, -8.5]} castShadow receiveShadow visible={s.room !== 'furnace'}>
           <boxGeometry args={[4, 4, 3]} />
           <meshStandardMaterial
             color={new THREE.Color('#6B5443').lerp(new THREE.Color('#FF7A2E'), heat * 0.55)}
@@ -91,10 +99,12 @@ export default function Courtyard() {
           />
         </mesh>
         {/* the mouth */}
-        <mesh position={[0, 1.1, -6.98]}>
+        <mesh position={[0, 1.1, -6.98]} visible={s.room !== 'furnace'}>
           <boxGeometry args={[1.8, 1.4, 0.1]} />
           <meshStandardMaterial color="#1E140C" emissive="#FF6A1E" emissiveIntensity={heat * 3} toneMapped={false} />
         </mesh>
+        {/* the room: the same furnace, cut open — what the camera sees from inside the mouth */}
+        {s.room === 'furnace' && <FurnaceRoom heat={heat} air={s.air} lit={s.furnace.lit} fuel={s.furnace.fuel} />}
         {/* the stack */}
         <CuboidCollider args={[0.7, 3, 0.7]} position={[1.2, 7, -9]} />
         <mesh position={[1.2, 7, -9]} castShadow>
@@ -166,11 +176,186 @@ export default function Courtyard() {
       <Smoke lit={s.furnace.lit} />
 
       {/* the copper scrap — metal, not ore: this quest is melting, not smelting */}
-      <Scrap id="scrap.a" position={[-7, 1, -2]} mass={12} size={0.6} />
+      <Scrap id="scrap.a" position={[-7, 1, -7.7]} mass={12} size={0.6} />
       <Scrap id="scrap.b" position={[-5, 1, -1.4]} mass={12} size={0.6} />
-      <Scrap id="scrap.heavy" position={[-8.6, 1, -3.4]} mass={120} size={0.95} />
+      <Scrap id="scrap.heavy" position={[-6.3, 0.8, -9]} mass={120} size={0.95} />
+      <Crane />
       <ConveyorDrive />
     </>
+  )
+}
+
+/**
+ * The crane — a mast, a boom that swings, a hook that rises and falls. The
+ * explorer drives it from the post (§ his panel 3: W raise · S lower · A/D
+ * rotate · E take/release). A piece under a low hook is taken; released from
+ * height it falls under Rapier, and the landing is timed — that is board 1's
+ * bet, measured: same height, two masses, two fall times.
+ *
+ * Holding is the hand trick: the piece goes kinematic and rides the hook.
+ */
+function Crane() {
+  const s = useWorld()
+  const boom = useRef<THREE.Group>(null)
+  const hook = useRef<THREE.Group>(null)
+  const cable = useRef<THREE.Mesh>(null)
+  const falling = useRef(new Set<string>())
+  useFrame(() => {
+    const w = getWorld()
+    const c = w.crane
+    const [tx, tz] = craneTip(c.yaw)
+    if (boom.current) boom.current.rotation.y = c.yaw
+    if (hook.current) hook.current.position.set(tx, c.hookY, tz)
+    if (cable.current) {
+      const len = CRANE.boomY - c.hookY
+      cable.current.position.set(tx, c.hookY + len / 2, tz)
+      cable.current.scale.y = Math.max(0.01, len)
+    }
+    // The held piece rides the hook.
+    if (c.holding) {
+      const b = bodies.get(c.holding)
+      if (b) {
+        b.setNextKinematicTranslation({ x: tx, y: c.hookY - 0.55, z: tz })
+        const it = interactablesFor(c.holding)
+        if (it) it.pos = [tx, c.hookY - 0.55, tz]
+      }
+    }
+    // Dropped pieces: time the landing.
+    for (const id of Object.keys(c.drops)) {
+      const d = c.drops[id]
+      if (d.t1 != null) continue
+      const b = bodies.get(id)
+      if (!b) continue
+      const t = b.translation()
+      const v = b.linvel()
+      // Landed = it has actually fallen (seen moving down) and then stopped.
+      // Without the first half, the frame of release reads as a landing.
+      if (v.y < -0.5) falling.current.add(id)
+      if (falling.current.has(id) && Math.abs(v.y) < 0.15 && t.y < d.from - 0.4) {
+        falling.current.delete(id)
+        noteLanding(id)
+      }
+    }
+  })
+  const [tx, tz] = craneTip(s.crane.yaw)
+  return (
+    <group>
+      {/* mast */}
+      <CuboidCollider args={[0.35, 3, 0.35]} position={[CRANE.mast[0], 3, CRANE.mast[2]]} />
+      <mesh position={[CRANE.mast[0], 3, CRANE.mast[2]]} castShadow>
+        <boxGeometry args={[0.7, 6, 0.7]} />
+        <meshStandardMaterial color="#8A6A3F" roughness={0.9} />
+      </mesh>
+      {/* the post you drive it from */}
+      <CuboidCollider args={[0.25, 0.5, 0.25]} position={[CRANE_POST[0], 0.5, CRANE_POST[2]]} />
+      <mesh position={[CRANE_POST[0], 0.5, CRANE_POST[2]]} castShadow>
+        <boxGeometry args={[0.5, 1, 0.5]} />
+        <meshStandardMaterial color="#5E5346" roughness={0.9} />
+      </mesh>
+      <mesh position={[CRANE_POST[0], 1.05, CRANE_POST[2]]}>
+        <boxGeometry args={[0.6, 0.1, 0.4]} />
+        <meshStandardMaterial color={s.crane.active ? '#E8A33D' : '#C8552E'} emissive={s.crane.active ? '#E8A33D' : '#000'} emissiveIntensity={0.6} roughness={0.5} />
+      </mesh>
+      {/* boom, swinging about the mast */}
+      <group ref={boom} position={[CRANE.mast[0], CRANE.boomY, CRANE.mast[2]]} rotation={[0, s.crane.yaw, 0]}>
+        <mesh position={[0, 0, CRANE.reach / 2 - 0.6]} castShadow>
+          <boxGeometry args={[0.4, 0.4, CRANE.reach + 1.2]} />
+          <meshStandardMaterial color="#B97D10" roughness={0.7} />
+        </mesh>
+        {/* counterweight */}
+        <mesh position={[0, -0.3, -1.4]} castShadow>
+          <boxGeometry args={[0.8, 0.6, 0.8]} />
+          <meshStandardMaterial color="#5E5346" roughness={0.9} />
+        </mesh>
+      </group>
+      {/* cable and hook */}
+      <mesh ref={cable} position={[tx, (CRANE.boomY + s.crane.hookY) / 2, tz]}>
+        <cylinderGeometry args={[0.03, 0.03, 1, 6]} />
+        <meshStandardMaterial color="#2A2622" roughness={0.9} />
+      </mesh>
+      <group ref={hook} position={[tx, s.crane.hookY, tz]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.35, 0.25, 0.35]} />
+          <meshStandardMaterial color="#4A5E7A" roughness={0.5} metalness={0.4} />
+        </mesh>
+        <mesh position={[0, -0.25, 0]}>
+          <torusGeometry args={[0.16, 0.05, 8, 12]} />
+          <meshStandardMaterial color="#4A5E7A" roughness={0.5} metalness={0.4} />
+        </mesh>
+      </group>
+    </group>
+  )
+}
+
+function interactablesFor(id: string) {
+  return interactableMap.get(id)
+}
+
+/** The furnace, cut open: the bed, the flames, the nozzle where the air arrives. */
+function FurnaceRoom({ heat, air, lit, fuel }: { heat: number; air: number; lit: boolean; fuel: FuelId | null }) {
+  const flames = useRef<THREE.Group>(null)
+  useFrame((st) => {
+    const g = flames.current
+    if (!g) return
+    g.visible = lit
+    g.children.forEach((c, i) => {
+      const t = st.clock.elapsedTime * (2 + air * 4) + i
+      const h = 0.25 + heat * 0.9 + air * 0.5
+      c.scale.set(0.5 + Math.sin(t * 1.3) * 0.1, h * (0.8 + Math.abs(Math.sin(t)) * 0.4), 0.5)
+    })
+  })
+  const stone = '#3A2E26'
+  const pile = fuel === 'wetwood' ? '#5E4A36' : fuel === 'drywood' ? '#A8804E' : '#2A2622'
+  return (
+    <group position={[0, 0, -8.5]}>
+      {/* the cavity: floor, back, sides, roof */}
+      <mesh position={[0, 0.05, 0]} receiveShadow>
+        <boxGeometry args={[3.6, 0.1, 2.8]} />
+        <meshStandardMaterial color={stone} roughness={1} />
+      </mesh>
+      <mesh position={[0, 2, -1.4]}>
+        <boxGeometry args={[3.6, 4, 0.2]} />
+        <meshStandardMaterial color={stone} roughness={1} emissive="#FF5A1E" emissiveIntensity={heat * 0.35} />
+      </mesh>
+      <mesh position={[-1.8, 2, 0]}>
+        <boxGeometry args={[0.2, 4, 2.8]} />
+        <meshStandardMaterial color={stone} roughness={1} />
+      </mesh>
+      <mesh position={[1.8, 2, 0]}>
+        <boxGeometry args={[0.2, 4, 2.8]} />
+        <meshStandardMaterial color={stone} roughness={1} />
+      </mesh>
+      <mesh position={[0, 4, 0]}>
+        <boxGeometry args={[3.6, 0.2, 2.8]} />
+        <meshStandardMaterial color={stone} roughness={1} />
+      </mesh>
+      {/* the bed of fuel */}
+      {[-0.6, 0, 0.6, -0.3, 0.3].map((x, i) => (
+        <mesh key={i} position={[x, 0.3, (i % 2) * 0.4 - 0.2]} castShadow>
+          <dodecahedronGeometry args={[0.28, 0]} />
+          <meshStandardMaterial color={fuel ? pile : '#5E5346'} emissive="#FF6A1E" emissiveIntensity={fuel ? heat * 2.2 : 0} roughness={1} flatShading />
+        </mesh>
+      ))}
+      {/* the copper on the bed */}
+      <mesh position={[0, 0.55, 0.2]} castShadow>
+        <boxGeometry args={[0.9, 0.35, 0.6]} />
+        <meshStandardMaterial color={new THREE.Color('#B5652E').lerp(new THREE.Color('#FFB347'), heat)} emissive="#FF8A3D" emissiveIntensity={heat * heat * 2} roughness={0.35} metalness={0.7} />
+      </mesh>
+      <group ref={flames} position={[0, 0.5, 0]}>
+        {[-0.5, 0, 0.5, -0.25, 0.25].map((x, i) => (
+          <mesh key={i} position={[x, 0.5, (i % 2) * 0.3 - 0.15]}>
+            <coneGeometry args={[0.28, 1, 8]} />
+            <meshBasicMaterial color={new THREE.Color('#FF7A2E').lerp(new THREE.Color('#FFE08A'), heat)} transparent opacity={0.85} toneMapped={false} />
+          </mesh>
+        ))}
+      </group>
+      {/* the nozzle on the right wall — where the pipe comes in */}
+      <mesh position={[1.7, 0.8, 0.5]} rotation={[0, 0, Math.PI / 2]}>
+        <cylinderGeometry args={[0.2, 0.2, 0.3, 10]} />
+        <meshStandardMaterial color="#4A5E7A" roughness={0.5} metalness={0.3} />
+      </mesh>
+      <pointLight position={[0, 1.4, 0.4]} intensity={2 + heat * 24} distance={8} color="#FF8A3D" />
+    </group>
   )
 }
 
@@ -333,6 +518,7 @@ function Scrap({ id, position, mass, size }: { id: string; position: [number, nu
   useEffect(() => {
     if (ref.current) return registerBody(id, ref.current)
   }, [id])
+  const meshRef = useRef<THREE.Mesh>(null)
   useFrame(() => {
     const b = ref.current
     if (!b) return
@@ -340,13 +526,16 @@ function Scrap({ id, position, mass, size }: { id: string; position: [number, nu
     it.pos[0] = t.x
     it.pos[1] = t.y
     it.pos[2] = t.z
-    // A fed block is inside the furnace and out of reach for good.
-    if (getWorld().fed.includes(id)) it.radius = 0
+    // A fed piece is inside the furnace and out of reach for good — and out
+    // of sight: the room draws the copper on the bed as one melting mass.
+    const fed = getWorld().fed.includes(id)
+    if (fed) it.radius = 0
+    if (meshRef.current) meshRef.current.visible = !fed
   })
   return (
     <RigidBody ref={ref} position={position} colliders={false} name={id}>
       <CuboidCollider args={[size / 2, size / 2, size / 2]} mass={mass} />
-      <mesh castShadow receiveShadow>
+      <mesh ref={meshRef} castShadow receiveShadow>
         <boxGeometry args={[size, size * 0.7, size * 0.8]} />
         <meshStandardMaterial color="#B5652E" roughness={0.35} metalness={0.7} />
       </mesh>

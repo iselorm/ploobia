@@ -4,7 +4,8 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Physics } from '@react-three/rapier'
 import PerfProbe from '@/components/PerfProbe'
 import { getQualityCaps, useQualityCaps } from '@/lib/quality'
-import { getWorld, tickWorld, useWorld } from '@/lib/archipelago'
+import { getWorld, setWorld, tickWorld, useWorld } from '@/lib/archipelago'
+import { setBand } from '@/lib/bands'
 import Explorer from './Explorer'
 import FollowCamera from './FollowCamera'
 import Companion from './Companion'
@@ -27,6 +28,7 @@ function Ticker() {
 /** Suites read the world through this; nothing in the app does. */
 function Expose() {
   const scene = useThree((s) => s.scene)
+  const camera = useThree((s) => s.camera)
   useEffect(() => {
     const w = window as unknown as Record<string, unknown>
     w.__world = {
@@ -34,6 +36,11 @@ function Expose() {
       live,
       control,
       scene,
+      cam: () => [camera.position.x, camera.position.y, camera.position.z],
+      // Suites only: jump the world to a state and pick a band, so a late beat
+      // can be tested without the two-minute walk in front of it.
+      set: setWorld,
+      setBand,
       setPos: (x: number, y: number, z: number) => {
         live.requestPos = [x, y, z]
       },
@@ -41,7 +48,7 @@ function Expose() {
     return () => {
       delete w.__world
     }
-  }, [scene])
+  }, [scene, camera])
   return null
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
+import { CRANE, craneTip, getWorld } from '@/lib/archipelago'
 import { control, live } from './live'
 
 /**
@@ -17,6 +18,9 @@ const HEIGHT = 2.9
 const TARGET = new THREE.Vector3()
 const WANT = new THREE.Vector3()
 const LOOK = new THREE.Vector3()
+/** The furnace room's viewpoint: just outside the mouth, looking onto the bed. */
+const ROOM_POS = new THREE.Vector3(0.2, 1.7, -4.3)
+const ROOM_LOOK = new THREE.Vector3(0, 0.9, -8.4)
 
 export default function FollowCamera({ hudBottom = 0 }: { hudBottom?: number }) {
   const camera = useThree((s) => s.camera)
@@ -71,15 +75,41 @@ export default function FollowCamera({ hudBottom = 0 }: { hudBottom?: number }) 
     }
   }, [gl])
 
+  const wasRoom = useRef(false)
   useFrame((_, dtRaw) => {
     const dt = Math.min(0.05, dtRaw)
+    const inRoom = getWorld().room === 'furnace'
+    if (inRoom) {
+      // A room is a CUT, not a glide: the first frame snaps, then it holds.
+      if (!wasRoom.current) {
+        camera.position.copy(ROOM_POS)
+        wasRoom.current = true
+      }
+      camera.lookAt(ROOM_LOOK)
+      control.yaw = 0
+      control.pitch = 0
+      return
+    }
+    if (wasRoom.current) {
+      // Cut back out to the follow shot, no glide from inside the furnace.
+      wasRoom.current = false
+      first.current = true
+    }
     live.camYaw += control.yaw
     live.camPitch = THREE.MathUtils.clamp(live.camPitch + control.pitch, 0.12, 1.1)
     control.yaw = 0
     control.pitch = 0
-    TARGET.copy(live.pos)
-    TARGET.y += 0.6
-    const d = DIST * Math.cos(live.camPitch)
+    const c = getWorld().crane
+    if (c.active) {
+      // Driving: the shot is on the hook, a little higher and further back.
+      const [tx, tz] = craneTip(c.yaw)
+      TARGET.set(tx, Math.max(1.2, c.hookY * 0.6), tz)
+    } else {
+      TARGET.copy(live.pos)
+      TARGET.y += 0.6
+    }
+    void CRANE
+    const d = (c.active ? DIST * 1.5 : DIST) * Math.cos(live.camPitch)
     WANT.set(
       TARGET.x - Math.sin(live.camYaw) * d,
       TARGET.y + HEIGHT * Math.sin(live.camPitch) * 1.6,

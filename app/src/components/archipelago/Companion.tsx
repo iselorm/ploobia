@@ -54,7 +54,10 @@ export default function Companion() {
     // Excited hop when he has somewhere to be and is nearly there.
     const hop = target && far < 0.6 ? Math.abs(Math.sin(t.current * 6)) * 0.22 : 0
     const grp = g.current
-    if (grp) grp.position.set(live.ploob.x, Math.max(0, live.pos.y - 0.6) + hop, live.ploob.z)
+    if (grp) {
+      grp.position.set(live.ploob.x, Math.max(0, live.pos.y - 0.6) + hop, live.ploob.z)
+      grp.visible = s.room === 'none'
+    }
   })
   return (
     <group ref={g} name="companion">

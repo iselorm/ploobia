@@ -4,6 +4,7 @@
  * values change every frame and nothing needs to re-render on them.
  */
 import * as THREE from 'three'
+import { getWorld } from '@/lib/archipelago'
 
 export const control = {
   /** Stick / WASD, −1..1 in the camera's frame (x right, y forward). */
@@ -13,6 +14,9 @@ export const control = {
   /** Edge-triggered: set true by an input, consumed by the explorer. */
   interact: false,
   lens: false,
+  /** Edge-triggered: leave the crane or the room. */
+  exit: false,
+  journal: false,
   /** Look drag in radians accumulated since last frame. */
   yaw: 0,
   pitch: 0,
@@ -92,8 +96,18 @@ export function installWorldKeys(): () => void {
       e.preventDefault()
     } else if (e.code === 'KeyE' || e.code === 'Enter') {
       if (!e.repeat) control.interact = true
-    } else if (e.code === 'KeyL') {
+    } else if (e.code === 'KeyL' || e.code === 'KeyQ' || e.code === 'Digit1') {
       if (!e.repeat) control.lens = true
+    } else if (e.code === 'KeyJ') {
+      if (!e.repeat) control.journal = true
+    } else if (e.code === 'Escape') {
+      // Escape is the platform's "back" — unless the explorer is inside a
+      // mode, where it steps out of that first.
+      const w = getWorld()
+      if (w.crane.active || w.room !== 'none') {
+        control.exit = true
+        e.preventDefault()
+      }
     }
   }
   const up = (e: KeyboardEvent) => {
