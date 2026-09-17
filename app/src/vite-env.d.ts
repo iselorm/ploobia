@@ -10,6 +10,8 @@ interface ImportMetaEnv {
   readonly VITE_FEEDBACK_URL?: string
   /** Address the mailto fallback opens. */
   readonly VITE_FEEDBACK_EMAIL?: string
+  /** '1' builds the Archipelago (world branch) in. Unset → the classroom arcade. */
+  readonly VITE_WORLD?: string
 }
 
 interface ImportMeta {

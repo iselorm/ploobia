@@ -24,7 +24,7 @@ export default defineConfig([
     // React Three Fiber scene code intentionally mutates refs and shared sim
     // state inside useFrame, and seeds randomness in memo initializers — both
     // are idiomatic R3F patterns that the React Compiler lint rules reject.
-    files: ['src/components/scene/**/*.{ts,tsx}'],
+    files: ['src/components/scene/**/*.{ts,tsx}', 'src/components/archipelago/**/*.{ts,tsx}'],
     rules: {
       'react-hooks/refs': 'off',
       'react-hooks/purity': 'off',

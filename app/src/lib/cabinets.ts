@@ -5,6 +5,13 @@
 
 import type { CabinetId } from './events'
 
+/**
+ * The world branch (the Archipelago) is a separate product edition: online
+ * first, streamed zones, Rapier physics. It is built in only with
+ * `VITE_WORLD=1`; the offline arcade stays exactly as it was.
+ */
+export const WORLD_ENABLED = import.meta.env.VITE_WORLD === '1'
+
 export interface CabinetMeta {
   id: CabinetId
   route: string
@@ -29,6 +36,21 @@ export interface CabinetMeta {
 }
 
 export const CABINETS: CabinetMeta[] = [
+  {
+    id: 'world',
+    route: '/world',
+    hidden: !WORLD_ENABLED,
+    title: 'The Archipelago',
+    subject: 'World',
+    tagline:
+      'Every island in Ploobia stalled the night nobody could say why it worked. Walk into the Foundry, find out why the furnace is cold, and light the Landing.',
+    cta: 'Enter the Archipelago',
+    tint: '#B97D10',
+    tintSoft: '#FBEBD2',
+    status: 'live',
+    hasDemo: false,
+    topics: ['Combustion', 'Melting point', 'Energy in fuels', 'Forces & mass'],
+  },
   {
     id: 'photosynthesis',
     route: '/photosynthesis',
