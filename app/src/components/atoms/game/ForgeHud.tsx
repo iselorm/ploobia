@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ArrowRight, Check, Copy, Flag, FlaskConical, Grid2x2, Lock, PanelBottom, PanelLeft, PanelRight, Play, RotateCcw, Send, Share2, Users, X } from 'lucide-react'
+import { ArrowRight, Check, ChevronDown, ChevronUp, Copy, Flag, FlaskConical, Grid2x2, Lock, Map, PanelBottom, PanelLeft, PanelRight, Play, RotateCcw, Send, Share2, Users, X } from 'lucide-react'
 import { Tile } from '@/components/ui/tile'
 import Ploob2 from '@/components/brand/Ploob2'
 import { cn } from '@/lib/utils'
@@ -8,6 +8,7 @@ import { ELEMENT_BY_Z, CATEGORY_META } from '@/lib/atoms'
 import type { ChallengeScore, ResourceBudget } from '@/lib/challenge'
 import {
   DOORS,
+  LEVELS,
   fmtCharge,
   gaugeFor,
   identityOf,
@@ -386,6 +387,72 @@ export function ForgeGauge({
   )
 }
 
+/**
+ * The phone's target: one line, always visible, never the whole screen.
+ *
+ * The full gauge is three cells and a title; on a 390 px-tall phone it
+ * wrapped to four lines and, with Ploob's chip under it, covered the bench
+ * completely — a learner at Door 2 could not see the pads they were being
+ * asked to fill (Selorm, 17 Sep). The Sugar Line solved the same thing with
+ * `TargetStrip`; this is the Foundry's: door · level · the parts as tiny
+ * pills · to-go, in one row, and a tap unfolds the full gauge over the scene
+ * for as long as the learner wants to read it.
+ */
+export function ForgeTargetStrip({
+  level,
+  build,
+  bench,
+  gather,
+  expanded,
+  onToggle,
+}: {
+  level: Level
+  build: Build
+  bench?: Bench
+  gather: { left: number; total: number } | null
+  expanded: boolean
+  onToggle: () => void
+}) {
+  const g: Gauge = useMemo(() => gaugeFor(level, build, bench), [level, build, bench])
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      aria-label={expanded ? 'Fold the target' : 'Unfold the target'}
+      data-testid="target-strip"
+      data-met={g.met}
+      data-of={g.of}
+      data-hit={g.hit ? 'true' : 'false'}
+      className="atlas-plate pointer-events-auto flex h-9 w-full min-w-0 items-center gap-2 overflow-hidden px-2.5 text-left"
+    >
+      <span className="atlas-eyebrow shrink-0">D{level.door} · L{level.tier}</span>
+      <span className="min-w-0 flex-1 truncate text-[12px] font-black text-[#2A2823]">{gather ? 'Catch what falls' : level.title}</span>
+      <span className="flex shrink-0 items-center gap-1">
+        {g.cells.map((c) => (
+          <span
+            key={c.id}
+            data-testid={`strip-cell-${c.id}`}
+            data-met={c.met ? 'true' : 'false'}
+            className={cn(
+              'rounded-full border px-1.5 py-0.5 text-[10px] font-extrabold tabular-nums whitespace-nowrap',
+              c.met ? 'border-[#C8DFC2] bg-[#E7F1E3] text-[#2F6134]' : 'border-[#EAD0A0] bg-[#FBEBD2] text-[#8A5410]',
+            )}
+          >
+            <span title={c.label}>{String(c.value).length > 16 ? String(c.value).slice(0, 15) + '…' : c.value}</span>
+          </span>
+        ))}
+      </span>
+      {gather ? (
+        <Chip tone="sugar">{Math.ceil(gather.left)} s</Chip>
+      ) : (
+        <Chip tone={g.hit ? 'good' : 'neutral'}>{g.hit ? 'hand in' : `${g.of - g.met} to go`}</Chip>
+      )}
+      {expanded ? <ChevronUp className="h-3.5 w-3.5 shrink-0 text-[#8B8471]" /> : <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#8B8471]" />}
+    </button>
+  )
+}
+
 /* ------------------------------------------------------------------ */
 /* The tray                                                            */
 /* ------------------------------------------------------------------ */
@@ -545,19 +612,33 @@ export function PloobLine({
   // In a column the plate fills the column and the text can breathe downward;
   // floating, it stays a single band so it covers as little bench as possible.
   const docked = dock === 'left' || dock === 'right'
+  // On a phone a three-line coach under the target covered the bench. The
+  // line shows one row and unfolds on a tap; a new line folds it again.
+  const [unfolded, setUnfolded] = useState(false)
+  useEffect(() => {
+    setUnfolded(false)
+  }, [text])
+  const clamp = compact && !docked && !unfolded
   return (
     <div
       data-testid="coach"
       data-dock={dock}
+      data-clamped={clamp ? 'true' : 'false'}
       className={cn(
         'atlas-plate atlas-arrive pointer-events-auto flex gap-2.5 rounded-[20px] px-3 py-2',
         docked ? 'w-full items-start' : 'max-w-[min(34rem,calc(100vw-1.5rem))] items-center',
+        compact && !docked && 'py-1.5',
       )}
     >
-      <Ploob2 size={compact ? 26 : 34} />
-      <div className="min-w-0 flex-1">
+      <Ploob2 size={compact ? 22 : 34} />
+      <div
+        className="min-w-0 flex-1"
+        onClick={() => compact && setUnfolded((v) => !v)}
+        role={compact ? 'button' : undefined}
+        aria-label={compact ? (clamp ? 'Read all of what Ploob said' : 'Fold what Ploob said') : undefined}
+      >
         {!compact && <span className="atlas-eyebrow block leading-none">Ploob</span>}
-        <p className="text-[12.5px] leading-snug font-extrabold text-[#2A2823]">{text}</p>
+        <p className={cn('text-[12.5px] leading-snug font-extrabold text-[#2A2823]', clamp && 'truncate')}>{text}</p>
         {action && docked && (
           <AtlasButton onClick={action.onClick} className="mt-2 py-1.5">
             {action.label}
@@ -749,18 +830,23 @@ export function OurSpace({
 export function ForgeScore({
   level,
   build,
+  bench,
   score,
   trials,
   spent,
   bank,
   opened,
   onNext,
+  onNextLevel,
+  onMap,
   onSend,
   onAgain,
   onClose,
 }: {
   level: Level
   build: Build
+  /** Door 2's pads and prediction — without them the card read a bench hand-in as "0 of 2 parts met". */
+  bench?: Bench
   score: ChallengeScore
   trials: number
   spent: ResourceBudget
@@ -768,11 +854,19 @@ export function ForgeScore({
   /** The door this hand-in opened, if any. */
   opened: Door | null
   onNext: () => void
+  /** Play the next level behind the same door — the way on when the next door is not built. */
+  onNextLevel: (next: Level) => void
+  /** Back to the welcome and the map. */
+  onMap: () => void
   onSend: () => void
   onAgain: () => void
   onClose: () => void
 }) {
-  const g = gaugeFor(level, build)
+  const g = gaugeFor(level, build, bench)
+  // A hit with nowhere built to go through is not the end: the door has two
+  // more levels. "Send to a friend" alone after a hand-in read as nothing
+  // more to do (Selorm, 17 Sep).
+  const nextLevel = g.hit ? (LEVELS.find((l) => l.door === level.door && l.tier === level.tier + 1) ?? null) : null
   const left = bank ? (['proton', 'neutron', 'electron'] as Kind[]).reduce((a, k) => a + Math.max(0, (bank[k] ?? 0) - (spent[k] ?? 0)), 0) : 0
   const id = identityOf(build)
   const n = nuclide(build)
@@ -826,18 +920,26 @@ export function ForgeScore({
         ) : (
           <p className="mt-3 text-[11px] font-bold text-[#8B8471]">{g.hit ? 'Handed in. Your atom went into the journal.' : 'Not there yet — the gauge says what is missing. Try again; the seed is the same.'}</p>
         )}
-        <div className="mt-3 flex gap-2">
+        <div className="mt-3 flex flex-col gap-2">
           {opened?.built ? (
-            <AtlasButton onClick={onNext} tone="primary" invite className="flex-1 py-2.5">
+            <AtlasButton onClick={onNext} tone="primary" invite className="w-full py-2.5">
               Go through
             </AtlasButton>
-          ) : (
+          ) : nextLevel ? (
+            <AtlasButton onClick={() => onNextLevel(nextLevel)} tone="primary" invite className="w-full py-2.5" ariaLabel={`Next: ${nextLevel.title}`}>
+              <ArrowRight className="h-4 w-4" /> Next · Level {nextLevel.tier} — {nextLevel.title}
+            </AtlasButton>
+          ) : null}
+          <div className="flex gap-2">
             <AtlasButton onClick={onAgain} tone={g.hit ? 'quiet' : 'primary'} invite={!g.hit} className="flex-1 py-2.5" ariaLabel="Play again">
               Play again
             </AtlasButton>
-          )}
-          <AtlasButton onClick={onSend} className="flex-1 py-2.5" ariaLabel="Send to a friend">
-            <Send className="h-4 w-4" /> Send to a friend
+            <AtlasButton onClick={onSend} className="flex-1 py-2.5" ariaLabel="Send to a friend">
+              <Send className="h-4 w-4" /> Send to a friend
+            </AtlasButton>
+          </div>
+          <AtlasButton onClick={onMap} className="w-full py-2" ariaLabel="Back to the map">
+            <Map className="h-4 w-4" /> Back to the map
           </AtlasButton>
         </div>
       </div>

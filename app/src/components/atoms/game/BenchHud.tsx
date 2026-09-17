@@ -155,12 +155,18 @@ export function ElementStrip({
   allowance,
   onPick,
   onClear,
+  action,
 }: {
   bench: Bench
   slot: 'a' | 'b'
   allowance: Record<string, number>
   onPick: (z: number) => void
   onClear: (s: 'a' | 'b') => void
+  /**
+   * The phone's "Say what forms" rides at the end of the pads row: a separate
+   * plate for it was the third band of HUD over a bench nobody could see.
+   */
+  action?: React.ReactNode
 }) {
   const other = slot === 'a' ? bench.b : bench.a
   return (
@@ -193,6 +199,7 @@ export function ElementStrip({
             </Tile>
           )
         })}
+        {action}
       </div>
       <div className="flex gap-1.5 overflow-x-auto pb-0.5">
         {BENCH_ELEMENTS.map((z) => {

@@ -63,6 +63,7 @@ import {
   PloobChip,
   TopBar,
   type JournalEntry,
+  ForgeTargetStrip,
 } from '@/components/atoms/game/ForgeHud'
 
 const ForgeScene = lazy(() => import('@/components/atoms/ForgeScene'))
@@ -593,7 +594,12 @@ export default function AtomFoundry() {
    * composition already works.
    */
   const hudBottom =
-    tier === 'phone' ? (shownDock === 'float' ? 172 : 110) : tier === 'tablet' ? 80 : 0
+    tier === 'phone' ? (shownDock === 'float' ? 150 : 110) : tier === 'tablet' ? 80 : 0
+  /** The phone's one-line target unfolds to the full gauge on a tap. */
+  const [targetOpen, setTargetOpen] = useState(false)
+  useEffect(() => {
+    setTargetOpen(false)
+  }, [phase])
   const spent = useMemo(() => (level ? spentOf(level, build) : { proton: 0, neutron: 0, electron: 0 }), [level, build])
   const gauge = useMemo(() => (level ? gaugeFor(level, build) : null), [level, build])
   const aim: Kind | 'hand' | null = useMemo(() => {
@@ -702,9 +708,29 @@ export default function AtomFoundry() {
               {shownDock === 'left' && coachNode}
             </div>}
             <div className="flex min-w-0 flex-1 flex-col justify-between">
-              <div className="flex items-start justify-between gap-2">
+              <div className={cn('flex items-start justify-between gap-2', !columns && inGame && level && phase !== 'brief' && 'relative flex-col items-stretch')}>
                 {inGame && level && phase !== 'brief' ? (
-                  <ForgeGauge level={level} build={build} bench={bench} trials={trials + 1} gather={phase === 'gather' ? { left: gatherLeft, total: challenge?.gatherSeconds ?? 0 } : null} compact={dense} />
+                  columns ? (
+                    <ForgeGauge level={level} build={build} bench={bench} trials={trials + 1} gather={phase === 'gather' ? { left: gatherLeft, total: challenge?.gatherSeconds ?? 0 } : null} compact={dense} />
+                  ) : (
+                    <>
+                      {/* The phone: one line, and the full gauge only while it is
+                          unfolded — the full plate covered the whole bench (17 Sep). */}
+                      <ForgeTargetStrip
+                        level={level}
+                        build={build}
+                        bench={bench}
+                        gather={phase === 'gather' ? { left: gatherLeft, total: challenge?.gatherSeconds ?? 0 } : null}
+                        expanded={targetOpen}
+                        onToggle={() => setTargetOpen((v) => !v)}
+                      />
+                      {targetOpen && (
+                        <div className="absolute top-10 right-0 left-0 z-10" data-testid="target-unfolded">
+                          <ForgeGauge level={level} build={build} bench={bench} trials={trials + 1} gather={phase === 'gather' ? { left: gatherLeft, total: challenge?.gatherSeconds ?? 0 } : null} compact />
+                        </div>
+                      )}
+                    </>
+                  )
                 ) : (
                   <IdentityChip build={build} />
                 )}
@@ -725,9 +751,27 @@ export default function AtomFoundry() {
                     elements live on a phone. Without it Door 2 could not be
                     played on a phone at all. */}
                 {phase === 'place' && level && !columns && (
-                  <ElementStrip bench={bench} slot={nextPad} allowance={allowance} onPick={placeAtom} onClear={clearPad} />
+                  <ElementStrip
+                    bench={bench}
+                    slot={nextPad}
+                    allowance={allowance}
+                    onPick={placeAtom}
+                    onClear={clearPad}
+                    action={
+                      <AtlasButton
+                        onClick={() => setPhase(askingRatio ? 'predict' : 'readout')}
+                        tone="primary"
+                        invite={bench.a !== null && bench.b !== null}
+                        disabled={bench.a === null || bench.b === null}
+                        className="shrink-0 py-2"
+                        ariaLabel={askingRatio ? 'Say what forms' : 'See what formed'}
+                      >
+                        {askingRatio ? 'Say what forms' : 'See what formed'}
+                      </AtlasButton>
+                    }
+                  />
                 )}
-                {phase === 'place' && level && (
+                {phase === 'place' && level && columns && (
                   <div className="atlas-plate pointer-events-auto flex w-full max-w-[30rem] items-center justify-between gap-3 p-3" data-testid="place">
                     <div className="min-w-0">
                       <span className="atlas-eyebrow">On the bench</span>
@@ -811,6 +855,7 @@ export default function AtomFoundry() {
         <ForgeScore
           level={level}
           build={build}
+          bench={bench}
           score={score}
           trials={trials}
           spent={spent}
@@ -829,6 +874,8 @@ export default function AtomFoundry() {
             }
             setPhase('welcome')
           }}
+          onNextLevel={(next) => begin(next, challengeFor(next, band, soloSeed(SESSION_CODE, next)))}
+          onMap={() => setPhase('welcome')}
           onSend={() => setPhase('send')}
           onAgain={() => {
             reset()
