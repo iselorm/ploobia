@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { ArrowLeft, BookOpen, Eye, Hand, Ruler, Thermometer } from 'lucide-react'
+import { BookOpen, Eye, Hand, Ruler, Thermometer } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { isCoarse, useInputMode } from '@/lib/input'
 import { useBandCaps } from '@/lib/bands'
@@ -125,20 +125,23 @@ export default function WorldHud({ compact }: { compact: boolean }) {
 
       {/* top-left: wordmark + zone, then the checklist */}
       <div className="absolute top-3 left-3 flex flex-col items-start gap-2">
-        <div className="atlas-plate pointer-events-auto flex items-center gap-2 rounded-[16px] px-2.5 py-1.5" data-testid="wordmark">
-          <Link to="/" aria-label="Back to the hall" className="grid h-10 w-10 place-items-center rounded-full bg-[#2A2823] text-[#F6F2E8]">
-            <ArrowLeft size={16} />
+        <div className="glass pointer-events-auto flex items-center gap-2.5 px-2.5 py-1.5" data-testid="wordmark">
+          <Link to="/" aria-label="Back to the hall" className="grid h-10 w-10 place-items-center rounded-full bg-[#F6F2E8]/10 text-[#F6F2E8]">
+            <Swirl />
           </Link>
           <div className="leading-tight">
-            <span className="block text-[13px] font-black tracking-[0.08em] text-[#2A2823]">
-              PL<span className="text-[#E8A33D]">OO</span>BIA
+            <span className="block text-[14px] font-black tracking-[0.1em] text-[#F6F2E8]">
+              PL<span className="text-[#F0B354]">OO</span>BIA
             </span>
-            <span className="block text-[11px] font-bold text-[#5F5A4E]">{s.zone === 'landing' ? 'The Landing' : 'The Foundry'}</span>
+            <span className="block text-[11px] font-semibold text-[#F6F2E8]/75">{s.zone === 'landing' ? 'The Landing' : 'The Foundry'}</span>
           </div>
         </div>
         {playing && (
-          <div className="atlas-plate pointer-events-auto w-[15.5rem] max-w-[calc(100vw-1.5rem)] rounded-[18px] px-3 py-2" data-testid="quest-plate">
-            <p className="text-[13px] leading-tight font-extrabold text-[#2A2823]">{RELIGHT.title}</p>
+          <div className="glass pointer-events-auto w-[16rem] max-w-[calc(100vw-1.5rem)] px-3 py-2" data-testid="quest-plate">
+            <p className="flex items-center gap-2 text-[13px] leading-tight font-extrabold text-[#F6F2E8]">
+              <span className="grid h-4 w-4 place-items-center rounded-full bg-[#E8A33D] text-[9px] text-[#2A2823]">!</span>
+              {RELIGHT.title}
+            </p>
             {!compact && <Checklist s={s} />}
             {showGauge && <Gauge fuel={s.furnace.fuel} temp={s.furnace.temp} hearths={s.hearths} lit={s.lit} compact={compact} />}
           </div>
@@ -175,19 +178,19 @@ export default function WorldHud({ compact }: { compact: boolean }) {
             data-testid="interact"
             disabled={!verbLabel}
             className={cn(
-              'pointer-events-auto flex h-11 items-center gap-2 rounded-full bg-[#2A2823]/85 px-4 text-[13px] font-extrabold text-[#F6F2E8] transition-opacity',
+              'glass pointer-events-auto flex h-11 items-center gap-2 !rounded-full px-4 text-[13px] font-extrabold transition-opacity',
               !verbLabel && 'opacity-0',
             )}
             onClick={() => (control.interact = true)}
           >
-            {!coarse && <kbd className="rounded bg-[#F6F2E8] px-1.5 py-0.5 text-[11px] font-black text-[#2A2823]">E</kbd>}
+            {!coarse && <kbd className="glass-key">E</kbd>}
             <Hand size={16} />
             {verbLabel ?? 'Nothing near'}
           </Tile>
           {coarse && (
             <Tile
               aria-label="Jump"
-              className="pointer-events-auto ml-2 grid h-11 w-11 place-items-center rounded-full bg-[#2A2823]/85 text-[11px] font-extrabold text-[#F6F2E8]"
+              className="glass pointer-events-auto ml-2 grid h-11 w-11 place-items-center !rounded-full text-[11px] font-extrabold"
               onPointerDown={() => (control.jump = true)}
               onPointerUp={() => (control.jump = false)}
             >
@@ -200,9 +203,14 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       {/* bottom-right: Ploob's hint */}
       {playing && !brief && !inRoom && !afterPour && (
         <div className="absolute right-3 bottom-3 max-w-[min(24rem,calc(100vw-1.5rem))]">
-          <div className="pointer-events-auto flex items-center gap-2.5 rounded-[18px] bg-[#2A2823]/85 px-3 py-2 text-[#F6F2E8]" data-testid="coach">
-            <Ploob2 size={compact ? 26 : 34} />
-            <p className="text-[12.5px] leading-snug font-extrabold">{hintText}</p>
+          <div className="glass pointer-events-auto flex items-center gap-3 px-3 py-2.5" data-testid="coach">
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#F6F2E8]/10">
+              <Ploob2 size={compact ? 26 : 32} />
+            </div>
+            <div className="min-w-0">
+              <span className="glass-eyebrow block">Ploob</span>
+              <p className="text-[12.5px] leading-snug font-extrabold">{hintText}</p>
+            </div>
           </div>
         </div>
       )}
@@ -252,6 +260,15 @@ export default function WorldHud({ compact }: { compact: boolean }) {
   )
 }
 
+/** The Ploobia swirl from the frame — a placeholder mark until the brand's own is drawn. */
+function Swirl() {
+  return (
+    <svg viewBox="0 0 24 24" width={20} height={20} aria-hidden>
+      <path d="M12 3a9 9 0 1 0 9 9c0-3-2-5-5-5-2.5 0-4 1.5-4 3.5S13.5 14 15 14c1 0 1.5-.5 1.5-1.2" fill="none" stroke="#F6F2E8" strokeWidth={2} strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function Checklist({ s }: { s: WorldState }) {
   const steps = RELIGHT.steps.filter((st) => st.id !== 'arrive' && st.id !== 'done')
   const idx = RELIGHT.steps.findIndex((st) => st.id === s.step)
@@ -264,10 +281,10 @@ function Checklist({ s }: { s: WorldState }) {
         return (
           <li
             key={st.id}
-            className={cn('flex items-center gap-2 text-[11.5px] leading-tight', done ? 'text-[#8B8471] line-through' : current ? 'font-extrabold text-[#2A2823]' : 'text-[#5F5A4E]')}
+            className={cn('flex items-center gap-2 text-[11.5px] leading-tight', done ? 'text-[#F6F2E8]/45 line-through' : current ? 'font-extrabold text-[#F6F2E8]' : 'text-[#F6F2E8]/80')}
             data-done={done}
           >
-            <span className={cn('grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[4px] border', done ? 'border-[#4E8A3E] bg-[#4E8A3E] text-white' : current ? 'border-[#E8A33D]' : 'border-[#C9BFA8]')}>
+            <span className="glass-tick" data-on={done} style={current && !done ? { borderColor: '#E8A33D' } : undefined}>
               {done && <span className="text-[9px] leading-none">✓</span>}
             </span>
             {st.label}
@@ -295,8 +312,8 @@ function Minimap({ s }: { s: WorldState }) {
   return (
     <div className="absolute top-3 right-3" data-testid="minimap">
       <svg viewBox={`0 0 ${R * 2} ${R * 2}`} width={R * 2} height={R * 2} role="img" aria-label="Map of the zone">
-        <circle cx={R} cy={R} r={R - 1} fill="rgba(246,242,232,0.92)" stroke="#D9CFBC" />
-        <circle cx={R} cy={R} r={R - 7} fill="none" stroke="#E3D8BF" strokeDasharray="2 3" />
+        <circle cx={R} cy={R} r={R - 1} fill="rgba(28,24,20,0.72)" stroke="rgba(255,244,224,0.2)" />
+        <circle cx={R} cy={R} r={R - 7} fill="rgba(201,169,122,0.18)" stroke="rgba(255,244,224,0.12)" strokeDasharray="2 3" />
         {items.map((it) => {
           const [x, z] = px(it.pos[0], it.pos[2])
           const c = it.verb === 'portal' ? '#E8A33D' : it.verb === 'grab' ? '#B5652E' : it.verb === 'probe' ? '#C8552E' : '#2F7F7A'
@@ -304,11 +321,20 @@ function Minimap({ s }: { s: WorldState }) {
         })}
         {s.zone === 'foundry' && <circle cx={hx} cy={hz} r={1.6} fill="none" stroke="#4A5E7A" />}
         <g transform={`translate(${ex} ${ez}) rotate(${(-live.facing * 180) / Math.PI + 180})`}>
-          <path d="M0 -5 L4 4 L0 2 L-4 4 Z" fill="#2A2823" />
+          <path d="M0 -5 L4 4 L0 2 L-4 4 Z" fill="#E8A33D" />
         </g>
-        <text x={R} y={9} textAnchor="middle" fontSize={7} fontWeight={800} fill="#8A5A0E">
-          N
-        </text>
+        {(
+          [
+            ['N', R, 9],
+            ['E', R * 2 - 5, R + 3],
+            ['S', R, R * 2 - 4],
+            ['W', 5, R + 3],
+          ] as const
+        ).map(([l, x, y]) => (
+          <text key={l} x={x} y={y} textAnchor="middle" fontSize={7} fontWeight={800} fill="#F6F2E8">
+            {l}
+          </text>
+        ))}
       </svg>
     </div>
   )
@@ -339,15 +365,15 @@ function Tool({
       data-testid={testid}
       disabled={locked}
       className={cn(
-        'pointer-events-auto flex h-14 w-14 flex-col items-center justify-center gap-0.5 rounded-[14px] bg-[#2A2823]/85 text-[#F6F2E8]',
+        'glass pointer-events-auto flex h-[4.25rem] w-[4.25rem] flex-col items-center justify-center gap-1 !rounded-[14px]',
         active && 'ring-2 ring-[#E8A33D]',
         (dim || locked) && 'opacity-45',
       )}
       onClick={onClick}
     >
       {children}
-      <span className="text-[9px] leading-none font-extrabold">{label}</span>
-      {keyHint && <kbd className="rounded bg-[#F6F2E8] px-1 text-[8px] leading-[12px] font-black text-[#2A2823]">{keyHint}</kbd>}
+      <span className="text-[10px] leading-none font-extrabold">{label}</span>
+      {keyHint && <kbd className="glass-key">{keyHint}</kbd>}
     </Tile>
   )
 }
@@ -355,7 +381,7 @@ function Tool({
 function Key({ k, label }: { k: string; label: string }) {
   return (
     <span className="flex items-center gap-1.5 text-[11px] font-bold text-[#F6F2E8]">
-      <kbd className="rounded bg-[#F6F2E8] px-1.5 py-0.5 text-[10px] font-black text-[#2A2823]">{k}</kbd>
+      <kbd className="glass-key">{k}</kbd>
       {label}
     </span>
   )
@@ -366,8 +392,8 @@ function CranePanel({ coarse, s }: { coarse: boolean; s: WorldState }) {
   return (
     <div className="absolute inset-x-0 bottom-3 flex items-end justify-center gap-2 px-3" data-testid="crane-panel">
       {coarse && <Stick />}
-      <div className="pointer-events-auto rounded-[18px] bg-[#2A2823]/85 px-4 py-2.5">
-        <span className="block text-[10px] font-extrabold tracking-[0.1em] text-[#E8A33D] uppercase">The crane · hook at {s.crane.hookY.toFixed(1)} m</span>
+      <div className="glass pointer-events-auto px-4 py-2.5">
+        <span className="glass-eyebrow block">The crane · hook at {s.crane.hookY.toFixed(1)} m</span>
         {!coarse ? (
           <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1">
             <Key k="W" label="Raise" />
@@ -394,26 +420,26 @@ function CranePanel({ coarse, s }: { coarse: boolean; s: WorldState }) {
 function Gauge({ fuel, temp, hearths, lit, compact }: { fuel: FuelId | null; temp: number; hearths: Record<FuelId, number>; lit: FuelId[]; compact: boolean }) {
   const pct = Math.min(1, temp / (COPPER_MELT_C + 300))
   return (
-    <div className="mt-2 border-t border-[#E3D8BF] pt-2" data-testid="gauge">
+    <div className="mt-2 border-t border-[#F6F2E8]/15 pt-2" data-testid="gauge">
       <div className="flex items-baseline justify-between">
-        <span className="atlas-eyebrow">Furnace</span>
-        <span className="text-[15px] font-extrabold tabular-nums text-[#2A2823]" data-testid="furnace-temp">
+        <span className="glass-eyebrow">Furnace</span>
+        <span className="text-[15px] font-extrabold tabular-nums text-[#F6F2E8]" data-testid="furnace-temp">
           {Math.round(temp)} °C
         </span>
       </div>
-      <div className="relative mt-1 h-2 w-full overflow-hidden rounded-full bg-[#EEE7D8]">
+      <div className="relative mt-1 h-2 w-full overflow-hidden rounded-full bg-[#F6F2E8]/15">
         <div className="h-full rounded-full bg-[#E8A33D]" style={{ width: `${pct * 100}%` }} />
-        <div className="absolute top-0 h-full w-0.5 bg-[#C8552E]" style={{ left: `${(COPPER_MELT_C / (COPPER_MELT_C + 300)) * 100}%` }} title="copper melts" />
+        <div className="absolute top-0 h-full w-0.5 bg-[#FF8A5C]" style={{ left: `${(COPPER_MELT_C / (COPPER_MELT_C + 300)) * 100}%` }} title="copper melts" />
       </div>
-      <p className="mt-0.5 text-[10px] text-[#8B8471]">
+      <p className="mt-0.5 text-[10px] text-[#F6F2E8]/60">
         {fuel ? `burning ${FUELS[fuel].name.toLowerCase()}` : 'cold'} · copper melts at {COPPER_MELT_C} °C
       </p>
       {!compact && lit.length > 0 && (
         <div className="mt-1 grid grid-cols-3 gap-1">
           {FUEL_ORDER.map((f) => (
-            <div key={f} className="rounded-md bg-[#FBEBD2] px-1.5 py-1">
-              <span className="block text-[9px] font-extrabold tracking-wide text-[#8A5A0E] uppercase">{FUELS[f].name}</span>
-              <span className="block text-[11px] font-extrabold tabular-nums text-[#2A2823]" data-testid={`hearth-${f}`}>
+            <div key={f} className="rounded-md bg-[#F6F2E8]/10 px-1.5 py-1">
+              <span className="block text-[9px] font-extrabold tracking-wide text-[#F0B354] uppercase">{FUELS[f].name}</span>
+              <span className="block text-[11px] font-extrabold tabular-nums text-[#F6F2E8]" data-testid={`hearth-${f}`}>
                 {lit.includes(f) ? `${Math.round(hearths[f])}°` : '—'}
               </span>
             </div>
