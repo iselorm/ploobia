@@ -136,6 +136,7 @@ function normalise(id: WorldMeshId, gltf: GLTF): LoadedMesh {
 
 /** Clip-only files (skeleton + animation, no mesh) that ride the explorer's rig by bone name. */
 export const WORLD_CLIPS: Record<string, string> = {
+  idle: 'explorer-idle.glb',
   walk: 'explorer-walk.glb',
   jump: 'explorer-jump.glb',
 }

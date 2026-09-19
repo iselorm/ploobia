@@ -117,9 +117,9 @@
       "front": "+z",
       "rig": "a-pose, rigging_height_meters 1.45",
       "clips": [
-        "idle: Armature|Idle|baselayer 4.03 s (in explorer.glb)",
-        "walk: explorer-walk.glb — Casual_Walk (id 30), job 99b81b57-fcc9-44b1-9626-a7beca5855c7, 3d_rigging 8 cr; retargeted with --lean 18 (Selorm: the chest, shoulders and head must lead, not the waist)",
-        "jump: explorer-jump.glb — Regular_Jump (id 466), job eacf6b93-a92b-4b3d-99e8-d4bc2e028f11, 3d_rigging 8 cr; Hips translation stripped (the body carries the height)"
+        "idle: explorer-idle.glb — the file's own Meshy idle re-run through retarget-clip with --lean 14 --hipsback 9",
+        "walk: explorer-walk.glb — Casual_Walk (id 30), job 99b81b57-fcc9-44b1-9626-a7beca5855c7, 3d_rigging 8 cr; --lean 26 --hipsback 9 (Selorm: the chest, shoulders and head must lead, never the waist)",
+        "jump: explorer-jump.glb — Regular_Jump (id 466), job eacf6b93-a92b-4b3d-99e8-d4bc2e028f11, 3d_rigging 8 cr; --lean 12 --hipsback 9; hip lift stripped (the body carries the height)"
       ],
       "verbs": [
         "walk",
@@ -127,7 +127,8 @@
         "carry"
       ],
       "tris": 16243,
-      "clip_note": "Each Meshy re-rig has its OWN bone frames (the jump rig's spine is rotated 180° to the idle's), so clips cannot be copied by bone name — the waist folds. scripts/retarget-clip.mjs retargets in world space: per bone, the rotation delta the source clip applies to the source bind pose, applied to the idle rig's bind pose, expressed locally; the spine chain is matched by position (Hips > Spine02 > Spine01 > Spine > neck > Head); hip translation dropped (the body carries height). Clip files are skeleton + rotations only (20–30 KB). Loaded by lib/worldassets.ts loadWorldClips."
+      "clip_note": "Each Meshy re-rig has its OWN bone frames (the jump rig's spine is rotated 180° to the idle's), so clips cannot be copied by bone name — the waist folds. scripts/retarget-clip.mjs retargets in world space: per bone, the rotation delta the source clip applies to the source bind pose, applied to the idle rig's bind pose, expressed locally; the spine chain is matched by position (Hips > Spine02 > Spine01 > Spine > neck > Head); hip translation dropped (the body carries height). Clip files are skeleton + rotations only (20–30 KB). Loaded by lib/worldassets.ts loadWorldClips.",
+      "posture_note": "The Meshy rig stands swaybacked — pelvis thrust ahead of the feet, torso back. Every clip is retargeted with --hipsback 9 (pelvis ~13 cm back) and a forward --lean spread up the spine; Explorer.tsx offsets the body +0.08 m to keep it over the collider."
     }
   }
 }

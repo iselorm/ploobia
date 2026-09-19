@@ -35,7 +35,7 @@ import { loadWorldClips } from '@/lib/worldassets'
  * arrives; until then, or offline, the previz capsule with a head and a visor.
  */
 
-/** Feet sit at the bottom of the capsule collider (half-height + radius). */
+/** Feet sit at the bottom of the capsule collider (half-height + radius); the clips slide the pelvis back ~13 cm, so the body sits a little forward. */
 const FEET = -0.52
 
 /** Casual_Walk covers about this much ground per second at 1.0× on a 1.45 m rig. */
@@ -51,6 +51,9 @@ function ExplorerBody() {
     if (!generated) return
     let alive = true
     const m = new THREE.AnimationMixer(generated.group)
+    // The file's own idle starts at once; the posture-corrected idle (pelvis
+    // back, chest ahead — the same correction the walk and jump carry) takes
+    // over when it arrives.
     const idle = generated.clips[0]
     const a: typeof actions.current = {}
     if (idle) {
@@ -59,6 +62,14 @@ function ExplorerBody() {
     }
     mixer.current = m
     actions.current = a
+    loadWorldClips('idle').then((clips) => {
+      if (!alive || !clips[0]) return
+      const next = m.clipAction(clips[0])
+      next.play()
+      next.setEffectiveWeight(a.idle?.getEffectiveWeight() ?? 1)
+      a.idle?.stop()
+      a.idle = next
+    })
     // The walk and jump ride the same rig by bone name; each is a separate
     // small file, and the idle alone is fine until they arrive.
     loadWorldClips('walk').then((clips) => {
@@ -115,7 +126,7 @@ function ExplorerBody() {
   })
   if (generated) {
     return (
-      <group position={[0, FEET, 0]}>
+      <group position={[0, FEET, 0.08]}>
         <primitive object={generated.group} />
       </group>
     )

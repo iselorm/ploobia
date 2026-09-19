@@ -2,8 +2,7 @@
 // Same mesh, same A-pose, different bone frames — so per bone we take the
 // world-rotation delta the source clip applies to the source bind pose and
 // apply that delta to our bind pose, then express it locally.
-// Usage: node scripts/retarget-clip.mjs <source-rig.glb> <out.glb> <clipName> [nohips] [--idle raw/explorer.glb] [--lean <deg>]
-// The walk ships with --lean 18 (chest and shoulders ahead of the waist, head level).
+// Usage: node scripts/retarget-clip.mjs <source-rig.glb> <out.glb> <clipName> [nohips] [--idle raw/explorer.glb]
 // Needs @gltf-transform/core, /extensions, /functions (npm i -g @gltf-transform/cli puts them
 // under the CLI's node_modules; set GLTFT to that path) and three from this app.
 const G = process.env.GLTFT ?? '/home/claude/.npm-global/lib/node_modules/@gltf-transform/cli/node_modules';
@@ -18,7 +17,11 @@ const [src, dst, clipName, opts] = [process.argv[2], process.argv[3], process.ar
 // the rig's right axis (+X; the rig faces +Z).
 const leanIdx = process.argv.indexOf('--lean');
 const LEAN = leanIdx > 0 ? Number(process.argv[leanIdx + 1]) : 0;
-const LEAN_SHARE = { Hips: -0.15, Spine02: 0.35, Spine01: 0.35, Spine: 0.3, neck: -0.25, Head: -0.35 };
+const LEAN_SHARE = { Hips: -0.3, Spine02: 0.45, Spine01: 0.4, Spine: 0.35, neck: -0.3, Head: -0.4 };
+// --hipsback <units>: slide the pelvis back along -Z (mesh units; ~0.015 m each on this rig)
+// so it sits behind the chest line instead of thrust ahead of the feet.
+const hbIdx = process.argv.indexOf('--hipsback');
+const HIPSBACK = hbIdx > 0 ? Number(process.argv[hbIdx + 1]) : 0;
 const FPS = 30;
 
 function skeleton(doc) {
@@ -141,6 +144,7 @@ for (const [name, arr] of outRot) {
   const c = out.createAnimationChannel().setTargetNode(copy.get(ourByName.get(name))).setTargetPath('rotation').setSampler(s);
   a.addSampler(s).addChannel(c);
 }
+if (!outHips.length && HIPSBACK) { for (const t of times) outHips.push(hipsBind.x, hipsBind.y, hipsBind.z - HIPSBACK); }
 if (outHips.length) {
   const acc = out.createAccessor('Hips.t').setType(Accessor.Type.VEC3).setArray(new Float32Array(outHips)).setBuffer(buf);
   const s = out.createAnimationSampler().setInput(timeAcc).setOutput(acc).setInterpolation('LINEAR');
