@@ -2,15 +2,23 @@
 // Same mesh, same A-pose, different bone frames — so per bone we take the
 // world-rotation delta the source clip applies to the source bind pose and
 // apply that delta to our bind pose, then express it locally.
-// Usage: node scripts/retarget-clip.mjs <source-rig.glb> <out.glb> <clipName> [nohips] [--idle raw/explorer.glb]
+// Usage: node scripts/retarget-clip.mjs <source-rig.glb> <out.glb> <clipName> [nohips] [--idle raw/explorer.glb] [--lean <deg>]
+// The walk ships with --lean 18 (chest and shoulders ahead of the waist, head level).
 // Needs @gltf-transform/core, /extensions, /functions (npm i -g @gltf-transform/cli puts them
 // under the CLI's node_modules; set GLTFT to that path) and three from this app.
-import { NodeIO, Document, Accessor } from `${process.env.GLTFT}/@gltf-transform/core/dist/index.js`;
-import { ALL_EXTENSIONS } from `${process.env.GLTFT}/@gltf-transform/extensions/dist/index.js`;
-import { prune } from `${process.env.GLTFT}/@gltf-transform/functions/dist/index.js`;
+const G = process.env.GLTFT ?? '/home/claude/.npm-global/lib/node_modules/@gltf-transform/cli/node_modules';
+const { NodeIO, Document, Accessor } = await import(`${G}/@gltf-transform/core/dist/index.js`);
+const { ALL_EXTENSIONS } = await import(`${G}/@gltf-transform/extensions/dist/index.js`);
+const { prune } = await import(`${G}/@gltf-transform/functions/dist/index.js`);
 import * as THREE from 'three';
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 const [src, dst, clipName, opts] = [process.argv[2], process.argv[3], process.argv[4], process.argv[5] || ''];
+// --lean <deg>: extra forward pitch of the torso, spread up the spine (chest and
+// shoulders ahead of the waist, the head brought back level). World space, about
+// the rig's right axis (+X; the rig faces +Z).
+const leanIdx = process.argv.indexOf('--lean');
+const LEAN = leanIdx > 0 ? Number(process.argv[leanIdx + 1]) : 0;
+const LEAN_SHARE = { Hips: -0.15, Spine02: 0.35, Spine01: 0.35, Spine: 0.3, neck: -0.25, Head: -0.35 };
 const FPS = 30;
 
 function skeleton(doc) {
@@ -94,6 +102,13 @@ for (const t of times) {
     if (s && rotCh.has(name)) {
       const delta = srcW.get(s).clone().multiply(srcBindW.get(s).clone().invert());
       w = delta.multiply(ourBindW.get(n));
+      if (LEAN && LEAN_SHARE[name]) {
+        // accumulate: each bone's world rotation gets the sum of shares below it
+        const chain = ['Hips','Spine02','Spine01','Spine','neck','Head'];
+        let acc = 0; for (const b of chain) { acc += LEAN_SHARE[b] ?? 0; if (b === name) break; }
+        const extra = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), THREE.MathUtils.degToRad(LEAN * acc));
+        w = extra.multiply(w);
+      }
     } else {
       w = pw.clone().multiply(new THREE.Quaternion().fromArray(n.getRotation()));
     }

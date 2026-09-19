@@ -118,7 +118,7 @@
       "rig": "a-pose, rigging_height_meters 1.45",
       "clips": [
         "idle: Armature|Idle|baselayer 4.03 s (in explorer.glb)",
-        "walk: explorer-walk.glb — Casual_Walk (id 30), job 99b81b57-fcc9-44b1-9626-a7beca5855c7, 3d_rigging 8 cr",
+        "walk: explorer-walk.glb — Casual_Walk (id 30), job 99b81b57-fcc9-44b1-9626-a7beca5855c7, 3d_rigging 8 cr; retargeted with --lean 18 (Selorm: the chest, shoulders and head must lead, not the waist)",
         "jump: explorer-jump.glb — Regular_Jump (id 466), job eacf6b93-a92b-4b3d-99e8-d4bc2e028f11, 3d_rigging 8 cr; Hips translation stripped (the body carries the height)"
       ],
       "verbs": [
