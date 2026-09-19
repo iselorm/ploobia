@@ -127,7 +127,7 @@
         "carry"
       ],
       "tris": 16243,
-      "clip_note": "Each Meshy re-rig names the spine chain differently (Spine1/Head1/neck…); the clip files are stripped to skeleton+clip and the chain renamed by position onto the idle rig (Hips > Spine02 > Spine01 > Spine > neck > Head). Loaded by lib/worldassets.ts loadWorldClips and bound by bone name."
+      "clip_note": "Each Meshy re-rig has its OWN bone frames (the jump rig's spine is rotated 180° to the idle's), so clips cannot be copied by bone name — the waist folds. scripts/retarget-clip.mjs retargets in world space: per bone, the rotation delta the source clip applies to the source bind pose, applied to the idle rig's bind pose, expressed locally; the spine chain is matched by position (Hips > Spine02 > Spine01 > Spine > neck > Head); hip translation dropped (the body carries height). Clip files are skeleton + rotations only (20–30 KB). Loaded by lib/worldassets.ts loadWorldClips."
     }
   }
 }
