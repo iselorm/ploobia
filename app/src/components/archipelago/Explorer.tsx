@@ -126,7 +126,7 @@ function ExplorerBody() {
   })
   if (generated) {
     return (
-      <group position={[0, FEET, 0.08]}>
+      <group position={[0, FEET, 0.1]}>
         <primitive object={generated.group} />
       </group>
     )

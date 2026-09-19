@@ -17,7 +17,8 @@ const [src, dst, clipName, opts] = [process.argv[2], process.argv[3], process.ar
 // the rig's right axis (+X; the rig faces +Z).
 const leanIdx = process.argv.indexOf('--lean');
 const LEAN = leanIdx > 0 ? Number(process.argv[leanIdx + 1]) : 0;
-const LEAN_SHARE = { Hips: -0.3, Spine02: 0.45, Spine01: 0.4, Spine: 0.35, neck: -0.3, Head: -0.4 };
+// Pivot the torso at the pelvis (the rig is swaybacked: the lumbar bones run back before the chest comes forward), not a curl up the spine.
+const LEAN_SHARE = { Hips: -0.35, Spine02: 1.0, Spine01: 0.15, Spine: 0.1, neck: -0.3, Head: -0.35 };
 // --hipsback <units>: slide the pelvis back along -Z (mesh units; ~0.015 m each on this rig)
 // so it sits behind the chest line instead of thrust ahead of the feet.
 const hbIdx = process.argv.indexOf('--hipsback');
