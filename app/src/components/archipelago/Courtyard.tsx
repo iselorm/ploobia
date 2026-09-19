@@ -18,6 +18,8 @@ import {
 import { bodies, registerBody } from './bodies'
 import { interactables as interactableMap } from '@/lib/archipelago'
 import Sky from './Sky'
+import Prop from './Prop'
+import { useWorldMesh } from './useWorldMesh'
 
 /**
  * The Foundry Courtyard — the vertical slice, as previz. Boards 0–6 of the
@@ -87,30 +89,32 @@ export default function Courtyard() {
         <Wall position={[-8, 1.5, 13]} size={[10, 3, 0.6]} />
         <Wall position={[8, 1.5, 13]} size={[10, 3, 0.6]} />
 
-        {/* the furnace */}
-        <CuboidCollider args={[2, 2, 1.5]} position={[0, 2, -8.5]} />
-        <mesh position={[0, 2, -8.5]} castShadow receiveShadow visible={s.room !== 'furnace'}>
-          <boxGeometry args={[4, 4, 3]} />
-          <meshStandardMaterial
-            color={new THREE.Color('#6B5443').lerp(new THREE.Color('#FF7A2E'), heat * 0.55)}
-            emissive="#FF5A1E"
-            emissiveIntensity={heat * 1.2}
-            roughness={0.85}
-          />
-        </mesh>
-        {/* the mouth */}
-        <mesh position={[0, 1.1, -6.98]} visible={s.room !== 'furnace'}>
-          <boxGeometry args={[1.8, 1.4, 0.1]} />
-          <meshStandardMaterial color="#1E140C" emissive="#FF6A1E" emissiveIntensity={heat * 3} toneMapped={false} />
+        {/* the furnace — the W2 mesh (banner, stack and mouth baked) over the previz box */}
+        <CuboidCollider args={[2, 2, 2.2]} position={[0, 2, -8.5]} />
+        <Prop id="furnace" position={[0, 0, -8.5]} visible={s.room !== 'furnace'}>
+          <mesh position={[0, 2, 0]} castShadow receiveShadow>
+            <boxGeometry args={[4, 4, 4.4]} />
+            <meshStandardMaterial
+              color={new THREE.Color('#6B5443').lerp(new THREE.Color('#FF7A2E'), heat * 0.55)}
+              emissive="#FF5A1E"
+              emissiveIntensity={heat * 1.2}
+              roughness={0.85}
+            />
+          </mesh>
+          {/* the stack */}
+          <mesh position={[1.2, 7, -0.5]} castShadow>
+            <cylinderGeometry args={[0.6, 0.85, 6, 12]} />
+            <meshStandardMaterial color="#5B4A3A" roughness={0.9} />
+          </mesh>
+        </Prop>
+        <CuboidCollider args={[0.7, 3, 0.7]} position={[1.2, 7, -9]} />
+        {/* the mouth: the glow is the state, drawn over either body */}
+        <mesh position={[0, 1.1, -6.3]} visible={s.room !== 'furnace'}>
+          <boxGeometry args={[1.5, 1.2, 0.1]} />
+          <meshStandardMaterial color="#1E140C" emissive="#FF6A1E" emissiveIntensity={heat * 3} transparent opacity={0.35 + heat * 0.65} toneMapped={false} />
         </mesh>
         {/* the room: the same furnace, cut open — what the camera sees from inside the mouth */}
         {s.room === 'furnace' && <FurnaceRoom heat={heat} air={s.air} lit={s.furnace.lit} fuel={s.furnace.fuel} />}
-        {/* the stack */}
-        <CuboidCollider args={[0.7, 3, 0.7]} position={[1.2, 7, -9]} />
-        <mesh position={[1.2, 7, -9]} castShadow>
-          <cylinderGeometry args={[0.6, 0.85, 6, 12]} />
-          <meshStandardMaterial color="#5B4A3A" roughness={0.9} />
-        </mesh>
         {/* the pour channel */}
         <mesh position={[0, 0.06, -4.6]} receiveShadow>
           <boxGeometry args={[0.9, 0.12, 4.4]} />
@@ -133,10 +137,12 @@ export default function Courtyard() {
 
         {/* the bellows and the split pipe */}
         <CuboidCollider args={[0.9, 0.6, 0.7]} position={[6, 0.6, -8]} />
-        <mesh position={[6, 0.6, -8]} castShadow>
-          <boxGeometry args={[1.8, 1.2, 1.4]} />
-          <meshStandardMaterial color="#8A5A3B" roughness={0.9} />
-        </mesh>
+        <Prop id="bellows" position={[6, 0, -8]}>
+          <mesh position={[0, 0.6, 0]} castShadow>
+            <boxGeometry args={[1.8, 1.2, 1.4]} />
+            <meshStandardMaterial color="#8A5A3B" roughness={0.9} />
+          </mesh>
+        </Prop>
         <Pipe x0={4.5} x1={3.6} />
         <Pipe x0={2.9} x1={2.0} />
         {s.pipeFixed ? (
@@ -196,6 +202,8 @@ export default function Courtyard() {
  */
 function Crane() {
   const s = useWorld()
+  const generated = !!useWorldMesh('crane')
+  const rig = useRef<THREE.Group>(null)
   const boom = useRef<THREE.Group>(null)
   const hook = useRef<THREE.Group>(null)
   const cable = useRef<THREE.Mesh>(null)
@@ -205,6 +213,7 @@ function Crane() {
     const c = w.crane
     const [tx, tz] = craneTip(c.yaw)
     if (boom.current) boom.current.rotation.y = c.yaw
+    if (rig.current) rig.current.rotation.y = c.yaw
     if (hook.current) hook.current.position.set(tx, c.hookY, tz)
     if (cable.current) {
       const len = CRANE.boomY - c.hookY
@@ -240,12 +249,16 @@ function Crane() {
   const [tx, tz] = craneTip(s.crane.yaw)
   return (
     <group>
-      {/* mast */}
+      {/* mast — the W2 crane is one mesh pivoted on the mast axis: it swings whole, the cable and hook stay ours */}
       <CuboidCollider args={[0.35, 3, 0.35]} position={[CRANE.mast[0], 3, CRANE.mast[2]]} />
-      <mesh position={[CRANE.mast[0], 3, CRANE.mast[2]]} castShadow>
-        <boxGeometry args={[0.7, 6, 0.7]} />
-        <meshStandardMaterial color="#8A6A3F" roughness={0.9} />
-      </mesh>
+      <group ref={rig} position={CRANE.mast} rotation={[0, s.crane.yaw, 0]}>
+        <Prop id="crane">
+          <mesh position={[0, 3, 0]} castShadow>
+            <boxGeometry args={[0.7, 6, 0.7]} />
+            <meshStandardMaterial color="#8A6A3F" roughness={0.9} />
+          </mesh>
+        </Prop>
+      </group>
       {/* the post you drive it from */}
       <CuboidCollider args={[0.25, 0.5, 0.25]} position={[CRANE_POST[0], 0.5, CRANE_POST[2]]} />
       <mesh position={[CRANE_POST[0], 0.5, CRANE_POST[2]]} castShadow>
@@ -256,8 +269,8 @@ function Crane() {
         <boxGeometry args={[0.6, 0.1, 0.4]} />
         <meshStandardMaterial color={s.crane.active ? '#E8A33D' : '#C8552E'} emissive={s.crane.active ? '#E8A33D' : '#000'} emissiveIntensity={0.6} roughness={0.5} />
       </mesh>
-      {/* boom, swinging about the mast */}
-      <group ref={boom} position={[CRANE.mast[0], CRANE.boomY, CRANE.mast[2]]} rotation={[0, s.crane.yaw, 0]}>
+      {/* boom, swinging about the mast — the previz boom; the generated crane carries its own */}
+      <group ref={boom} position={[CRANE.mast[0], CRANE.boomY, CRANE.mast[2]]} rotation={[0, s.crane.yaw, 0]} visible={!generated}>
         <mesh position={[0, 0, CRANE.reach / 2 - 0.6]} castShadow>
           <boxGeometry args={[0.4, 0.4, CRANE.reach + 1.2]} />
           <meshStandardMaterial color="#B97D10" roughness={0.7} />
@@ -416,19 +429,25 @@ function Hearth({ fuel, position }: { fuel: FuelId; position: [number, number, n
   useEffect(() => registerInteractable(it), [it])
   const h = THREE.MathUtils.clamp((temp - 20) / 1400, 0, 1)
   const pile = fuel === 'wetwood' ? '#5E4A36' : fuel === 'drywood' ? '#A8804E' : '#2A2622'
+  // The W2 crate (one mesh, three fills) stands in for the slab; the pile
+  // rises to sit inside it and the collider grows to its box.
+  const crated = !!useWorldMesh('crate')
+  const top = crated ? 0.95 : 0.42
   return (
     <group position={position}>
-      <CuboidCollider args={[0.55, 0.15, 0.55]} position={[0, 0.15, 0]} />
-      <mesh position={[0, 0.15, 0]} receiveShadow castShadow>
-        <cylinderGeometry args={[0.6, 0.65, 0.3, 14]} />
-        <meshStandardMaterial color="#A28A66" roughness={1} />
-      </mesh>
-      <mesh position={[0, 0.42, 0]} castShadow>
+      {crated ? <CuboidCollider args={[0.7, 0.55, 0.8]} position={[0, 0.55, 0]} /> : <CuboidCollider args={[0.55, 0.15, 0.55]} position={[0, 0.15, 0]} />}
+      <Prop id="crate" own>
+        <mesh position={[0, 0.15, 0]} receiveShadow castShadow>
+          <cylinderGeometry args={[0.6, 0.65, 0.3, 14]} />
+          <meshStandardMaterial color="#A28A66" roughness={1} />
+        </mesh>
+      </Prop>
+      <mesh position={[0, top, 0]} castShadow>
         <dodecahedronGeometry args={[0.28, 0]} />
         <meshStandardMaterial color={pile} roughness={1} flatShading />
       </mesh>
       {lit && (
-        <mesh position={[0, 0.55 + h * 0.5, 0]} scale={[0.5 + h, 0.6 + h * 1.4, 0.5 + h]}>
+        <mesh position={[0, top + 0.13 + h * 0.5, 0]} scale={[0.5 + h, 0.6 + h * 1.4, 0.5 + h]}>
           <sphereGeometry args={[0.35, 10, 8]} />
           <meshBasicMaterial color={new THREE.Color('#FF7A2E').lerp(new THREE.Color('#FFE08A'), h)} transparent opacity={0.85} toneMapped={false} />
         </mesh>
@@ -518,7 +537,7 @@ function Scrap({ id, position, mass, size }: { id: string; position: [number, nu
   useEffect(() => {
     if (ref.current) return registerBody(id, ref.current)
   }, [id])
-  const meshRef = useRef<THREE.Mesh>(null)
+  const meshRef = useRef<THREE.Group>(null)
   useFrame(() => {
     const b = ref.current
     if (!b) return
@@ -532,13 +551,19 @@ function Scrap({ id, position, mass, size }: { id: string; position: [number, nu
     if (fed) it.radius = 0
     if (meshRef.current) meshRef.current.visible = !fed
   })
+  // The ingot mesh is normalised to 0.6 m; the heavy billet is the same casting, larger.
+  const k = size / 0.6
   return (
     <RigidBody ref={ref} position={position} colliders={false} name={id}>
       <CuboidCollider args={[size / 2, size / 2, size / 2]} mass={mass} />
-      <mesh ref={meshRef} castShadow receiveShadow>
-        <boxGeometry args={[size, size * 0.7, size * 0.8]} />
-        <meshStandardMaterial color="#B5652E" roughness={0.35} metalness={0.7} />
-      </mesh>
+      <group ref={meshRef}>
+        <Prop id="ingot" own scale={k} position={[0, -size / 2, 0]}>
+          <mesh position={[0, size / 2, 0]} castShadow receiveShadow>
+            <boxGeometry args={[size, size * 0.7, size * 0.8]} />
+            <meshStandardMaterial color="#B5652E" roughness={0.35} metalness={0.7} />
+          </mesh>
+        </Prop>
+      </group>
     </RigidBody>
   )
 }

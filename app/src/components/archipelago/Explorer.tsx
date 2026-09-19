@@ -23,16 +23,67 @@ import {
 import { SPAWNS, control, live } from './live'
 import { bodies } from './bodies'
 import { craneGrabOrRelease } from './crane'
+import { useWorldMesh } from './useWorldMesh'
 
 /**
  * The explorer — a kinematic character on Rapier's controller, driven by the
  * stick/WASD in the camera's frame. Third person; the camera is its own
  * component and reads `live`.
  *
- * Previz rig: a capsule with a head and a visor. The real explorer (a stylised
- * human with the toolbelt and the Lens on a strap) is round W2's job through
- * the Higgsfield pipeline — this one exists so movement can be judged now.
+ * The body is the W2 generated character (rigged, with an idle clip) when it
+ * arrives; until then, or offline, the previz capsule with a head and a visor.
  */
+
+/** Feet sit at the bottom of the capsule collider (half-height + radius). */
+const FEET = -0.52
+
+function ExplorerBody() {
+  const generated = useWorldMesh('explorer')
+  const mixer = useRef<THREE.AnimationMixer | null>(null)
+  useEffect(() => {
+    if (!generated) return
+    const m = new THREE.AnimationMixer(generated.group)
+    const clip = generated.clips[0]
+    if (clip) m.clipAction(clip).play()
+    mixer.current = m
+    return () => {
+      m.stopAllAction()
+      mixer.current = null
+    }
+  }, [generated])
+  useFrame((_, dt) => {
+    const m = mixer.current
+    if (!m) return
+    // One clip for now: the idle, run faster on the move so the legs agree
+    // with the ground. A walk clip is a later Meshy call.
+    m.timeScale = live.speed > 0 ? 2.2 : 1
+    m.update(Math.min(0.05, dt))
+  })
+  if (generated) {
+    return (
+      <group position={[0, FEET, 0]}>
+        <primitive object={generated.group} />
+      </group>
+    )
+  }
+  return (
+    <>
+      <mesh position={[0, 0, 0]} castShadow>
+        <capsuleGeometry args={[0.24, 0.56, 6, 12]} />
+        <meshStandardMaterial color="#3E5E8A" roughness={0.55} />
+      </mesh>
+      <mesh position={[0, 0.52, 0]} castShadow>
+        <sphereGeometry args={[0.2, 16, 12]} />
+        <meshStandardMaterial color="#8A5A3B" roughness={0.6} />
+      </mesh>
+      {/* the visor says which way is forward */}
+      <mesh position={[0, 0.56, 0.16]}>
+        <boxGeometry args={[0.24, 0.08, 0.1]} />
+        <meshStandardMaterial color="#F3C77A" emissive="#E8A33D" emissiveIntensity={0.6} roughness={0.2} />
+      </mesh>
+    </>
+  )
+}
 
 const SPEED = 4.2
 const JUMP = 5.2
@@ -126,6 +177,7 @@ export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void
       MOVE.normalize().multiplyScalar(SPEED * dt)
       live.facing = Math.atan2(MOVE.x, MOVE.z)
     }
+    live.speed = moving ? SPEED : 0
 
     // Vertical: our own gravity on the kinematic body, jump on the edge.
     if (live.grounded && vy.current <= 0) {
@@ -214,19 +266,7 @@ export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void
         <CapsuleCollider args={[0.28, 0.24]} />
       </RigidBody>
       <group ref={mesh} name="explorer-mesh">
-        <mesh position={[0, 0, 0]} castShadow>
-          <capsuleGeometry args={[0.24, 0.56, 6, 12]} />
-          <meshStandardMaterial color="#3E5E8A" roughness={0.55} />
-        </mesh>
-        <mesh position={[0, 0.52, 0]} castShadow>
-          <sphereGeometry args={[0.2, 16, 12]} />
-          <meshStandardMaterial color="#8A5A3B" roughness={0.6} />
-        </mesh>
-        {/* the visor says which way is forward */}
-        <mesh position={[0, 0.56, 0.16]}>
-          <boxGeometry args={[0.24, 0.08, 0.1]} />
-          <meshStandardMaterial color="#F3C77A" emissive="#E8A33D" emissiveIntensity={0.6} roughness={0.2} />
-        </mesh>
+        <ExplorerBody />
       </group>
     </>
   )

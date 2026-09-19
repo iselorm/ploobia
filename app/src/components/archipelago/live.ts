@@ -29,6 +29,8 @@ export const live = {
   camYaw: 0.6,
   camPitch: 0.42,
   grounded: false,
+  /** Ground speed this frame, m/s — the body's animation reads it. */
+  speed: 0,
   /** Where Ploob is heading this frame (the quest target or the explorer). */
   ploobTarget: new THREE.Vector3(1.2, 0, 1.2),
   ploob: new THREE.Vector3(1.2, 0, 1.2),
