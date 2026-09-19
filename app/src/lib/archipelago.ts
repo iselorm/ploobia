@@ -446,6 +446,20 @@ const MAX_DT = 0.25
 const FLUSH_EVERY = 0.12
 
 let simTime = 0
+/**
+ * The physics clock: advanced once per Rapier step (a fixed 1/60 s), by the
+ * scene. A dropped piece falls in physics time, not frame time — on a slow
+ * frame the two drift apart, and a drop timed by frames would report the
+ * heavy piece "faster" for no reason but a hitch. That is the very
+ * misconception the bet exists to disprove, so the drops are timed here.
+ */
+let physicsTime = 0
+export function stepPhysicsClock(dt: number): void {
+  physicsTime += dt
+}
+export function getPhysicsTime(): number {
+  return physicsTime
+}
 let sinceFlush = 0
 /** Sim time the furnace was lit; the curve's zero. */
 let litAt: number | null = null
@@ -604,7 +618,7 @@ export function craneRelease(): void {
   setWorld((s) => {
     const id = s.crane.holding
     if (!id) return {}
-    return { crane: { ...s.crane, holding: null, drops: { ...s.crane.drops, [id]: { from: s.crane.hookY, t0: simTime, t1: null } } } }
+    return { crane: { ...s.crane, holding: null, drops: { ...s.crane.drops, [id]: { from: s.crane.hookY, t0: physicsTime, t1: null } } } }
   })
 }
 
@@ -612,7 +626,7 @@ export function noteLanding(id: string): void {
   setWorld((s) => {
     const d = s.crane.drops[id]
     if (!d || d.t1 != null) return {}
-    return { crane: { ...s.crane, drops: { ...s.crane.drops, [id]: { ...d, t1: simTime } } } }
+    return { crane: { ...s.crane, drops: { ...s.crane.drops, [id]: { ...d, t1: physicsTime } } } }
   })
 }
 

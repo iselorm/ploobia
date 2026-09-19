@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
-import { CuboidCollider, RigidBody, type RapierRigidBody } from '@react-three/rapier'
+import { CuboidCollider, RigidBody, useAfterPhysicsStep, type RapierRigidBody } from '@react-three/rapier'
 import {
   COPPER_MELT_C,
   FUELS,
@@ -12,6 +12,7 @@ import {
   craneTip,
   noteLanding,
   registerInteractable,
+  stepPhysicsClock,
   useWorld,
   type FuelId,
 } from '@/lib/archipelago'
@@ -197,8 +198,12 @@ export default function Courtyard() {
  *
  * Holding is the hand trick: the piece goes kinematic and rides the hook.
  */
+/** One fixed step of the physics world (see `<Physics timeStep>`). */
+const PHYSICS_STEP = 1 / 60
+
 function Crane() {
   const s = useWorld()
+  useAfterPhysicsStep(() => stepPhysicsClock(PHYSICS_STEP))
   const generated = !!useWorldMesh('crane')
   const rig = useRef<THREE.Group>(null)
   const boom = useRef<THREE.Group>(null)
