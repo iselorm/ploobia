@@ -108,11 +108,8 @@ export default function Courtyard() {
           </mesh>
         </Prop>
         <CuboidCollider args={[0.7, 3, 0.7]} position={[1.2, 7, -9]} />
-        {/* the mouth: the glow is the state, drawn over either body */}
-        <mesh position={[0, 1.1, -6.3]} visible={s.room !== 'furnace'}>
-          <boxGeometry args={[1.5, 1.2, 0.1]} />
-          <meshStandardMaterial color="#1E140C" emissive="#FF6A1E" emissiveIntensity={heat * 3} transparent opacity={0.35 + heat * 0.65} toneMapped={false} />
-        </mesh>
+        {/* the mouth: the glow is the state, an additive bloom over either body's mouth — nothing when cold */}
+        <MouthGlow heat={heat} visible={s.room !== 'furnace'} />
         {/* the room: the same furnace, cut open — what the camera sees from inside the mouth */}
         {s.room === 'furnace' && <FurnaceRoom heat={heat} air={s.air} lit={s.furnace.lit} fuel={s.furnace.fuel} />}
         {/* the pour channel */}
@@ -297,6 +294,47 @@ function Crane() {
         </mesh>
       </group>
     </group>
+  )
+}
+
+/** A radial glow, drawn once. */
+let glowTex: THREE.Texture | null = null
+function glowTexture(): THREE.Texture {
+  if (glowTex) return glowTex
+  const c = document.createElement('canvas')
+  c.width = c.height = 128
+  const g = c.getContext('2d')!
+  const grad = g.createRadialGradient(64, 64, 4, 64, 64, 64)
+  grad.addColorStop(0, 'rgba(255,240,200,1)')
+  grad.addColorStop(0.35, 'rgba(255,150,60,0.85)')
+  grad.addColorStop(1, 'rgba(255,90,30,0)')
+  g.fillStyle = grad
+  g.fillRect(0, 0, 128, 128)
+  glowTex = new THREE.CanvasTexture(c)
+  glowTex.colorSpace = THREE.SRGBColorSpace
+  return glowTex
+}
+
+/**
+ * The furnace mouth's glow: additive, breathing, scaled by heat. At 20 °C it
+ * is not there at all — the cold mouth is the mesh's own.
+ */
+function MouthGlow({ heat, visible }: { heat: number; visible: boolean }) {
+  const ref = useRef<THREE.Mesh>(null)
+  const tex = useMemo(() => glowTexture(), [])
+  useFrame((st) => {
+    const m = ref.current
+    if (!m) return
+    const breathe = 1 + 0.08 * Math.sin(st.clock.elapsedTime * 7) + 0.05 * Math.sin(st.clock.elapsedTime * 11.3)
+    const k = (0.6 + heat * 1.6) * breathe
+    m.scale.set(2.2 * k, 1.7 * k, 1)
+    ;(m.material as THREE.MeshBasicMaterial).opacity = Math.min(1, heat * 1.4)
+  })
+  return (
+    <mesh ref={ref} position={[0, 1.05, -6.25]} visible={visible && heat > 0.01}>
+      <planeGeometry args={[1, 1]} />
+      <meshBasicMaterial map={tex} transparent blending={THREE.AdditiveBlending} depthWrite={false} toneMapped={false} />
+    </mesh>
   )
 }
 

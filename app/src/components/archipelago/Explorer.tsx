@@ -24,6 +24,7 @@ import { SPAWNS, control, live } from './live'
 import { bodies } from './bodies'
 import { craneGrabOrRelease } from './crane'
 import { useWorldMesh } from './useWorldMesh'
+import { loadWorldClips } from '@/lib/worldassets'
 
 /**
  * The explorer — a kinematic character on Rapier's controller, driven by the
@@ -37,27 +38,80 @@ import { useWorldMesh } from './useWorldMesh'
 /** Feet sit at the bottom of the capsule collider (half-height + radius). */
 const FEET = -0.52
 
+/** Casual_Walk covers about this much ground per second at 1.0× on a 1.45 m rig. */
+const WALK_CLIP_MPS = 1.4
+
 function ExplorerBody() {
   const generated = useWorldMesh('explorer')
   const mixer = useRef<THREE.AnimationMixer | null>(null)
+  const actions = useRef<{ idle?: THREE.AnimationAction; walk?: THREE.AnimationAction; jump?: THREE.AnimationAction }>({})
+  const airborne = useRef(false)
+  const blend = useRef({ walk: 0, jump: 0 })
   useEffect(() => {
     if (!generated) return
+    let alive = true
     const m = new THREE.AnimationMixer(generated.group)
-    const clip = generated.clips[0]
-    if (clip) m.clipAction(clip).play()
+    const idle = generated.clips[0]
+    const a: typeof actions.current = {}
+    if (idle) {
+      a.idle = m.clipAction(idle)
+      a.idle.play()
+    }
     mixer.current = m
+    actions.current = a
+    // The walk and jump ride the same rig by bone name; each is a separate
+    // small file, and the idle alone is fine until they arrive.
+    loadWorldClips('walk').then((clips) => {
+      if (!alive || !clips[0]) return
+      a.walk = m.clipAction(clips[0])
+      a.walk.play()
+      a.walk.setEffectiveWeight(0)
+    })
+    loadWorldClips('jump').then((clips) => {
+      if (!alive || !clips[0]) return
+      a.jump = m.clipAction(clips[0])
+      a.jump.setLoop(THREE.LoopOnce, 1)
+      a.jump.clampWhenFinished = true
+    })
     return () => {
+      alive = false
       m.stopAllAction()
       mixer.current = null
+      actions.current = {}
     }
   }, [generated])
-  useFrame((_, dt) => {
+  useFrame((_, dtRaw) => {
     const m = mixer.current
     if (!m) return
-    // One clip for now: the idle, run faster on the move so the legs agree
-    // with the ground. A walk clip is a later Meshy call.
-    m.timeScale = live.speed > 0 ? 2.2 : 1
-    m.update(Math.min(0.05, dt))
+    const dt = Math.min(0.05, dtRaw)
+    const a = actions.current
+    const moving = live.speed > 0
+    const inAir = !!a.jump && !live.grounded
+    if (inAir && !airborne.current) {
+      // Launch: skip the clip's crouch (we are already off the ground) and run
+      // its flight at a rate that fits the body's ~0.75 s in the air.
+      a.jump!.reset().play()
+      a.jump!.time = 0.45
+      a.jump!.setEffectiveTimeScale(1.6)
+    }
+    airborne.current = inAir
+    const b = blend.current
+    b.jump = a.jump ? THREE.MathUtils.damp(b.jump, inAir ? 1 : 0, 18, dt) : 0
+    const jw = b.jump
+    a.jump?.setEffectiveWeight(jw)
+    if (a.walk && a.idle) {
+      // Crossfade by weight; the walk's rate follows the ground speed.
+      b.walk = THREE.MathUtils.damp(b.walk, moving ? 1 : 0, 14, dt)
+      const w = b.walk
+      a.walk.setEffectiveWeight(w * (1 - jw))
+      a.idle.setEffectiveWeight((1 - w) * (1 - jw))
+      a.walk.setEffectiveTimeScale(Math.max(0.6, live.speed / WALK_CLIP_MPS))
+    } else if (a.idle) {
+      // Only the idle so far: run it faster on the move so the legs agree with the ground.
+      a.idle.setEffectiveTimeScale(moving ? 2.2 : 1)
+      a.idle.setEffectiveWeight(1 - jw)
+    }
+    m.update(dt)
   })
   if (generated) {
     return (

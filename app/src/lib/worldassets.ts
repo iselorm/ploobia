@@ -134,6 +134,28 @@ function normalise(id: WorldMeshId, gltf: GLTF): LoadedMesh {
   return { group, clips: gltf.animations ?? [] }
 }
 
+/** Clip-only files (skeleton + animation, no mesh) that ride the explorer's rig by bone name. */
+export const WORLD_CLIPS: Record<string, string> = {
+  walk: 'explorer-walk.glb',
+  jump: 'explorer-jump.glb',
+}
+
+const clipCache = new Map<string, Promise<THREE.AnimationClip[]>>()
+
+export function loadWorldClips(name: keyof typeof WORLD_CLIPS): Promise<THREE.AnimationClip[]> {
+  if (disabled) return Promise.resolve([])
+  const cached = clipCache.get(name)
+  if (cached) return cached
+  const p = withTimeout(
+    gltfLoader()
+      .loadAsync(`${base()}${MODELS}${WORLD_CLIPS[name]}`)
+      .then((gltf) => gltf.animations.map((c) => { c.name = name; return c })),
+    TIMEOUT_MS,
+  ).then((r) => r ?? [])
+  clipCache.set(name, p)
+  return p
+}
+
 /**
  * Loads once per id and shares the promise. Callers that need their own copy
  * (several ingots) should `SkeletonUtils.clone` or `clone()` the group; the
