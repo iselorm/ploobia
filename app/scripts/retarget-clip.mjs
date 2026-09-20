@@ -30,6 +30,9 @@ const DAMP = {}; if (dampIdx > 0) for (const kv of process.argv[dampIdx + 1].spl
 // shoulders sit square instead of rolled forward under the pack.
 const chestIdx = process.argv.indexOf('--chest');
 const CHEST = chestIdx > 0 ? Number(process.argv[chestIdx + 1]) : 0;
+// --headup <deg>: lift the gaze — neck and head pitched back in world space.
+const huIdx = process.argv.indexOf('--headup');
+const HEADUP = huIdx > 0 ? Number(process.argv[huIdx + 1]) : 0;
 const hbIdx = process.argv.indexOf('--hipsback');
 const HIPSBACK = hbIdx > 0 ? Number(process.argv[hbIdx + 1]) : 0;
 const FPS = 30;
@@ -119,6 +122,9 @@ for (const t of times) {
       if (CHEST && (name === 'LeftShoulder' || name === 'RightShoulder' || name === 'LeftArm' || name === 'RightArm')) {
         const sign = name.startsWith('Left') ? 1 : -1; const share = name.endsWith('Shoulder') ? 0.6 : 0.4;
         w = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), THREE.MathUtils.degToRad(CHEST * share * sign)).multiply(w);
+      }
+      if (HEADUP && (name === 'neck' || name === 'Head')) {
+        w = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), THREE.MathUtils.degToRad(-HEADUP * (name === 'neck' ? 0.4 : 0.6))).multiply(w);
       }
       if (LEAN && LEAN_SHARE[name]) {
         // accumulate: each bone's world rotation gets the sum of shares below it
