@@ -37,7 +37,7 @@ import {
   type Kind,
   type Level,
 } from '@/lib/foundry'
-import { DOOR_BY_ID, DOORS } from '@/lib/foundry'
+import { DOOR_BY_ID, DOORS, type DoorId } from '@/lib/foundry'
 import { nextDoor, recordHandIn } from '@/lib/foundrycampaign'
 import { COACH_KEY, nextDock, type CoachDock } from '@/components/atoms/game/coachDock'
 import { ElementPicker, ElementStrip, RatioDial, Readout } from '@/components/atoms/game/BenchHud'
@@ -121,15 +121,16 @@ function WebglFallback() {
   )
 }
 
-function BackToMenu() {
+/** The way out: the arcade menu, or — through the Archipelago's door — back to the courtyard. */
+function BackToMenu({ fromWorld = false }: { fromWorld?: boolean }) {
   return (
     <Link
-      to="/"
-      aria-label="Back to the arcade"
+      to={fromWorld ? '/world' : '/'}
+      aria-label={fromWorld ? 'Back to the courtyard' : 'Back to the arcade'}
       className="tile pointer-events-auto flex items-center gap-1.5 rounded-full border border-[#E9E2D1] bg-[#FCFAF4]/90 px-3 py-2 text-[12px] font-extrabold text-[#5A5445] backdrop-blur-md transition-all hover:bg-[#F1ECDE] active:scale-95"
     >
       <ArrowLeft className="h-4 w-4" />
-      Arcade
+      {fromWorld ? 'Courtyard' : 'Arcade'}
     </Link>
   )
 }
@@ -214,6 +215,13 @@ export default function AtomFoundry() {
     if (!challenge || challenge.cabinet !== 'atoms') return null
     const level = levelFromSetup(challenge.setup)
     return level ? { challenge, level } : null
+  }, [searchParams])
+
+  /* ---- through a door from the Archipelago ---- */
+  const fromWorld = searchParams.get('from') === 'world'
+  const askedDoor = useMemo<DoorId | null>(() => {
+    const n = Number(searchParams.get('door')) as DoorId
+    return DOOR_BY_ID[n]?.built ? n : null
   }, [searchParams])
 
   /* ---- state ---- */
@@ -370,11 +378,12 @@ export default function AtomFoundry() {
     }
     // Play opens the door the campaign is actually up to, not always the first
     // one. With two doors built, a learner who has finished the Forge should
-    // land on the Bench without hunting for it.
-    const door = nextDoor().id
+    // land on the Bench without hunting for it. A door named in the link
+    // (the Archipelago's courtyard sends `door=2`) wins, if it is built.
+    const door: DoorId = askedDoor ?? nextDoor().id
     const lvl = levelForBand(band as Band, door)
     begin(lvl, challengeFor(lvl, band, soloSeed(SESSION_CODE, lvl)))
-  }, [incoming, band, begin])
+  }, [incoming, band, begin, askedDoor])
 
   const explore = useCallback(() => {
     setLevel(null)
@@ -687,7 +696,7 @@ export default function AtomFoundry() {
       {/* the HUD: three columns, one toolbar, Ploob's line */}
       {showBench && (
         <div className="hud pointer-events-none fixed inset-0 z-20 flex flex-col gap-2 p-2 sm:gap-3 sm:p-3">
-          <TopBar tab={tab} onTab={onTab} band={band} compact={compact} presence={presence} left={<BackToMenu />} />
+          <TopBar tab={tab} onTab={onTab} band={band} compact={compact} presence={presence} left={<BackToMenu fromWorld={fromWorld} />} />
           <div className="flex min-h-0 flex-1 gap-3">
             {columns && <div className={cn('flex min-h-0 flex-col gap-2', tier === 'desktop' ? 'w-[18.5rem] shrink-0' : 'w-[11.5rem] shrink-0')}>
               {/* the panel owns the column's slack and clips inside itself, so
@@ -803,7 +812,22 @@ export default function AtomFoundry() {
       )}
 
       {phase === 'welcome' && (
-        <ForgeWelcome level={incoming ? incoming.level : levelForBand(band as Band, nextDoor().id)} incoming={incoming ? { by: incoming.challenge.by, title: incoming.level.title } : null} onPlay={play} onExplore={explore} />
+        <ForgeWelcome
+          level={incoming ? incoming.level : levelForBand(band as Band, askedDoor ?? nextDoor().id)}
+          incoming={incoming ? { by: incoming.challenge.by, title: incoming.level.title } : null}
+          from={
+            fromWorld
+              ? {
+                  eyebrow: 'From the Foundry courtyard',
+                  line: 'The foreman wants bronze. Copper with tin in it, in a proportion — that is a counting question, and this is the bench that counts.',
+                  back: 'Back to the courtyard',
+                  to: '/world',
+                }
+              : null
+          }
+          onPlay={play}
+          onExplore={explore}
+        />
       )}
       {phase === 'brief' && level && <ForgeBrief level={level} onCommit={commitGuess} onClose={() => setPhase('forge')} />}
       {phase === 'beat' && <ForgeBeat count={beat} />}

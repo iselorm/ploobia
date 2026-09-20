@@ -19,6 +19,7 @@ import {
   toggleLens,
   type FuelId,
   type ZoneId,
+  enterDoor,
 } from '@/lib/archipelago'
 import { SPAWNS, control, live } from './live'
 import { bodies } from './bodies'
@@ -380,6 +381,12 @@ export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void
         const to = id.slice('portal.'.length) as ZoneId
         crossPortal(to)
         portal?.(to)
+        return
+      }
+      case 'door': {
+        // Shut doors say why; open ones hand the route to the HUD.
+        // Come back a step outside the door's reach, so a tap does not walk straight back in.
+        if (!enterDoor(id, [it.pos[0] - 2.2, 0.6, it.pos[2]])) window.dispatchEvent(new CustomEvent('ploobia:doorshut', { detail: id }))
         return
       }
       case 'talk':

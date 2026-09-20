@@ -15,6 +15,7 @@ import {
   stepPhysicsClock,
   useWorld,
   type FuelId,
+  DOORS,
 } from '@/lib/archipelago'
 import { bodies, registerBody } from './bodies'
 import { interactables as interactableMap } from '@/lib/archipelago'
@@ -52,6 +53,8 @@ export default function Courtyard() {
       registerInteractable({ id: 'portal.landing', verb: 'portal', label: 'Back to the Landing', pos: [0, 0, 12.6], radius: 1.1 }),
       registerInteractable({ id: 'talk.foreman', verb: 'talk', label: 'The Foreman', pos: [3.2, 0, 8], radius: 1.4 }),
       registerInteractable({ id: 'crane.controls', verb: 'crane', label: 'Drive the crane', pos: CRANE_POST, radius: 1.4 }),
+      // The door to the Bench cabinet — shut until the foreman asks for bronze (the third why).
+      registerInteractable({ id: 'door.bench', verb: 'door', label: DOORS['door.bench'].label, pos: [11.3, 0, 5.6], radius: 1.5 }),
     ]
     return () => offs.forEach((f) => f())
   }, [])
@@ -190,6 +193,7 @@ export default function Courtyard() {
       <Chalkboard position={[12.2, 0, 1.6]} rotation={[0, -Math.PI / 2, 0]} />
       <Lintel position={[0, 3.25, 13]} />
       <Skyline poured={s.poured} />
+      <BenchDoor open={DOORS['door.bench'].unlocked(s)} />
 
       {/* the copper scrap — metal, not ore: this quest is melting, not smelting */}
       <Scrap id="scrap.a" position={[-7, 1, -7.7]} mass={12} size={0.6} />
@@ -428,6 +432,58 @@ function FurnaceRoom({ heat, air, lit, fuel }: { heat: number; air: number; lit:
         <meshStandardMaterial color="#4A5E7A" roughness={0.5} metalness={0.3} />
       </mesh>
       <pointLight position={[0, 1.4, 0.4]} intensity={2 + heat * 24} distance={8} color="#FF8A3D" />
+    </group>
+  )
+}
+
+/**
+ * The Bench — a workbench under an awning against the east wall, the door
+ * into the atoms cabinet (its Door 2, the Bench). Copper and tin wait on it:
+ * the bronze question is a counting question, and this is where it goes.
+ * Shut (awning down, lamp cold) until the third why; open, the lamp burns.
+ */
+function BenchDoor({ open }: { open: boolean }) {
+  return (
+    <group position={[11.7, 0, 5.6]} rotation={[0, -Math.PI / 2, 0]} name="door-bench">
+      {/* bench */}
+      <mesh position={[0, 0.82, 0]} castShadow receiveShadow>
+        <boxGeometry args={[2.3, 0.12, 0.9]} />
+        <meshStandardMaterial color="#6B4A30" roughness={0.9} />
+      </mesh>
+      {[-1, 1].map((sx) =>
+        [-1, 1].map((sz) => (
+          <mesh key={`${sx}${sz}`} position={[sx * 1.0, 0.38, sz * 0.35]} castShadow>
+            <boxGeometry args={[0.1, 0.76, 0.1]} />
+            <meshStandardMaterial color="#5A3E2A" roughness={0.9} />
+          </mesh>
+        )),
+      )}
+      {/* copper and tin — the two halves of the question */}
+      <mesh position={[-0.55, 0.96, 0.1]} rotation={[0, 0.3, 0]} castShadow>
+        <boxGeometry args={[0.5, 0.16, 0.22]} />
+        <meshStandardMaterial color="#B5652E" roughness={0.45} metalness={0.6} />
+      </mesh>
+      <mesh position={[0.45, 0.94, -0.1]} rotation={[0, -0.2, 0]} castShadow>
+        <boxGeometry args={[0.32, 0.12, 0.18]} />
+        <meshStandardMaterial color="#B9BCC0" roughness={0.35} metalness={0.8} />
+      </mesh>
+      {/* the awning on two posts */}
+      {[-1.2, 1.2].map((x) => (
+        <mesh key={x} position={[x, 1.5, -0.55]} castShadow>
+          <cylinderGeometry args={[0.05, 0.05, 3, 8]} />
+          <meshStandardMaterial color="#4A3A2C" roughness={0.9} />
+        </mesh>
+      ))}
+      <mesh position={[0, 2.7, 0.15]} rotation={[-Math.PI / 2 + (open ? 0.3 : 1.05), 0, 0]} castShadow>
+        <planeGeometry args={[2.9, 1.6]} />
+        <meshStandardMaterial color="#C8552E" roughness={0.95} side={THREE.DoubleSide} />
+      </mesh>
+      {/* the lamp: cold while shut, burning when open */}
+      <mesh position={[0, 2.2, 0.3]}>
+        <sphereGeometry args={[0.14, 12, 8]} />
+        <meshBasicMaterial color={open ? '#FFD27A' : '#5C5646'} toneMapped={false} />
+      </mesh>
+      {open && <pointLight position={[0, 2.3, 0.3]} intensity={3} distance={5} color="#FFC46A" />}
     </group>
   )
 }

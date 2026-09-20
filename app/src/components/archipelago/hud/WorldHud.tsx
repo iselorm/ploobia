@@ -31,6 +31,7 @@ import {
   type FuelId,
   type Journal,
   type WorldState,
+  DOORS,
 } from '@/lib/archipelago'
 import { judgeWhy, TRUST } from '@/lib/whyjudge'
 import Ploob2 from '@/components/brand/Ploob2'
@@ -51,10 +52,12 @@ export default function WorldHud({ compact }: { compact: boolean }) {
   const coarse = isCoarse(mode)
   const step = currentStep(s)
   const [note, setNote] = useState<string | null>(null)
-  const [seenPour, setSeenPour] = useState(false)
+  // The pour card, once stepped out of, stays stepped out of — through a door and back.
+  const seenPour = s.pourSeen
+  const setSeenPour = (v: boolean) => setWorld({ pourSeen: v })
   const [briefed, setBriefed] = useState(false)
-  /** After the pour: 0–2 the whys, 3 the stamp, 4 done. */
-  const [after, setAfter] = useState(0)
+  /** After the pour: 0–2 the whys, 3 the stamp, 4 done. Back from a cabinet with the whys answered, it is done. */
+  const [after, setAfter] = useState(() => (s.whys[2] >= 0 ? 4 : 0))
   const [journalOpen, setJournalOpen] = useState(false)
 
   // Ploob's one-off lines, spoken over the coach line for a moment.
@@ -65,8 +68,10 @@ export default function WorldHud({ compact }: { compact: boolean }) {
     }
     const heavy = () => say('Too heavy for you. The crane over the belt can lift it — the post beside the mast drives it.')
     const look = () => say('Look first. Raise the Lens by the furnace and follow the air.')
+    const shut = (e: Event) => say(DOORS[(e as CustomEvent<string>).detail]?.locked ?? 'That door is shut.')
     window.addEventListener('ploobia:tooheavy', heavy)
     window.addEventListener('ploobia:lookfirst', look)
+    window.addEventListener('ploobia:doorshut', shut)
     // The bet: said when the heavy piece hangs high; settled when both falls are timed.
     let bet = false
     let settled = false
@@ -93,6 +98,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
     return () => {
       window.removeEventListener('ploobia:tooheavy', heavy)
       window.removeEventListener('ploobia:lookfirst', look)
+      window.removeEventListener('ploobia:doorshut', shut)
       unsub()
     }
   }, [])
@@ -108,8 +114,30 @@ export default function WorldHud({ compact }: { compact: boolean }) {
     return () => window.clearInterval(id)
   }, [])
 
+  // A door opened in the scene: the route change happens here, outside the
+  // canvas. A plain hash set, not `navigate()`: a router transition started
+  // from inside the world left the cabinet's own links dead to real clicks
+  // (React kept the transition pending); the browser's own hash navigation
+  // reaches the router through popstate and leaves nothing pending.
+  const cabinetAtMount = useRef(s.cabinet)
+  useEffect(() => {
+    // A cabinet already set when the HUD mounts is a return in progress, not a door.
+    if (!s.cabinet || s.cabinet === cabinetAtMount.current) return
+    const door = Object.values(DOORS).find((d) => d.cabinet === s.cabinet)
+    if (door) window.location.hash = `#${door.route}`
+  }, [s.cabinet])
+
   const near = s.near ? interactables.get(s.near) : null
-  const verbLabel = s.held ? 'Put it down' : near && near.verb !== 'portal' && near.verb !== 'talk' ? near.label : null
+  const nearDoor = near?.verb === 'door' ? DOORS[near.id] : null
+  const verbLabel = s.held
+    ? 'Put it down'
+    : nearDoor
+      ? nearDoor.unlocked(s)
+        ? `Enter ${nearDoor.label}`
+        : `${nearDoor.label} · shut`
+      : near && near.verb !== 'portal' && near.verb !== 'talk'
+        ? near.label
+        : null
   const showGauge = s.zone === 'foundry' && (s.lit.length > 0 || s.furnace.lit)
   const brief = s.zone === 'foundry' && s.prediction == null && !briefed && s.phase === 'play'
   const inRoom = s.room === 'furnace'
@@ -325,7 +353,7 @@ function Minimap({ s }: { s: WorldState }) {
         <circle cx={R} cy={R} r={R - 7} fill="rgba(201,169,122,0.18)" stroke="rgba(255,244,224,0.12)" strokeDasharray="2 3" />
         {items.map((it) => {
           const [x, z] = px(it.pos[0], it.pos[2])
-          const c = it.verb === 'portal' ? '#E8A33D' : it.verb === 'grab' ? '#B5652E' : it.verb === 'probe' ? '#C8552E' : '#2F7F7A'
+          const c = it.verb === 'portal' || it.verb === 'door' ? '#E8A33D' : it.verb === 'grab' ? '#B5652E' : it.verb === 'probe' ? '#C8552E' : '#2F7F7A'
           return <circle key={it.id} cx={x} cy={z} r={it.id === s.near ? 3.2 : 2} fill={c} />
         })}
         {s.zone === 'foundry' && <circle cx={hx} cy={hz} r={1.6} fill="none" stroke="#4A5E7A" />}

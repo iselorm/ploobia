@@ -197,6 +197,8 @@ export interface WorldState {
   near: string | null
   /** Set once at the pour; the celebration beat and the island light. */
   poured: boolean
+  /** The pour card has been stepped out of (so it never comes back, even after a door). */
+  pourSeen: boolean
   /** How the learner arrived at the courtyard: a count of portal crossings. */
   crossings: number
   /** Explicit simulation time, seconds. Wall-clocked and clamped in the ticker. */
@@ -210,6 +212,44 @@ export interface WorldState {
   /** Answers to the three whys, by index; -1 = not yet answered. */
   whys: number[]
   journal: Journal
+  /**
+   * A cabinet the explorer has stepped into through a door — the route swaps
+   * to that cabinet's page and the world waits here, state intact, until the
+   * cabinet's back link returns. Null while in the world.
+   */
+  cabinet: CabinetId | null
+  /** Where to stand on return from a cabinet: the door's own coordinates. */
+  returnPos: [number, number, number] | null
+}
+
+/** Cabinets a courtyard door can open. Each is an existing arcade page; the door is the link. */
+export type CabinetId = 'atoms'
+
+/**
+ * A door in the world to a cabinet: what it opens, when it unlocks, and the
+ * search params the cabinet's page reads (`from=world` swaps its back link).
+ */
+export interface Door {
+  id: string
+  cabinet: CabinetId
+  label: string
+  /** The route the door opens, hash-relative. */
+  route: string
+  /** Shown while the door is still shut. */
+  locked: string
+  unlocked: (s: WorldState) => boolean
+}
+
+export const DOORS: Record<string, Door> = {
+  'door.bench': {
+    id: 'door.bench',
+    cabinet: 'atoms',
+    label: 'The Bench',
+    route: '/atoms?from=world&door=2',
+    locked: 'The Bench — after the pour, when the foreman asks for bronze.',
+    // The third why: "Tin, and a bench to work out how much of it." Answered either way, the door is open.
+    unlocked: (s) => s.poured && s.whys[2] >= 0,
+  },
 }
 
 const initial = (): WorldState => ({
@@ -227,6 +267,7 @@ const initial = (): WorldState => ({
   prediction: null,
   near: null,
   poured: false,
+  pourSeen: false,
   crossings: 0,
   time: 0,
   room: 'none',
@@ -234,6 +275,8 @@ const initial = (): WorldState => ({
   crane: { active: false, yaw: 0.2, hookY: 3.2, holding: null, drops: {} },
   curve: [],
   whys: [-1, -1, -1],
+  cabinet: null,
+  returnPos: null,
   journal: { prediction: null, action: null, observed: null, explanation: null },
 })
 
@@ -269,7 +312,7 @@ export function useWorld(): WorldState {
  * list. `near` is decided once per frame by the explorer from this map.
  * ------------------------------------------------------------------------- */
 
-export type Verb = 'grab' | 'probe' | 'build' | 'feed' | 'portal' | 'talk' | 'crane'
+export type Verb = 'grab' | 'probe' | 'build' | 'feed' | 'portal' | 'talk' | 'crane' | 'door'
 
 export interface Interactable {
   id: string
@@ -583,6 +626,27 @@ export function tickWorld(dtRaw: number): void {
 /* ----------------------------------------------------------------------------
  * Verbs the HUD and the explorer call
  * ------------------------------------------------------------------------- */
+
+/**
+ * Step through a door: the world remembers where it stood and which cabinet
+ * it is in; the HUD (outside the canvas, where the router lives) does the
+ * route change. Returns false if the door is still shut.
+ */
+export function enterDoor(id: string, at: [number, number, number]): boolean {
+  const door = DOORS[id]
+  const s = getWorld()
+  if (!door || !door.unlocked(s)) return false
+  setWorld({ cabinet: door.cabinet, returnPos: at, held: null, near: null })
+  return true
+}
+
+/** Back from a cabinet: the world resumes where the door was, nothing reset. */
+export function returnFromCabinet(): [number, number, number] | null {
+  const s = getWorld()
+  const at = s.returnPos
+  setWorld({ cabinet: null, returnPos: null })
+  return at
+}
 
 export function crossPortal(to: ZoneId): void {
   setWorld((s) => ({ zone: to, ring: 'world', held: null, near: null, crossings: s.crossings + 1 }))

@@ -371,6 +371,47 @@ async function hold(page, code, ms) {
 }
 
 /* ------------------------------------------------------------------------ */
+/* The door: the Bench cabinet, shut until the bronze why, open after; back  */
+/* ------------------------------------------------------------------------ */
+{
+  const { page, ctx, errors } = await open({ width: 1440, height: 900 })
+  await resilientClick(page.getByTestId('play'), { label: 'Play' })
+  await waitFor(page, () => window.__world.get().phase === 'play')
+  await page.evaluate(() => {
+    window.__world.setBand('explorer')
+    window.__world.set({ zone: 'foundry', prediction: 1000, step: 'done' })
+  })
+  await page.waitForTimeout(900)
+  await page.evaluate(() => window.__world.setPos(10.2, 0.6, 5.6))
+  await waitFor(page, () => window.__world.get().near === 'door.bench', 8000).catch(() => {})
+  check('the Bench door is a thing to walk up to', (await world(page)).near === 'door.bench')
+  check('shut: the prompt says so', await page.getByTestId('interact').textContent().then((t) => /Bench · shut/.test(t)).catch(() => false))
+  await page.keyboard.press('KeyE')
+  await page.waitForTimeout(500)
+  check('shut: E goes nowhere, Ploob says why', page.url().includes('#/world') && (await world(page)).cabinet === null && (await page.getByTestId('coach').textContent().then((t) => /after the pour/.test(t)).catch(() => false)))
+  await page.evaluate(() => window.__world.set({ poured: true, pourSeen: true, whys: [0, 0, 1] }))
+  await page.waitForTimeout(300)
+  check('open: the prompt invites', await page.getByTestId('interact').textContent().then((t) => /Enter The Bench/.test(t)).catch(() => false))
+  await page.keyboard.press('KeyE')
+  await page.waitForFunction(() => location.hash.startsWith('#/atoms'), null, { timeout: 8000 }).catch(() => {})
+  check('open: E walks into the atoms cabinet, Door 2 asked for', /#\/atoms\?from=world&door=2/.test(page.url()), page.url())
+  await page.waitForTimeout(1500)
+  const back = page.getByRole('link', { name: 'Back to the courtyard' })
+  check('the cabinet\'s back link points at the courtyard', (await back.count()) === 1)
+  await resilientClick(back, { label: 'Courtyard' })
+  await page.waitForFunction(() => location.hash.startsWith('#/world') && !!window.__world, null, { timeout: 15000 }).catch(() => {})
+  // The return spot is applied after the zone settle, a beat after the mount.
+  await waitFor(page, () => { const q = window.__world.live.pos; return Math.hypot(q.x - 9.1, q.z - 5.6) < 1.5 }, 10000).catch(() => {})
+  await page.waitForTimeout(400)
+  const w = await world(page)
+  const p = await pos(page)
+  check('back in the world with nothing reset', w.poured === true && w.zone === 'foundry' && w.cabinet === null, JSON.stringify({ poured: w.poured, zone: w.zone, cabinet: w.cabinet }))
+  check('standing by the door, a step outside its reach', Math.hypot(p[0] - 9.1, p[2] - 5.6) < 1.5 && w.near !== 'door.bench', JSON.stringify(p))
+  check('no console errors through the door and back', errors.length === 0, errors.slice(0, 2).join(' | '))
+  await ctx.close()
+}
+
+/* ------------------------------------------------------------------------ */
 /* Tablet + phone: layout, touch controls, hit sizes, portrait card          */
 /* ------------------------------------------------------------------------ */
 for (const [name, viewport, touch] of [
