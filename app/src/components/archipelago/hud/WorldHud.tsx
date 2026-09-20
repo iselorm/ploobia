@@ -783,6 +783,20 @@ function Stamp({ journal, onClose }: { journal: Journal; onClose: () => void }) 
             </div>
           )}
         </div>
+        {/* Where the gauge's ceilings come from — a teacher's question, answered in the data itself. */}
+        <details className="mt-2 rounded-[12px] bg-[#EEE7D8] px-3 py-1.5" data-testid="fuel-sources">
+          <summary className="cursor-pointer text-[9px] font-extrabold tracking-wide text-[#8A5A0E] uppercase">Where the numbers come from</summary>
+          <div className="mt-1 grid gap-1">
+            {FUEL_ORDER.map((f) => (
+              <p key={f} className="text-[11px] leading-snug text-[#2A2823]">
+                <span className="font-extrabold">{FUELS[f].name}</span> · ceiling {FUELS[f].peak} °C ·{' '}
+                <span className={cn('font-extrabold', FUELS[f].basis === 'measured' ? 'text-[#2F6B3A]' : 'text-[#8A5A0E]')}>{FUELS[f].basis}</span>
+                <span className="block text-[10px] text-[#5C5646]">{FUELS[f].source}</span>
+              </p>
+            ))}
+            <p className="text-[10px] text-[#5C5646]">Copper melts at 1084.6 °C (CRC Handbook); the gauge says 1085.</p>
+          </div>
+        </details>
         <div className="mt-2 flex items-center justify-between">
           <span className={cn('atlas-collected text-[12px]', !ready && 'opacity-40')} data-testid="stamp-state">
             {ready ? 'STAMPED' : 'not stamped'}

@@ -331,7 +331,7 @@ async function hold(page, code, ms) {
   await page.evaluate(() => {
     window.__world.setBand('scientist')
     window.__world.set({
-      zone: 'foundry', prediction: 1000, lit: ['wetwood', 'drywood', 'charcoal'], hearths: { wetwood: 550, drywood: 900, charcoal: 1180 },
+      zone: 'foundry', prediction: 1000, lit: ['wetwood', 'drywood', 'charcoal'], hearths: { wetwood: 550, drywood: 900, charcoal: 1200 },
       pipeFixed: true, bellowsSeen: true, air: 1, fed: ['scrap.a', 'scrap.heavy'], step: 'done',
       furnace: { lit: true, fuel: 'charcoal', temp: 1150 }, poured: true, room: 'furnace',
       curve: [[0, 20], [1, 400], [2, 800], [3, 1150]],
@@ -347,7 +347,7 @@ async function hold(page, code, ms) {
   await waitFor(page, () => !!document.querySelector('[data-testid=why-nudge]'))
   check('a partial answer gets a nudge back, not a mark', await page.getByTestId('why-nudge').textContent().then((t) => /reached the fire/i.test(t)))
   check('the judge was sent the ask, the target and the misconceptions by key', seen[0]?.ask === 'What happened when the pipe was whole again?' && /More air/.test(seen[0]?.target) && seen[0]?.misconceptions?.map((m) => m.key).join() === 'fuel_changed,copper_changed')
-  check('the judge was sent only facts the learner could have seen', seen[0]?.facts?.furnace_reading_c >= 1150 && /Charcoal reached 1180/.test(seen[0]?.facts?.fuels_tested) && seen[0]?.facts?.pipe.includes('fixed'), JSON.stringify(seen[0]?.facts))
+  check('the judge was sent only facts the learner could have seen', seen[0]?.facts?.furnace_reading_c >= 1150 && /Charcoal reached 1200/.test(seen[0]?.facts?.fuels_tested) && seen[0]?.facts?.pipe.includes('fixed'), JSON.stringify(seen[0]?.facts))
   await page.getByTestId('why-text').fill('more air reached the fire so the charcoal burned hotter')
   await resilientClick(page.getByTestId('why-say'), { label: 'Say it' })
   await waitFor(page, () => !!document.querySelector('[data-testid=why-line]'))

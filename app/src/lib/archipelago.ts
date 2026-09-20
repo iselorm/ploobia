@@ -16,10 +16,10 @@
  * evidence state arrive together and a pile of module stores would not hold.
  * No browser storage; the `persist` layer is a later round.
  *
- * PREVIZ VALUES: the fuel ceilings below are placeholders at the right order
- * of magnitude for a forced-draught hearth. They are marked `verified: false`
- * and must be checked against a source before round W3 puts them on a
- * learner's gauge with any claim to truth (house rule: never invent a number).
+ * THE FUEL CEILINGS carry their sources (`FUELS[id].source`). Two are
+ * measured figures for an open hearth; the wet-wood ceiling is modelled from
+ * the calorific-value curve and is labelled so (house rule: never invent a
+ * number — and never let a modelled one pass as a measured one).
  */
 
 import { createStore } from 'zustand/vanilla'
@@ -41,11 +41,15 @@ export type FuelId = 'wetwood' | 'drywood' | 'charcoal'
 export interface Fuel {
   id: FuelId
   name: string
-  /** Steady-state ceiling with a working draught, °C. PREVIZ — see header. */
+  /** Steady-state ceiling of an open hearth of it with a working draught, °C. */
   peak: number
-  /** How fast a hearth of it climbs, °C per second at full draught. */
+  /** How fast a hearth of it climbs, °C per second at full draught (a game rate, not a measurement). */
   climb: number
+  /** True when `peak` sits inside a measured range; false when it is a modelled estimate. */
   verified: boolean
+  basis: 'measured' | 'modelled'
+  /** Where the number comes from, for the About card and for anyone who asks. */
+  source: string
 }
 
 /**
@@ -56,9 +60,36 @@ export interface Fuel {
  * why less useful heat? Mass ≠ useful fuel energy.
  */
 export const FUELS: Record<FuelId, Fuel> = {
-  wetwood: { id: 'wetwood', name: 'Wet wood', peak: 550, climb: 60, verified: false },
-  drywood: { id: 'drywood', name: 'Dry wood', peak: 900, climb: 110, verified: false },
-  charcoal: { id: 'charcoal', name: 'Charcoal', peak: 1180, climb: 150, verified: false },
+  wetwood: {
+    id: 'wetwood',
+    name: 'Wet wood',
+    peak: 550,
+    climb: 60,
+    verified: false,
+    basis: 'modelled',
+    source:
+      'Modelled, not measured. Green wood is roughly half water by weight, and the water takes the heat: FAO (Wood fuels handbook / j4504e, fig. 7) has the net calorific value of wood falling from ≈18.5 MJ/kg oven-dry to zero at ≈88 % total moisture (air-dried 12–20 % ≈ 13–16 MJ/kg). A cook-stove study (Int. J. Sustainable Engineering 2023, doi 10.1080/19397038.2022.2159568) found eucalyptus at ≈50 % moisture failed to reach cooking temperature at all. 550 °C is the model’s ceiling for a blown open hearth of it — below dry wood by the calorific margin, above a smoulder.',
+  },
+  drywood: {
+    id: 'drywood',
+    name: 'Dry wood',
+    peak: 900,
+    climb: 110,
+    verified: true,
+    basis: 'measured',
+    source:
+      'Open wood firings measured at 560–918 °C, all open firings peaking by ≈940 °C (Gosselain 1992, “Bonfire of the Enquiries”, J. Archaeological Science 19, table 1). An enclosed kiln with a long firebox can push wood well past this; an open hearth cannot, blown or not.',
+  },
+  charcoal: {
+    id: 'charcoal',
+    name: 'Charcoal',
+    peak: 1200,
+    climb: 150,
+    verified: true,
+    basis: 'measured',
+    source:
+      'A charcoal hearth on bag bellows: “when it reached 900 °C, the bellows were used to increase the temperature to about 1200 °C”, crucible maxima 943–1233 °C (EXARC Journal 2021/4, Chalcolithic copper experiment, IR pyrometer ±2 %). Copper is smelted at 1100–1200 °C and cast at ≈1100 °C on charcoal (Penn Museum Expedition, “Fuel for the Metal Worker”).',
+  },
 }
 
 export const FUEL_ORDER: FuelId[] = ['wetwood', 'drywood', 'charcoal']
