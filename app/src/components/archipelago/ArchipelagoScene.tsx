@@ -9,6 +9,7 @@ import { setBand } from '@/lib/bands'
 import Explorer from './Explorer'
 import FollowCamera from './FollowCamera'
 import Companion from './Companion'
+import Guide from './Guide'
 import Landing from './Landing'
 import { control, live } from './live'
 
@@ -80,6 +81,7 @@ export default function ArchipelagoScene({ hudBottom = 0, onContextLost }: { hud
         <Explorer />
       </Physics>
       <Companion />
+      <Guide />
       <FollowCamera hudBottom={hudBottom} />
     </Canvas>
   )

@@ -17,6 +17,8 @@ export const control = {
   /** Edge-triggered: leave the crane or the room. */
   exit: false,
   journal: false,
+  /** Edge-triggered: show the way to the current target (H, or a tap on Ploob's hint). */
+  hint: false,
   /** Look drag in radians accumulated since last frame. */
   yaw: 0,
   pitch: 0,
@@ -24,9 +26,9 @@ export const control = {
 
 export const live = {
   pos: new THREE.Vector3(0, 0.5, 0),
-  /** Direction the explorer faces, radians about +Y. */
-  facing: 0,
-  camYaw: 0.6,
+  /** Direction the explorer faces, radians about +Y. Both spawns look down −Z, toward the gate and the furnace. */
+  facing: Math.PI,
+  camYaw: Math.PI - 0.6,
   camPitch: 0.42,
   grounded: false,
   /** Ground speed this frame, m/s — the body's animation reads it. */
@@ -102,6 +104,8 @@ export function installWorldKeys(): () => void {
       if (!e.repeat) control.lens = true
     } else if (e.code === 'KeyJ') {
       if (!e.repeat) control.journal = true
+    } else if (e.code === 'KeyH') {
+      if (!e.repeat) control.hint = true
     } else if (e.code === 'Escape') {
       // Escape is the platform's "back" — unless the explorer is inside a
       // mode, where it steps out of that first.

@@ -203,15 +203,24 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       {/* bottom-right: Ploob's hint */}
       {playing && !brief && !inRoom && !afterPour && (
         <div className="absolute right-3 bottom-3 max-w-[min(24rem,calc(100vw-1.5rem))]">
-          <div className="glass pointer-events-auto flex items-center gap-3 px-3 py-2.5" data-testid="coach">
+          <button
+            type="button"
+            className="glass pointer-events-auto flex w-full items-center gap-3 px-3 py-2.5 text-left"
+            data-testid="coach"
+            aria-label="Show the way"
+            onClick={() => {
+              control.hint = true
+            }}
+          >
             <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#F6F2E8]/10">
               <Ploob2 size={compact ? 26 : 32} />
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <span className="glass-eyebrow block">Ploob</span>
               <p className="text-[12.5px] leading-snug font-extrabold">{hintText}</p>
             </div>
-          </div>
+            {!coarse && <kbd className="glass-key shrink-0">H</kbd>}
+          </button>
         </div>
       )}
 

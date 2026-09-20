@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import PloobCutout from '@/components/brand/PloobCutout'
-import { currentStep, getWorld, interactables } from '@/lib/archipelago'
+import { getWorld, questTarget } from '@/lib/archipelago'
 import { live } from './live'
 
 /**
@@ -22,22 +22,7 @@ export default function Companion() {
     const dt = Math.min(0.05, dtRaw)
     t.current += dt
     const s = getWorld()
-    const step = currentStep(s)
-    let target: [number, number, number] | null = null
-    if (step.target && s.phase === 'play') {
-      // Prefix targets ("ore.") point at the nearest matching thing.
-      let best = Infinity
-      for (const it of interactables.values()) {
-        if (it.id === step.target || (step.target.endsWith('.') && it.id.startsWith(step.target))) {
-          if (s.held === it.id || (step.id === 'clear' && s.fed.includes(it.id))) continue
-          const d = Math.hypot(it.pos[0] - live.pos.x, it.pos[2] - live.pos.z)
-          if (d < best) {
-            best = d
-            target = it.pos
-          }
-        }
-      }
-    }
+    const target = questTarget(s, [live.pos.x, live.pos.z])
     if (target) {
       // Stand a step to the side of the target, on the explorer's side of it.
       AHEAD.set(target[0] - live.pos.x, 0, target[2] - live.pos.z)

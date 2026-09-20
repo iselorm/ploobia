@@ -417,6 +417,29 @@ export const RELIGHT: Quest = {
   ],
 }
 
+/**
+ * Where the current step points, in the world: the registered interactable
+ * the step names, or the nearest match for a prefix target ("scrap."),
+ * skipping what is held or already fed. Null when the step has no place.
+ */
+export function questTarget(s: WorldState, from: [number, number]): [number, number, number] | null {
+  const step = currentStep(s)
+  if (!step.target || s.phase !== 'play') return null
+  let best = Infinity
+  let target: [number, number, number] | null = null
+  for (const it of interactables.values()) {
+    if (it.id === step.target || (step.target.endsWith('.') && it.id.startsWith(step.target))) {
+      if (s.held === it.id || (step.id === 'clear' && s.fed.includes(it.id))) continue
+      const d = Math.hypot(it.pos[0] - from[0], it.pos[2] - from[1])
+      if (d < best) {
+        best = d
+        target = it.pos
+      }
+    }
+  }
+  return target
+}
+
 export function currentStep(s: WorldState): QuestStep {
   return RELIGHT.steps.find((st) => st.id === s.step) ?? RELIGHT.steps[0]
 }
