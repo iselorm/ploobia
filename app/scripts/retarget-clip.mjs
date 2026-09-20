@@ -26,6 +26,10 @@ const LEAN_SHARE = { Hips: -0.35, Spine02: 1.0, Spine01: 0.15, Spine: 0.1, neck:
 // knee and pelvis deltas are damped to straighten the gait while the stride keeps its rhythm.
 const dampIdx = process.argv.indexOf('--damp');
 const DAMP = {}; if (dampIdx > 0) for (const kv of process.argv[dampIdx + 1].split(',')) { const [b, k] = kv.split('='); DAMP[b] = Number(k); }
+// --chest <deg>: open the shoulders — each clavicle swung back about the vertical axis, so the
+// shoulders sit square instead of rolled forward under the pack.
+const chestIdx = process.argv.indexOf('--chest');
+const CHEST = chestIdx > 0 ? Number(process.argv[chestIdx + 1]) : 0;
 const hbIdx = process.argv.indexOf('--hipsback');
 const HIPSBACK = hbIdx > 0 ? Number(process.argv[hbIdx + 1]) : 0;
 const FPS = 30;
@@ -112,6 +116,10 @@ for (const t of times) {
       let delta = srcW.get(s).clone().multiply(srcBindW.get(s).clone().invert());
       if (DAMP[name] != null) delta = new THREE.Quaternion().slerp(delta, DAMP[name]);
       w = delta.multiply(ourBindW.get(n));
+      if (CHEST && (name === 'LeftShoulder' || name === 'RightShoulder' || name === 'LeftArm' || name === 'RightArm')) {
+        const sign = name.startsWith('Left') ? 1 : -1; const share = name.endsWith('Shoulder') ? 0.6 : 0.4;
+        w = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), THREE.MathUtils.degToRad(CHEST * share * sign)).multiply(w);
+      }
       if (LEAN && LEAN_SHARE[name]) {
         // accumulate: each bone's world rotation gets the sum of shares below it
         const chain = ['Hips','Spine02','Spine01','Spine','neck','Head'];

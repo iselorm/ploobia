@@ -117,9 +117,9 @@
       "front": "+z",
       "rig": "a-pose, rigging_height_meters 1.45",
       "clips": [
-        "idle: explorer-idle.glb — the file's own Meshy idle through retarget-clip --lean 6 (the original job's rig is good; the idle is left almost as made)",
-        "walk: explorer-walk.glb — Casual_Walk (id 30), job 99b81b57-fcc9-44b1-9626-a7beca5855c7, 3d_rigging 8 cr; --lean 10 --damp Hips=0.4,LeftLeg=0.6,RightLeg=0.6,LeftFoot=0.8,RightFoot=0.8",
-        "jump: explorer-jump.glb — Regular_Jump (id 466), job eacf6b93-a92b-4b3d-99e8-d4bc2e028f11, 3d_rigging 8 cr; --lean 8 --damp Hips=0.6,LeftLeg=0.75,RightLeg=0.75; hip lift stripped"
+        "idle: explorer-idle.glb — the file's own Meshy idle through retarget-clip --lean 6 --damp shoulders 0.6 --chest 6",
+        "walk: explorer-walk.glb — Casual_Walk (id 30), job 99b81b57-fcc9-44b1-9626-a7beca5855c7, 3d_rigging 8 cr; --lean 10 --chest 8 --damp Hips=0.4,knees 0.6,feet 0.8,spine chain 0.5,shoulders 0.4,neck/Head 0.5 (Selorm: shoulders slouched in the front view)",
+        "jump: explorer-jump.glb — Regular_Jump (id 466), job eacf6b93-a92b-4b3d-99e8-d4bc2e028f11, 3d_rigging 8 cr; --lean 8 --chest 6 --damp Hips=0.6,knees 0.75,spine 0.6,shoulders 0.5; hip lift stripped"
       ],
       "verbs": [
         "walk",
