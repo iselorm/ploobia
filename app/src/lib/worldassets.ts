@@ -175,3 +175,51 @@ export function loadWorldMesh(id: WorldMeshId): Promise<LoadedMesh | null> {
   cache.set(id, p)
   return p
 }
+
+/* ---------------------------------------------------------------------------
+ * Batch 2 — the place around the things. Nothing here has a verb, so nothing
+ * here is a mesh: painted stills on white, keyed out, served as WebP and put
+ * on procedural geometry (the wall texture) or on flat cards (the rest).
+ * Signage carries no lettering; the words are drawn on at runtime from
+ * `lib/worldtext.ts`, the language file's slot.
+ * ------------------------------------------------------------------------ */
+
+export type WorldTextureId = 'wall' | 'banner' | 'rack' | 'landing-card' | 'ancient-card'
+
+export type WorldTextureSpec = {
+  file: string
+  /** Width over height of the keyed image — the card's plane is cut to it. */
+  aspect: number
+  /** Tiling texture: mirror-repeat, `metres` per tile. */
+  metres?: number
+}
+
+export const WORLD_TEXTURES: Record<WorldTextureId, WorldTextureSpec> = {
+  wall: { file: 'wall.webp', aspect: 1, metres: 2.6 },
+  banner: { file: 'banner.webp', aspect: 400 / 768 },
+  rack: { file: 'rack.webp', aspect: 1024 / 733 },
+  'landing-card': { file: 'landing-card.webp', aspect: 732 / 1024 },
+  'ancient-card': { file: 'ancient-card.webp', aspect: 1280 / 681 },
+}
+
+const texCache = new Map<WorldTextureId, Promise<THREE.Texture | null>>()
+let texLoader: THREE.TextureLoader | null = null
+
+export function loadWorldTexture(id: WorldTextureId): Promise<THREE.Texture | null> {
+  if (disabled) return Promise.resolve(null)
+  const cached = texCache.get(id)
+  if (cached) return cached
+  if (!texLoader) texLoader = new THREE.TextureLoader()
+  const spec = WORLD_TEXTURES[id]
+  const p = withTimeout(
+    texLoader.loadAsync(`${base()}${MODELS}${spec.file}`).then((t) => {
+      t.colorSpace = THREE.SRGBColorSpace
+      t.anisotropy = 4
+      if (spec.metres) t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping
+      return t
+    }),
+    TIMEOUT_MS,
+  )
+  texCache.set(id, p)
+  return p
+}

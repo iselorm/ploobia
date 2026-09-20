@@ -20,7 +20,10 @@ import { bodies, registerBody } from './bodies'
 import { interactables as interactableMap } from '@/lib/archipelago'
 import Sky from './Sky'
 import Prop from './Prop'
-import { useWorldMesh } from './useWorldMesh'
+import { Banner, Braces, Chalkboard, Lintel, Skyline, ToolRack } from './Dressing'
+import { useWorldMesh, useWorldTexture } from './useWorldMesh'
+import { WORLD_TEXTURES } from '@/lib/worldassets'
+import { WORLD_TEXT } from '@/lib/worldtext'
 
 /**
  * The Foundry Courtyard — the vertical slice, as previz. Boards 0–6 of the
@@ -84,11 +87,10 @@ export default function Courtyard() {
           <coneGeometry args={[15, 9, 8]} />
           <meshStandardMaterial color="#6F5236" roughness={1} flatShading />
         </mesh>
-        <Wall position={[0, 1.5, -13]} size={[26, 3, 0.6]} />
-        <Wall position={[-13, 1.5, 0]} size={[0.6, 3, 26]} />
-        <Wall position={[13, 1.5, 0]} size={[0.6, 3, 26]} />
-        <Wall position={[-8, 1.5, 13]} size={[10, 3, 0.6]} />
-        <Wall position={[8, 1.5, 13]} size={[10, 3, 0.6]} />
+        {WALLS.map((w, i) => (
+          <Wall key={i} position={w.position} size={w.size} />
+        ))}
+        <Braces walls={WALLS} />
 
         {/* the furnace — the W2 mesh (banner, stack and mouth baked) over the previz box */}
         <CuboidCollider args={[2, 2, 2.2]} position={[0, 2, -8.5]} />
@@ -178,6 +180,16 @@ export default function Courtyard() {
 
       <AirLanes />
       <Smoke lit={s.furnace.lit} />
+
+      {/* the place around the things (W2 batch 2): banners either side of the mouth, racks and the
+          chalkboard on the east wall, the rule over the gate, the skyline beyond the walls */}
+      <Banner lines={WORLD_TEXT.foundry.bannerTitle} position={[-4.4, 1.65, -12.62]} />
+      <Banner lines={WORLD_TEXT.foundry.bannerMotto} position={[4.4, 1.65, -12.62]} />
+      <ToolRack position={[12.55, 1.7, -4]} rotation={[0, -Math.PI / 2, 0]} />
+      <ToolRack position={[12.55, 1.7, 7.5]} rotation={[0, -Math.PI / 2, 0]} />
+      <Chalkboard position={[12.2, 0, 1.6]} rotation={[0, -Math.PI / 2, 0]} />
+      <Lintel position={[0, 3.25, 13]} />
+      <Skyline poured={s.poured} />
 
       {/* the copper scrap — metal, not ore: this quest is melting, not smelting */}
       <Scrap id="scrap.a" position={[-7, 1, -7.7]} mass={12} size={0.6} />
@@ -420,13 +432,33 @@ function FurnaceRoom({ heat, air, lit, fuel }: { heat: number; air: number; lit:
   )
 }
 
+const WALLS: { position: [number, number, number]; size: [number, number, number] }[] = [
+  { position: [0, 1.5, -13], size: [26, 3, 0.6] },
+  { position: [-13, 1.5, 0], size: [0.6, 3, 26] },
+  { position: [13, 1.5, 0], size: [0.6, 3, 26] },
+  { position: [-8, 1.5, 13], size: [10, 3, 0.6] },
+  { position: [8, 1.5, 13], size: [10, 3, 0.6] },
+]
+
+/** A courtyard wall: the collider, and sandstone blocks (the batch-2 tile) over the flat colour once it lands. */
 function Wall({ position, size }: { position: [number, number, number]; size: [number, number, number] }) {
+  const tile = useWorldTexture('wall')
+  const map = useMemo(() => {
+    if (!tile) return null
+    const t = tile.clone()
+    const len = Math.max(size[0], size[2])
+    const m = WORLD_TEXTURES.wall.metres ?? 3
+    t.repeat.set(len / m, size[1] / m)
+    t.needsUpdate = true
+    return t
+  }, [tile, size])
   return (
     <>
       <CuboidCollider args={[size[0] / 2, size[1] / 2, size[2] / 2]} position={position} />
-      <mesh position={position} castShadow receiveShadow>
+      <mesh position={position} castShadow receiveShadow userData={{ generated: !!map }}>
         <boxGeometry args={size} />
-        <meshStandardMaterial color="#D8C39A" roughness={1} />
+        {/* keyed: R3F resets a dropped `color` prop to black when it reuses the material */}
+        {map ? <meshStandardMaterial key="tiled" map={map} color="#ffffff" roughness={0.95} /> : <meshStandardMaterial key="flat" color="#D8C39A" roughness={1} />}
       </mesh>
     </>
   )

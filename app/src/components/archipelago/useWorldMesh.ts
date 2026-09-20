@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { loadWorldMesh, type LoadedMesh, type WorldMeshId } from '@/lib/worldassets'
+import type * as THREE from 'three'
+import { loadWorldMesh, loadWorldTexture, type LoadedMesh, type WorldMeshId, type WorldTextureId } from '@/lib/worldassets'
 
 /**
  * A generated prop with its procedural stand-in as children. The stand-in is
@@ -20,4 +21,19 @@ export function useWorldMesh(id: WorldMeshId, own = false): LoadedMesh | null {
     }
   }, [id, own])
   return m
+}
+
+/** A generated texture, or null while it loads / when it is off — the caller keeps its flat colour until then. */
+export function useWorldTexture(id: WorldTextureId): THREE.Texture | null {
+  const [t, setT] = useState<THREE.Texture | null>(null)
+  useEffect(() => {
+    let live = true
+    loadWorldTexture(id).then((r) => {
+      if (live && r) setT(r)
+    })
+    return () => {
+      live = false
+    }
+  }, [id])
+  return t
 }

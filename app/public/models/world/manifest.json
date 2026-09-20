@@ -1,5 +1,5 @@
 {
-  "note": "The Archipelago W2 batch 1 — six verb-bearing assets from the Higgsfield pipeline (style reference 5d52e1b7-07f0-4bc2-b312-3fc7ae27935e, stills on white, L/B/R turnarounds), repacked: gltf-transform optimize --compress meshopt --texture-compress webp --texture-size 768 --simplify. Loaded on demand by src/lib/worldassets.ts; every one has a procedural stand-in.",
+  "note": "The Archipelago W2 batch 1 \u2014 six verb-bearing assets from the Higgsfield pipeline (style reference 5d52e1b7-07f0-4bc2-b312-3fc7ae27935e, stills on white, L/B/R turnarounds), repacked: gltf-transform optimize --compress meshopt --texture-compress webp --texture-size 768 --simplify. Loaded on demand by src/lib/worldassets.ts; every one has a procedural stand-in.",
   "generated": "2026-09-19",
   "assets": {
     "furnace": {
@@ -37,7 +37,7 @@
       "height_m": 6.2,
       "front": "+x",
       "boom": "-z",
-      "edits": "baked chain cut; boom stretched ×1.38 to CRANE.reach; pivot moved to the mast axis",
+      "edits": "baked chain cut; boom stretched \u00d71.38 to CRANE.reach; pivot moved to the mast axis",
       "verbs": [
         "drive",
         "take",
@@ -117,9 +117,9 @@
       "front": "+z",
       "rig": "a-pose, rigging_height_meters 1.45",
       "clips": [
-        "idle: explorer-idle.glb — Meshy idle through retarget-clip --lean 6 --chest 6 --headup 4 --damp shoulders/neck/Head 0.6",
-        "walk: explorer-walk.glb — Casual_Walk (id 30), job 99b81b57-fcc9-44b1-9626-a7beca5855c7; --lean 10 --chest 10 --headup 10 --damp Hips=0.2,knees 0.7,feet 0.8,spine 0.4,shoulders 0.4,neck/Head 0.3",
-        "jump: explorer-jump.glb — Regular_Jump (id 466), job eacf6b93-a92b-4b3d-99e8-d4bc2e028f11; --lean 8 --chest 6 --headup 6 --damp Hips=0.5,knees 0.75,spine 0.6,shoulders 0.5; hip lift stripped"
+        "idle: explorer-idle.glb \u2014 Meshy idle through retarget-clip --lean 6 --chest 6 --headup 4 --damp shoulders/neck/Head 0.6",
+        "walk: explorer-walk.glb \u2014 Casual_Walk (id 30), job 99b81b57-fcc9-44b1-9626-a7beca5855c7; --lean 10 --chest 10 --headup 10 --damp Hips=0.2,knees 0.7,feet 0.8,spine 0.4,shoulders 0.4,neck/Head 0.3",
+        "jump: explorer-jump.glb \u2014 Regular_Jump (id 466), job eacf6b93-a92b-4b3d-99e8-d4bc2e028f11; --lean 8 --chest 6 --headup 6 --damp Hips=0.5,knees 0.75,spine 0.6,shoulders 0.5; hip lift stripped"
       ],
       "verbs": [
         "walk",
@@ -127,9 +127,66 @@
         "carry"
       ],
       "tris": 16243,
-      "clip_note": "Each Meshy re-rig has its OWN bone frames (the jump rig's spine is rotated 180° to the idle's), so clips cannot be copied by bone name — the waist folds. scripts/retarget-clip.mjs retargets in world space: per bone, the rotation delta the source clip applies to the source bind pose, applied to the idle rig's bind pose, expressed locally; the spine chain is matched by position (Hips > Spine02 > Spine01 > Spine > neck > Head); hip translation dropped (the body carries height). Clip files are skeleton + rotations only (20–30 KB). Loaded by lib/worldassets.ts loadWorldClips.",
-      "posture_note": "The mesh and the ORIGINAL job's rig stand upright (bind pose: pelvis over the feet, spine vertical). The crouch — pelvis tipped forward, knees bent, \"as if the pack were heavy\" (Selorm) — is in Meshy's 3d_rigging outputs: those re-rig a decimated proxy of the mesh and their canned walk/jump come out crouched on this child-proportioned skeleton even in Meshy's own render. retarget-clip.mjs therefore damps the pelvis and knee deltas (--damp) toward the upright bind while keeping the thigh swing, and adds a small pelvis-pivot lean. No pelvis offset any more; the waist front stays slimmed 32%.",
-      "mesh_edit": "scripts/slim-waist.mjs 0.68 0.64 1.0 0.08 — the front of the waist band (hoodie knot + belt pouches) sat 3 cm ahead of the chest; flattened 32% so the chest is the forward-most line of the torso ; scripts/narrow-pelvis.mjs 0.92 0.9 0.55 0.9 — the pelvis band narrowed 8% side-to-side and 10% front-to-back (Selorm: the pelvis dominates the front view)"
+      "clip_note": "Each Meshy re-rig has its OWN bone frames (the jump rig's spine is rotated 180\u00b0 to the idle's), so clips cannot be copied by bone name \u2014 the waist folds. scripts/retarget-clip.mjs retargets in world space: per bone, the rotation delta the source clip applies to the source bind pose, applied to the idle rig's bind pose, expressed locally; the spine chain is matched by position (Hips > Spine02 > Spine01 > Spine > neck > Head); hip translation dropped (the body carries height). Clip files are skeleton + rotations only (20\u201330 KB). Loaded by lib/worldassets.ts loadWorldClips.",
+      "posture_note": "The mesh and the ORIGINAL job's rig stand upright (bind pose: pelvis over the feet, spine vertical). The crouch \u2014 pelvis tipped forward, knees bent, \"as if the pack were heavy\" (Selorm) \u2014 is in Meshy's 3d_rigging outputs: those re-rig a decimated proxy of the mesh and their canned walk/jump come out crouched on this child-proportioned skeleton even in Meshy's own render. retarget-clip.mjs therefore damps the pelvis and knee deltas (--damp) toward the upright bind while keeping the thigh swing, and adds a small pelvis-pivot lean. No pelvis offset any more; the waist front stays slimmed 32%.",
+      "mesh_edit": "scripts/slim-waist.mjs 0.68 0.64 1.0 0.08 \u2014 the front of the waist band (hoodie knot + belt pouches) sat 3 cm ahead of the chest; flattened 32% so the chest is the forward-most line of the torso ; scripts/narrow-pelvis.mjs 0.92 0.9 0.55 0.9 \u2014 the pelvis band narrowed 8% side-to-side and 10% front-to-back (Selorm: the pelvis dominates the front view)"
     }
+  },
+  "batch2": {
+    "note": "W2 batch 2 \u2014 the place around the things. No verbs, so no meshes: nano_banana_pro stills referenced to the style variant 5d52e1b7-07f0-4bc2-b312-3fc7ae27935e, keyed out in the container (flood fill from the white corners, 1.5 px feather), exported as WebP. Signage carries no lettering; src/lib/worldtext.ts draws the words at runtime. Loaded by loadWorldTexture(); every card keeps a procedural stand-in; the walls keep their flat colour until the tile lands.",
+    "generated": "2026-09-19",
+    "credits": "~10",
+    "textures": {
+      "wall": {
+        "file": "wall.webp",
+        "job": "302aeaba-8af7-4570-ab24-d72b74a0fe01",
+        "use": "mirror-repeat tile on the five courtyard walls, 2.6 m per tile",
+        "px": [
+          1024,
+          1024
+        ]
+      },
+      "banner": {
+        "file": "banner.webp",
+        "job": "f08760c7-5e9c-40d3-9717-5f4718bf4859",
+        "use": "red cloth card \u00d72 either side of the mouth; words drawn on the lower half",
+        "px": [
+          400,
+          768
+        ]
+      },
+      "rack": {
+        "file": "rack.webp",
+        "job": "92532e1c-76dd-4a65-8dd3-a24d459b5cd1",
+        "use": "relief card \u00d72 on the east wall",
+        "px": [
+          1024,
+          733
+        ]
+      },
+      "landing-card": {
+        "file": "landing-card.webp",
+        "job": "9f80ca6c-fb0d-4061-a42b-a4e8fecf3cfb",
+        "use": "34 m billboard card to the south-east, across the water",
+        "px": [
+          732,
+          1024
+        ]
+      },
+      "ancient-card": {
+        "file": "ancient-card.webp",
+        "job": "3d87495f-c697-49aa-81a4-5112ccdcb111",
+        "use": "34 m billboard card on the north-west skyline; bottom 40% faded; the mouth glows after the pour",
+        "px": [
+          1280,
+          681
+        ]
+      }
+    },
+    "procedural": [
+      "iron braces (instanced straps + rivets)",
+      "chalkboard",
+      "the rule on the lintel over the gate"
+    ]
   }
 }
