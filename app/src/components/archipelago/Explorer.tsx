@@ -35,7 +35,7 @@ import { loadWorldClips } from '@/lib/worldassets'
  * arrives; until then, or offline, the previz capsule with a head and a visor.
  */
 
-/** Feet sit at the bottom of the capsule collider (half-height + radius); the clips slide the pelvis back ~13 cm, so the body sits a little forward. */
+/** Feet sit at the bottom of the capsule collider (half-height + radius). */
 const FEET = -0.52
 
 /** Casual_Walk covers about this much ground per second at 1.0× on a 1.45 m rig. */
@@ -126,7 +126,7 @@ function ExplorerBody() {
   })
   if (generated) {
     return (
-      <group position={[0, FEET, 0.1]}>
+      <group position={[0, FEET, 0]}>
         <primitive object={generated.group} />
       </group>
     )

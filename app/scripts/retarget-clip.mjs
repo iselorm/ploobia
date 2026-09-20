@@ -21,6 +21,11 @@ const LEAN = leanIdx > 0 ? Number(process.argv[leanIdx + 1]) : 0;
 const LEAN_SHARE = { Hips: -0.35, Spine02: 1.0, Spine01: 0.15, Spine: 0.1, neck: -0.3, Head: -0.35 };
 // --hipsback <units>: slide the pelvis back along -Z (mesh units; ~0.015 m each on this rig)
 // so it sits behind the chest line instead of thrust ahead of the feet.
+// --damp Bone=k,Bone=k: scale a bone's motion delta toward rest (0 = frozen at bind, 1 = as the clip).
+// Meshy's canned walks crouch on this child-proportioned rig — knees bent, pelvis tipped — so the
+// knee and pelvis deltas are damped to straighten the gait while the stride keeps its rhythm.
+const dampIdx = process.argv.indexOf('--damp');
+const DAMP = {}; if (dampIdx > 0) for (const kv of process.argv[dampIdx + 1].split(',')) { const [b, k] = kv.split('='); DAMP[b] = Number(k); }
 const hbIdx = process.argv.indexOf('--hipsback');
 const HIPSBACK = hbIdx > 0 ? Number(process.argv[hbIdx + 1]) : 0;
 const FPS = 30;
@@ -104,7 +109,8 @@ for (const t of times) {
     const pw = p ? ourW.get(p) : new THREE.Quaternion();
     let w;
     if (s && rotCh.has(name)) {
-      const delta = srcW.get(s).clone().multiply(srcBindW.get(s).clone().invert());
+      let delta = srcW.get(s).clone().multiply(srcBindW.get(s).clone().invert());
+      if (DAMP[name] != null) delta = new THREE.Quaternion().slerp(delta, DAMP[name]);
       w = delta.multiply(ourBindW.get(n));
       if (LEAN && LEAN_SHARE[name]) {
         // accumulate: each bone's world rotation gets the sum of shares below it
