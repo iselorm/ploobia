@@ -203,13 +203,34 @@ const PHYSICS_STEP = 1 / 60
 
 function Crane() {
   const s = useWorld()
-  useAfterPhysicsStep(() => stepPhysicsClock(PHYSICS_STEP))
+  const falling = useRef(new Set<string>())
+  // The clock and the landings advance per physics step, not per frame: a
+  // slow frame can hold several steps, and a landing stamped a frame late
+  // would read as a slower fall.
+  useAfterPhysicsStep(() => {
+    stepPhysicsClock(PHYSICS_STEP)
+    const c = getWorld().crane
+    for (const id of Object.keys(c.drops)) {
+      const d = c.drops[id]
+      if (d.t1 != null) continue
+      const b = bodies.get(id)
+      if (!b) continue
+      const t = b.translation()
+      const v = b.linvel()
+      // Landed = it has actually fallen (seen moving down) and then stopped.
+      // Without the first half, the step of release reads as a landing.
+      if (v.y < -0.5) falling.current.add(id)
+      if (falling.current.has(id) && Math.abs(v.y) < 0.15 && t.y < d.from - 0.4) {
+        falling.current.delete(id)
+        noteLanding(id)
+      }
+    }
+  })
   const generated = !!useWorldMesh('crane')
   const rig = useRef<THREE.Group>(null)
   const boom = useRef<THREE.Group>(null)
   const hook = useRef<THREE.Group>(null)
   const cable = useRef<THREE.Mesh>(null)
-  const falling = useRef(new Set<string>())
   useFrame(() => {
     const w = getWorld()
     const c = w.crane
@@ -229,22 +250,6 @@ function Crane() {
         b.setNextKinematicTranslation({ x: tx, y: c.hookY - 0.55, z: tz })
         const it = interactablesFor(c.holding)
         if (it) it.pos = [tx, c.hookY - 0.55, tz]
-      }
-    }
-    // Dropped pieces: time the landing.
-    for (const id of Object.keys(c.drops)) {
-      const d = c.drops[id]
-      if (d.t1 != null) continue
-      const b = bodies.get(id)
-      if (!b) continue
-      const t = b.translation()
-      const v = b.linvel()
-      // Landed = it has actually fallen (seen moving down) and then stopped.
-      // Without the first half, the frame of release reads as a landing.
-      if (v.y < -0.5) falling.current.add(id)
-      if (falling.current.has(id) && Math.abs(v.y) < 0.15 && t.y < d.from - 0.4) {
-        falling.current.delete(id)
-        noteLanding(id)
       }
     }
   })
