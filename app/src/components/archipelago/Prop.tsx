@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { useWorldMesh } from './useWorldMesh'
@@ -11,6 +11,7 @@ export default function Prop({
   own = false,
   visible = true,
   scale = 1,
+  animate = false,
   children,
 }: {
   id: WorldMeshId
@@ -21,12 +22,26 @@ export default function Prop({
   visible?: boolean
   /** Applied to the generated mesh only — the stand-in draws at its own size. */
   scale?: number
+  /** Play the file's first clip on a loop (a rigged NPC's idle). */
+  animate?: boolean
   children: ReactNode
 }) {
   const generated = useWorldMesh(id, own)
   const holder = useRef<THREE.Group>(null)
   const born = useRef(-1)
-  useFrame((state) => {
+  const mixer = useRef<THREE.AnimationMixer | null>(null)
+  useEffect(() => {
+    if (!animate || !generated || generated.clips.length === 0) return
+    const m = new THREE.AnimationMixer(generated.group)
+    m.clipAction(generated.clips[0]).play()
+    mixer.current = m
+    return () => {
+      m.stopAllAction()
+      mixer.current = null
+    }
+  }, [animate, generated])
+  useFrame((state, dt) => {
+    mixer.current?.update(Math.min(0.05, dt))
     const h = holder.current
     if (!h || !generated) return
     if (born.current < 0) born.current = state.clock.elapsedTime

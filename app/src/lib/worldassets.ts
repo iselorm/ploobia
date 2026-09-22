@@ -17,7 +17,7 @@ import * as THREE from 'three'
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 
-export type WorldMeshId = 'furnace' | 'crane' | 'crate' | 'ingot' | 'bellows' | 'explorer'
+export type WorldMeshId = 'furnace' | 'crane' | 'crate' | 'ingot' | 'bellows' | 'explorer' | 'foreman'
 
 const MODELS = 'models/world/'
 
@@ -44,6 +44,8 @@ export const WORLD_MESHES: Record<WorldMeshId, WorldMeshSpec> = {
   ingot: { file: 'ingot.glb', widthM: 0.6, copy: 'Casting the ingot…' },
   bellows: { file: 'bellows.glb', widthM: 1.9, yaw: Math.PI, copy: 'Stitching the bellows…' },
   explorer: { file: 'explorer.glb', heightM: 1.45, copy: 'Lacing the boots…' },
+  /** Sefu — the same Meshy route as the explorer; his idle rides in the file. */
+  foreman: { file: 'foreman.glb', heightM: 1.8, copy: 'Tying the apron…' },
 }
 
 function base(): string {

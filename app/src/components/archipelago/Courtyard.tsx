@@ -162,8 +162,8 @@ export default function Courtyard() {
           <Hearth key={f} fuel={f} position={[6 + i * 2.3, 0, 3]} />
         ))}
 
-        {/* Sefu, the foreman — a stand-in capsule until his still is gated and his mesh lands */}
-        <group position={[3.2, 0, 8]}>
+        {/* Sefu, the foreman — his W2 mesh with its idle, facing the gate; the capsule stays as the stand-in */}
+        <Prop id="foreman" position={[3.2, 0, 8]} rotation={[0, -Math.PI / 2 + 0.35, 0]} animate>
           <mesh position={[0, 0.7, 0]} castShadow>
             <capsuleGeometry args={[0.28, 0.7, 6, 12]} />
             <meshStandardMaterial color="#C8552E" roughness={0.6} />
@@ -172,7 +172,7 @@ export default function Courtyard() {
             <sphereGeometry args={[0.22, 14, 10]} />
             <meshStandardMaterial color="#5A3A26" roughness={0.6} />
           </mesh>
-        </group>
+        </Prop>
 
         {/* the gate back */}
         <mesh position={[0, 1.55, 12.7]}>
