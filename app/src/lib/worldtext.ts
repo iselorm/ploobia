@@ -5,6 +5,11 @@
  * languages note: Twi and Hausa next, Swahili and Arabic down the line).
  */
 export const WORLD_TEXT = {
+  /** People. Fantasy names are fixed across languages (the bible); only their lines localise. */
+  people: {
+    /** The foundry foreman. Selorm 2026-09-22: the Swahili name — sefu, "sword". */
+    foreman: { name: 'Sefu', title: 'the Foreman' },
+  },
   foundry: {
     /** The red banners either side of the mouth — lines each. */
     bannerTitle: ['FOUNDRY'],

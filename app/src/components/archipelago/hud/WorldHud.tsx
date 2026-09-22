@@ -37,6 +37,7 @@ import { judgeWhy, TRUST } from '@/lib/whyjudge'
 import Ploob2 from '@/components/brand/Ploob2'
 import { Tile } from '@/components/ui/tile'
 import { control, live } from '../live'
+import { WORLD_TEXT } from '@/lib/worldtext'
 
 /**
  * The world's HUD, on the layout Selorm drew (2026-09-17): wordmark and zone
@@ -494,7 +495,7 @@ function Brief({ onDone }: { onDone: () => void }) {
   return (
     <div className="pointer-events-auto absolute inset-0 grid place-items-center bg-[#2A2823]/25 p-4" data-focus-layer="">
       <div className="atlas-plate w-full max-w-[24rem] rounded-[22px] px-6 py-5" data-testid="brief">
-        <span className="atlas-eyebrow block">The Foreman</span>
+        <span className="atlas-eyebrow block">{WORLD_TEXT.people.foreman.name} · {WORLD_TEXT.people.foreman.title}</span>
         <p className="mt-1 text-[14px] leading-snug font-semibold text-[#2A2823]">“It went cold in the night. Forty bells due Friday. I have fed it everything and nothing.”</p>
         <p className="mt-3 text-[13px] font-extrabold text-[#2A2823]">{RELIGHT.predict.ask}</p>
         <div className="mt-2 flex items-center gap-2">

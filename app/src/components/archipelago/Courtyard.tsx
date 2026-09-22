@@ -51,7 +51,7 @@ export default function Courtyard() {
       registerInteractable({ id: 'feed.furnace', verb: 'feed', label: 'Feed the furnace', pos: [0, 0, -6], radius: 2.4 }),
       registerInteractable({ id: 'build.pipe', verb: 'build', label: 'Fix the pipe', pos: [3.2, 0, -7], radius: 1.7 }),
       registerInteractable({ id: 'portal.landing', verb: 'portal', label: 'Back to the Landing', pos: [0, 0, 12.6], radius: 1.1 }),
-      registerInteractable({ id: 'talk.foreman', verb: 'talk', label: 'The Foreman', pos: [3.2, 0, 8], radius: 1.4 }),
+      registerInteractable({ id: 'talk.foreman', verb: 'talk', label: WORLD_TEXT.people.foreman.name, pos: [3.2, 0, 8], radius: 1.4 }),
       registerInteractable({ id: 'crane.controls', verb: 'crane', label: 'Drive the crane', pos: CRANE_POST, radius: 1.4 }),
       // The door to the Bench cabinet — shut until the foreman asks for bronze (the third why).
       registerInteractable({ id: 'door.bench', verb: 'door', label: DOORS['door.bench'].label, pos: [11.3, 0, 5.6], radius: 1.5 }),
@@ -162,7 +162,7 @@ export default function Courtyard() {
           <Hearth key={f} fuel={f} position={[6 + i * 2.3, 0, 3]} />
         ))}
 
-        {/* the foreman — a stand-in until the language file names him */}
+        {/* Sefu, the foreman — a stand-in capsule until his still is gated and his mesh lands */}
         <group position={[3.2, 0, 8]}>
           <mesh position={[0, 0.7, 0]} castShadow>
             <capsuleGeometry args={[0.28, 0.7, 6, 12]} />

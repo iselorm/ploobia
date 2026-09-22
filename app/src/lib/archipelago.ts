@@ -246,7 +246,7 @@ export const DOORS: Record<string, Door> = {
     cabinet: 'atoms',
     label: 'The Bench',
     route: '/atoms?from=world&door=2',
-    locked: 'The Bench — after the pour, when the foreman asks for bronze.',
+    locked: 'The Bench — after the pour, when Sefu asks for bronze.',
     // The third why: "Tin, and a bench to work out how much of it." Answered either way, the door is open.
     unlocked: (s) => s.poured && s.whys[2] >= 0,
   },
@@ -487,7 +487,7 @@ export const RELIGHT: Quest = {
   whys: [
     'What happened when the air ran again?',
     'The wet wood was heavier than the charcoal. Why did the furnace get less useful heat from it?',
-    'Three days later the foreman asks for bronze. What would you add, and why would you need the bench?',
+    'Three days later Sefu asks for bronze. What would you add, and why would you need the bench?',
   ],
 }
 
@@ -843,7 +843,7 @@ export const WHYS: Why[] = [
     ],
   },
   {
-    ask: 'Three days later the foreman asks for bronze bells. What would you need that this courtyard does not have?',
+    ask: 'Three days later Sefu asks for bronze bells. What would you need that this courtyard does not have?',
     options: [
       { key: 'bronze_needs_more_heat', text: 'A hotter fuel — bronze needs more heat than copper.', right: false, line: 'Bronze actually melts lower than copper. Heat is not what is missing.' },
       { key: 'right', text: 'Tin, and a bench to work out how much of it — bronze is copper with tin in it.', right: true, line: 'Copper and tin, in a proportion. That is a counting question, and the Bench is where it gets answered.' },

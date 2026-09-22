@@ -819,7 +819,7 @@ export default function AtomFoundry() {
             fromWorld
               ? {
                   eyebrow: 'From the Foundry courtyard',
-                  line: 'The foreman wants bronze. Copper with tin in it, in a proportion — that is a counting question, and this is the bench that counts.',
+                  line: 'Sefu wants bronze. Copper with tin in it, in a proportion — that is a counting question, and this is the bench that counts.',
                   back: 'Back to the courtyard',
                   to: '/world',
                 }
