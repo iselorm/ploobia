@@ -25,7 +25,10 @@ const MAX_ANSWER = 600
 const TYPESAFE_URL = 'https://api.typesafe.ai/v1/systemone'
 
 export async function onRequestPost({ request, env }) {
-  if (!env.TYPESAFE_API_KEY) return json({ error: 'no TYPESAFE_API_KEY secret' }, 503)
+  // A secret pasted into the dashboard's multi-line box can carry a stray
+  // newline or space; "Bearer <key>\n" is a 401, not a key problem.
+  const apiKey = String(env.TYPESAFE_API_KEY ?? '').trim()
+  if (!apiKey) return json({ error: 'no TYPESAFE_API_KEY secret' }, 503)
 
   const raw = await request.text()
   if (raw.length > MAX_BYTES) return json({ error: 'too large' }, 413)
@@ -90,13 +93,21 @@ export async function onRequestPost({ request, env }) {
   try {
     res = await fetch(TYPESAFE_URL, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${env.TYPESAFE_API_KEY}` },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
       body: JSON.stringify(payload),
     })
   } catch (e) {
     return json({ error: 'judge unreachable', detail: String(e) }, 502)
   }
-  if (!res.ok) return json({ error: 'judge refused', status: res.status }, 502)
+  if (!res.ok) {
+    let hint = ''
+    try {
+      hint = (await res.text()).slice(0, 200)
+    } catch {
+      /* no body */
+    }
+    return json({ error: 'judge refused', status: res.status, hint }, 502)
+  }
   let data
   try {
     data = await res.json()
