@@ -671,7 +671,16 @@ function Scrap({ id, position, mass, size }: { id: string; position: [number, nu
   )
   useEffect(() => registerInteractable(it), [it])
   useEffect(() => {
-    if (ref.current) return registerBody(id, ref.current)
+    const b = ref.current
+    if (!b) return
+    // Fed before this mount (a restored save): it is inside the furnace, so
+    // park the body where the belt parks it rather than leave an unseen
+    // block on the yard for the explorer to walk into.
+    if (getWorld().fed.includes(id)) {
+      b.setTranslation({ x: 0, y: 1, z: -8.5 }, false)
+      b.setEnabled(false)
+    }
+    return registerBody(id, b)
   }, [id])
   const meshRef = useRef<THREE.Group>(null)
   useFrame(() => {

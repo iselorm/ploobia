@@ -4,6 +4,7 @@ import { BookOpen, Eye, Hand, Ruler, Thermometer } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { isCoarse, useInputMode } from '@/lib/input'
 import { useBandCaps } from '@/lib/bands'
+import { clearSave, describeSave } from '@/lib/worldsave'
 import {
   COPPER_MELT_C,
   FUELS,
@@ -21,6 +22,7 @@ import {
   feedFurnace,
   interactables,
   leaveRoom,
+  resetWorld,
   scoreRelight,
   setAir,
   setWorld,
@@ -57,8 +59,15 @@ export default function WorldHud({ compact }: { compact: boolean }) {
   const seenPour = s.pourSeen
   const setSeenPour = (v: boolean) => setWorld({ pourSeen: v })
   const [briefed, setBriefed] = useState(false)
-  /** After the pour: 0–2 the whys, 3 the stamp, 4 done. Back from a cabinet with the whys answered, it is done. */
-  const [after, setAfter] = useState(() => (s.whys[2] >= 0 ? 4 : 0))
+  /**
+   * After the pour: 0–2 the whys, 3 the stamp, 4 done. Back from a cabinet or
+   * a save with the whys answered, it is done; with some answered, the first
+   * open one is asked next.
+   */
+  const [after, setAfter] = useState(() => {
+    const open = s.whys.findIndex((w) => w < 0)
+    return open < 0 ? 4 : open
+  })
   const [journalOpen, setJournalOpen] = useState(false)
 
   // Ploob's one-off lines, spoken over the coach line for a moment.
@@ -263,15 +272,32 @@ export default function WorldHud({ compact }: { compact: boolean }) {
             <div className="flex justify-center">
               <Ploob2 size={56} />
             </div>
-            <span className="atlas-eyebrow mt-3 block">The Ploobia Archipelago · previz</span>
+            <span className="atlas-eyebrow mt-3 block">{s.resumed ? 'The Ploobia Archipelago · saved' : 'The Ploobia Archipelago · previz'}</span>
             <h1 className="atlas-serif mt-1 text-[26px] leading-tight font-semibold text-[#2A2823]">{RELIGHT.title}</h1>
-            <p className="mt-2 text-[13px] leading-relaxed font-semibold text-[#5F5A4E]">{RELIGHT.hook}</p>
+            <p className="mt-2 text-[13px] leading-relaxed font-semibold text-[#5F5A4E]" data-testid="welcome-line">
+              {s.resumed ? describeSave(s) : RELIGHT.hook}
+            </p>
             <p className="mt-2 text-[11px] leading-relaxed text-[#8B8471]">
               {coarse ? 'Stick to walk · drag to look · the prompt to act' : 'WASD to walk · drag to look · E to act · Q for the Lens · J for the journal · Space to jump'}
             </p>
-            <Tile autoFocus data-testid="play" className="mt-4 w-full rounded-full bg-[#E8A33D] px-5 py-3 text-[15px] font-extrabold text-[#2A2823]" onClick={() => setWorld({ phase: 'play' })}>
-              Play
+            <Tile autoFocus data-testid="play" className="mt-4 w-full rounded-full bg-[#E8A33D] px-5 py-3 text-[15px] font-extrabold text-[#2A2823]" onClick={() => setWorld({ phase: 'play', resumed: false })}>
+              {s.resumed ? 'Continue' : 'Play'}
             </Tile>
+            {s.resumed && (
+              <Tile
+                data-testid="restart"
+                className="mt-2 w-full rounded-full border border-[#2A2823]/15 bg-white/60 px-5 py-2.5 text-[13px] font-bold text-[#5F5A4E]"
+                onClick={() => {
+                  clearSave()
+                  resetWorld()
+                  setAfter(0)
+                  setBriefed(false)
+                  setWorld({ phase: 'play' })
+                }}
+              >
+                Start over
+              </Tile>
+            )}
           </div>
         </div>
       )}

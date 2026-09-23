@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLayoutTier, usePortraitPhone } from '@/hooks/use-layout'
 import { getWorld, resetWorld, returnFromCabinet } from '@/lib/archipelago'
+import { loadSave, restoreWorld, watchWorld } from '@/lib/worldsave'
 import SceneErrorBoundary from '@/components/SceneErrorBoundary'
 import TurnCard from '@/components/game/TurnCard'
 import ArchipelagoScene from '@/components/archipelago/ArchipelagoScene'
@@ -18,19 +19,33 @@ export default function World() {
   const portrait = usePortraitPhone()
   const [lost, setLost] = useState(false)
   // Back through a door from a cabinet: the world resumes where it stood.
-  // Any other arrival is a fresh start. Decided at render time, before any
-  // child mounts: children's effects run before this page's own, and the
-  // HUD's door effect would see `cabinet` still set and bounce straight back.
+  // Otherwise a save, if there is one, is restored behind the welcome card
+  // (Continue / Start over); any other arrival is a fresh start. Decided at
+  // render time, before any child mounts: children's effects run before this
+  // page's own, and the HUD's door effect would see `cabinet` still set and
+  // bounce straight back.
   useState(() => {
     if (getWorld().cabinet) {
       const at = returnFromCabinet()
       if (at) live.requestPos = at
+      return null
+    }
+    const save = loadSave()
+    if (save) {
+      const spot = restoreWorld(save)
+      if (spot) {
+        live.requestPos = spot.pos
+        live.facing = spot.facing
+        live.camYaw = spot.cam[0]
+        live.camPitch = spot.cam[1]
+      }
     } else {
       resetWorld()
     }
     return null
   })
   useEffect(() => installWorldKeys(), [])
+  useEffect(() => watchWorld(() => ({ pos: [live.pos.x, live.pos.y, live.pos.z], facing: live.facing, cam: [live.camYaw, live.camPitch] })), [])
   if (portrait) return <TurnCard line="The Archipelago is explored the wide way round." />
   const compact = tier === 'phone'
   return (

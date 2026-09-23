@@ -14,7 +14,8 @@
  * The store is Zustand (vanilla store + `useStore`), decided 2026-09-17 for
  * the world branch because quest, tool, Lens, zone, player, inventory and
  * evidence state arrive together and a pile of module stores would not hold.
- * No browser storage; the `persist` layer is a later round.
+ * Saving is `worldsave.ts`'s job (W3): it reads this store and writes a
+ * subset back; the clock it needs to re-seed is exposed as `seedClock`.
  *
  * THE FUEL CEILINGS carry their sources (`FUELS[id].source`). Two are
  * measured figures for an open hearth; the wet-wood ceiling is modelled from
@@ -220,6 +221,8 @@ export interface WorldState {
   cabinet: CabinetId | null
   /** Where to stand on return from a cabinet: the door's own coordinates. */
   returnPos: [number, number, number] | null
+  /** This visit began from a save: the welcome offers to continue. Never saved itself. */
+  resumed: boolean
 }
 
 /** Cabinets a courtyard door can open. Each is an existing arcade page; the door is the link. */
@@ -277,6 +280,7 @@ const initial = (): WorldState => ({
   whys: [-1, -1, -1],
   cabinet: null,
   returnPos: null,
+  resumed: false,
   journal: { prediction: null, action: null, observed: null, explanation: null },
 })
 
@@ -569,6 +573,23 @@ let wroteFurnace: number | null = null
 /** Explicit simulation time, seconds — wall-clocked, clamped, never a frame count. */
 export function getSimTime(): number {
   return simTime
+}
+
+/**
+ * Re-seed the module clocks after a restore: sim time from the save, and the
+ * furnace's lighting instant back-derived from the last point of its curve,
+ * so the record carries on from where it stopped rather than starting a
+ * second curve at zero. The pending/written pairs are cleared so the next
+ * tick reads the restored store values as someone else's write.
+ */
+export function seedClock(time: number, furnaceLit: boolean, curve: CurvePoint[]): void {
+  simTime = Math.max(0, time)
+  sinceFlush = 0
+  pendingHearths = null
+  wroteHearths = null
+  wroteFurnace = null
+  const last = curve[curve.length - 1]
+  litAt = furnaceLit ? simTime - (last ? last[0] : 0) : null
 }
 
 export function tickWorld(dtRaw: number): void {

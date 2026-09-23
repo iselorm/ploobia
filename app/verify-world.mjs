@@ -397,6 +397,7 @@ async function hold(page, code, ms) {
   check('open: E walks into the atoms cabinet, Door 2 asked for', /#\/atoms\?from=world&door=2/.test(page.url()), page.url())
   await page.waitForTimeout(1500)
   const back = page.getByRole('link', { name: 'Back to the courtyard' })
+  await back.waitFor({ timeout: 10000 }).catch(() => {})
   check('the cabinet\'s back link points at the courtyard', (await back.count()) === 1)
   await resilientClick(back, { label: 'Courtyard' })
   await page.waitForFunction(() => location.hash.startsWith('#/world') && !!window.__world, null, { timeout: 15000 }).catch(() => {})
@@ -408,6 +409,76 @@ async function hold(page, code, ms) {
   check('back in the world with nothing reset', w.poured === true && w.zone === 'foundry' && w.cabinet === null, JSON.stringify({ poured: w.poured, zone: w.zone, cabinet: w.cabinet }))
   check('standing by the door, a step outside its reach', Math.hypot(p[0] - 9.1, p[2] - 5.6) < 1.5 && w.near !== 'door.bench', JSON.stringify(p))
   check('no console errors through the door and back', errors.length === 0, errors.slice(0, 2).join(' | '))
+  await ctx.close()
+}
+
+/* ------------------------------------------------------------------------ */
+/* The save: reload mid-quest and find the courtyard as it was; start over   */
+/* ------------------------------------------------------------------------ */
+{
+  const { page, ctx, errors } = await open({ width: 1440, height: 900 })
+  check('a fresh visit has nothing saved', (await page.evaluate(() => localStorage.getItem('ploobia.world.v1'))) === null)
+  check('a fresh visit says Play, not Continue', await page.getByTestId('play').textContent().then((t) => /^Play$/.test(t.trim())).catch(() => false))
+  await resilientClick(page.getByTestId('play'), { label: 'Play' })
+  await waitFor(page, () => window.__world.get().phase === 'play')
+  check('the Landing alone is not worth a save', (await page.evaluate(() => localStorage.getItem('ploobia.world.v1'))) === null)
+  // Mid-quest: at the Foundry, the hearths lit, the pipe fixed, the furnace burning charcoal with a curve behind it.
+  await page.evaluate(() => {
+    window.__world.setBand('scientist')
+    window.__world.set({
+      zone: 'foundry', prediction: 1100, fed: ['scrap.a', 'scrap.b'], lit: ['wetwood', 'drywood', 'charcoal'], hearths: { wetwood: 300, drywood: 400, charcoal: 700 },
+      bellowsSeen: true, pipeFixed: true, air: 0.8, furnace: { lit: true, fuel: 'charcoal', temp: 640 }, curve: [[0, 20], [0.5, 60], [1, 120]], crossings: 1,
+      journal: { prediction: 'I predicted 1100 °C.', action: null, observed: null, explanation: null },
+    })
+  })
+  await page.waitForTimeout(900)
+  await page.evaluate(() => window.__world.setPos(-4, 0.6, 2))
+  await waitFor(page, () => { const q = window.__world.live.pos; return Math.hypot(q.x + 4, q.z - 2) < 1 }, 8000).catch(() => {})
+  await waitFor(page, () => window.__world.get().step === 'feed', 5000).catch(() => {})
+  await page.waitForTimeout(6000)
+  const raw = await page.evaluate(() => localStorage.getItem('ploobia.world.v1'))
+  check('the save is written while the store is quiet', raw != null, raw == null ? 'nothing under ploobia.world.v1' : '')
+  let saved = null
+  try { saved = JSON.parse(raw) } catch {}
+  check('the save keeps the quest, the fuels, the pipe and the spot', !!saved && saved.s.step === 'feed' && saved.s.lit.length === 3 && saved.s.pipeFixed === true && saved.pos && Math.hypot(saved.pos[0] + 4, saved.pos[2] - 2) < 1.5, JSON.stringify(saved && { step: saved.s.step, lit: saved.s.lit, pos: saved.pos }))
+  check('the save keeps nothing transient', !!saved && !('held' in saved.s) && !('room' in saved.s) && !('near' in saved.s) && !('cabinet' in saved.s) && !('resumed' in saved.s))
+  const tempBefore = saved ? saved.s.furnace.temp : 0
+
+  await page.reload({ waitUntil: 'load' })
+  await page.waitForFunction(() => !!window.__world, null, { timeout: 60000 })
+  await page.waitForTimeout(800)
+  check('after a reload the welcome offers Continue', await page.getByTestId('play').textContent().then((t) => /Continue/.test(t)).catch(() => false))
+  check('…and says where you were', await page.getByTestId('welcome-line').textContent().then((t) => /Next: Reach 1085 °C and pour/.test(t)).catch(() => false))
+  check('…with a way to start over', (await page.getByTestId('restart').count()) === 1)
+  await resilientClick(page.getByTestId('play'), { label: 'Continue' })
+  await waitFor(page, () => window.__world.get().phase === 'play')
+  await waitFor(page, () => { const q = window.__world.live.pos; return Math.hypot(q.x + 4, q.z - 2) < 1.5 }, 10000).catch(() => {})
+  await page.waitForTimeout(1500)
+  const w = await world(page)
+  const p = await pos(page)
+  check('continue: the courtyard is as it was', w.zone === 'foundry' && w.step === 'feed' && w.pipeFixed && w.lit.length === 3 && w.fed.length === 2 && w.prediction === 1100 && w.journal.prediction != null && w.phase === 'play' && !w.resumed, JSON.stringify({ zone: w.zone, step: w.step, lit: w.lit, fed: w.fed }))
+  check('continue: standing where you stood', Math.hypot(p[0] + 4, p[2] - 2) < 1.5, JSON.stringify(p))
+  check('continue: the furnace is still burning, the gauge no lower than it was', w.furnace.lit && w.furnace.fuel === 'charcoal' && w.furnace.temp >= tempBefore - 1, `${tempBefore} → ${w.furnace.temp}`)
+  check('continue: the curve carries on, not from zero', w.curve.length >= 3 && w.curve[w.curve.length - 1][0] > 1, JSON.stringify(w.curve.slice(-2)))
+  const fedParked = await page.evaluate(() => {
+    const s = window.__world.scene
+    const o = s.getObjectByName('scrap.a')
+    return o ? o.position.z < -6 : null
+  })
+  check('continue: a fed block is inside the furnace, not on the yard', fedParked === true || fedParked === null, String(fedParked))
+  check('the brief is not asked again once answered', (await page.getByTestId('brief').count().catch(() => 0)) === 0)
+  check('no console errors across the reload', errors.length === 0, errors.slice(0, 2).join(' | '))
+
+  // Start over: the save goes, the world resets to the Landing.
+  await page.reload({ waitUntil: 'load' })
+  await page.waitForFunction(() => !!window.__world, null, { timeout: 60000 })
+  await page.waitForTimeout(800)
+  await resilientClick(page.getByTestId('restart'), { label: 'Start over' })
+  await waitFor(page, () => window.__world.get().phase === 'play' && window.__world.get().zone === 'landing')
+  await page.waitForTimeout(1200)
+  const w2 = await world(page)
+  check('start over: back on the Landing with nothing kept', w2.zone === 'landing' && w2.step === 'arrive' && w2.lit.length === 0 && !w2.pipeFixed && w2.prediction === null, JSON.stringify({ zone: w2.zone, step: w2.step }))
+  check('start over: the save is gone', (await page.evaluate(() => localStorage.getItem('ploobia.world.v1'))) === null)
   await ctx.close()
 }
 
