@@ -155,6 +155,23 @@ export interface Challenge {
    * plant that is dying; the condition is how a brief says "and alive".
    */
   condition?: string
+  /**
+   * What "few enough trials" means for this round, when the default does not
+   * fit it.
+   *
+   * The economy term was written for a lab round, where a lucky first
+   * measurement is the best possible and six is wasteful. A round whose rules
+   * forbid an early answer — the Pond cannot accuse a plate until every dial
+   * has been tried, so its honest minimum is four counts, not one — scored
+   * zero economy under perfect play, which is the scoreboard punishing the
+   * discipline the round exists to teach.
+   *
+   * `minTrials` is the fewest honest trials (economy 1); `floor` is where
+   * economy reaches 0. Left out, they are 1 and 6, which is what every round
+   * written before this scored against.
+   */
+  minTrials?: number
+  floor?: number
 }
 
 /** A short stable id, so an attempt can be matched to the challenge it answers. */
@@ -322,7 +339,11 @@ export function scoreAttempt(challenge: Challenge, attempt: ChallengeAttempt): C
       ? conditionOk
         ? 1
         : 0
-      : clamp01((TRIAL_FLOOR - trials) / (TRIAL_FLOOR - 1))
+      : (() => {
+          const base = Math.max(1, Math.round(challenge.minTrials ?? 1))
+          const floor = Math.max(base + 1, Math.round(challenge.floor ?? TRIAL_FLOOR))
+          return clamp01((floor - trials) / (floor - base))
+        })()
 
   // Thrift is measured only against what the budget actually offered; a
   // resource the challenge did not grant cannot be wasted.
@@ -419,6 +440,8 @@ export function encodeChallenge(c: Challenge): string {
     c.loop ?? '',
     c.condition ?? '',
     c.world ?? '',
+    c.minTrials ?? '',
+    c.floor ?? '',
   ]
   // NOT '.', which is one of the characters `encodeURIComponent` leaves
   // alone — so a tolerance of 0.5 became two fields and every value after it
@@ -470,6 +493,10 @@ export function decodeChallenge(text: string): Challenge | null {
       loop: p[13] === 'keep' ? 'keep' : undefined,
       condition: p[14] || undefined,
       world: p[15] || undefined,
+      // Appended after the fact, so a link written before they existed simply
+      // has no field 16 or 17 and falls back to the defaults.
+      minTrials: p[16] ? Number(p[16]) : undefined,
+      floor: p[17] ? Number(p[17]) : undefined,
     }
   } catch {
     return null

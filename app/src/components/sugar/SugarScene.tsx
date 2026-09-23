@@ -17,6 +17,8 @@ import PlantStage from './PlantStage'
 import LeafStage from './LeafStage'
 import StemStage from './StemStage'
 import HatchStage from './HatchStage'
+import PondStage from './PondStage'
+import type { Suspect } from '@/lib/pond'
 import { defaultViewFor, VIEW_BY_ID } from './views'
 
 /**
@@ -426,13 +428,19 @@ interface Props {
   habitat: boolean
   /** Pixels of viewport bottom hidden behind a panel — see `SceneLift`. */
   obstructBottom?: number
+  /**
+   * The Pond's plates become live only once every dial has been tried — the
+   * rule that makes the strange result a guarantee rather than luck. The page
+   * owns the log, so it owns this.
+   */
+  canAccuse?: boolean
+  onAccuse?: (s: Suspect) => void
   /** The gather round, when a challenge is running. Null in the plain lab. */
   gather?: {
     seed: number
     running: boolean
     kinds?: SugarResource[]
     onCatch: (kind: SugarResource, amount: number) => void
-    onFirstMove?: () => void
   } | null
   onContextLost: () => void
 }
@@ -568,6 +576,8 @@ export default function SugarScene({
   specimenId,
   habitat,
   obstructBottom = 0,
+  canAccuse = false,
+  onAccuse,
   gather = null,
   onContextLost,
 }: Props) {
@@ -630,6 +640,7 @@ export default function SugarScene({
         <PlantStage sim={sim} specimenId={specimenId} outdoors={outdoors} gather={gather} />
       )}
       {stage === 'leaf' && <LeafStage sim={sim} />}
+      {stage === 'pond' && <PondStage sim={sim} canAccuse={canAccuse} onAccuse={onAccuse} />}
       {stage === 'hatches' && <HatchStage sim={sim} />}
       {stage === 'stem' && <StemStage sim={sim} />}
       {stereo.on && <Stereo sim={sim} />}

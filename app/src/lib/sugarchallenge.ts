@@ -29,6 +29,7 @@ import { CO2_AMBIENT_PPM, CO2_MAX_PPM, PAR_FULL_SUN } from './ratelab'
 import { MEASURES, type MeasureId, type SugarSolve } from './sugarline'
 import type { Challenge, ResourceBudget } from './challenge'
 import type { Band } from './bands'
+import { pondBudgetFor, pondTrialsFor } from './pond'
 import type { BiomeId } from './leaves'
 import type { DayTally } from './hatches'
 
@@ -200,16 +201,30 @@ export const DAY_METRICS: Record<string, { label: string; unit: string; read: (t
   sugarNight: { label: 'Sugar sent down the line', unit: 'mg', read: (t) => t.exportedMg },
 }
 
+/**
+ * The Pond's two, which no solve and no day tally can answer.
+ *
+ * `bubbles` is what the tank's counter shows — the instrument the whole door
+ * is played on. `diagnosis` is the goal: not a number to reach but a plate to
+ * name, scored 1 when the accusation was right AND the learner's own counts
+ * hold the jump that proves it. Both are here so that a brief never states a
+ * goal in units the cabinet does not show.
+ */
+export const POND_METRICS: Record<string, { label: string; unit: string }> = {
+  bubbles: { label: 'Bubbles a minute', unit: 'a minute' },
+  diagnosis: { label: 'What is holding it back', unit: 'the plate you name' },
+}
+
 export function dayMetricValue(tally: DayTally, metric: string): number {
   return DAY_METRICS[metric]?.read(tally) ?? 0
 }
 
 export function metricUnit(metric: string): string {
-  return MEASURES[metric as MeasureId]?.unit ?? DAY_METRICS[metric]?.unit ?? ''
+  return MEASURES[metric as MeasureId]?.unit ?? DAY_METRICS[metric]?.unit ?? POND_METRICS[metric]?.unit ?? ''
 }
 
 export function metricLabel(metric: string): string {
-  return MEASURES[metric as MeasureId]?.label ?? DAY_METRICS[metric]?.label ?? metric
+  return MEASURES[metric as MeasureId]?.label ?? DAY_METRICS[metric]?.label ?? POND_METRICS[metric]?.label ?? metric
 }
 
 /**
@@ -277,7 +292,7 @@ export interface SugarChallengePreset {
    * band picks their level and the stage is never built three times. Presets
    * with no level are the extra briefs offered under "other challenges".
    */
-  stage?: 1 | 2 | 3
+  stage?: SugarStageId
   level?: 1 | 2 | 3
   build: (seed: number) => Challenge
   /**
@@ -303,8 +318,15 @@ export interface SugarChallengePreset {
   }
 }
 
+/**
+ * Which door a preset sits on. The Pond became door 2 on 13 Sep 2026 and the
+ * Hatches and the Line shifted to 3 and 4; progress is keyed by preset id,
+ * so nothing a learner has handed in moved with them.
+ */
+export type SugarStageId = 1 | 2 | 3 | 4
+
 /** The campaign stage a preset belongs to, for the brief's eyebrow. */
-export const STAGE_NAMES: Record<1 | 2 | 3, string> = { 1: 'The Factory', 2: 'The Hatches', 3: 'The Line' }
+export const STAGE_NAMES: Record<SugarStageId, string> = { 1: 'The Factory', 2: 'The Pond', 3: 'The Hatches', 4: 'The Line' }
 
 const CABINET = 'photosynthesis'
 
@@ -380,14 +402,123 @@ export const SUGAR_CHALLENGES: SugarChallengePreset[] = [
         budget: { light: 1500, co2: 350, water: 40 },
       }),
   },
-  /* ---- Stage 2 · The Hatches — keep it alive --------------------------- */
+  /* ---- Stage 2 · The Pond — the Mystery Run ---------------------------- */
+  /*
+   * Three levels of one question: what is holding this plant back? The goal
+   * metric is `diagnosis` — the spine never interprets a metric, so `best`
+   * is 1 when the accusation was right AND the learner's own counts contain
+   * the jump that proves it, and 0 otherwise. A guess that lands right with
+   * no evidence behind it is not a hit; that is the whole point of the door.
+   *
+   * There is no target to reach and nothing to maximise: the budget is the
+   * kit (minutes on the clock, spoons of baking soda, jugs of warm or cool
+   * water), and the trial floor is the sprig's own — one count as found plus
+   * one per suspect, because a plate cannot be accused until every dial has
+   * been tried. Ruling out is the game.
+   *
+   * There is no collector on this door. The gather round banks light, carbon
+   * and water, and a tank spends none of the three — it spends minutes,
+   * spoons and jugs, which are handed over whole. Sending a learner to catch
+   * sunlight before a round that cannot use it would teach that the collector
+   * is a toll rather than a supply.
+   */
+  {
+    id: 'why-so-quiet',
+    title: 'Why so quiet?',
+    brief:
+      'A sprig of pondweed that should be streaming bubbles is barely making any — and the labels have fallen off its dials. You can turn them; you cannot read them. Change one thing, count the bubbles, and work out what is holding it back.',
+    band: 'explorer',
+    stage: 2,
+    level: 1,
+    build: (seed) =>
+      make({
+        seed,
+        setup: 'hornwort',
+        band: 'explorer',
+        gatherSeconds: 0,
+        goal: { metric: 'diagnosis', direction: 'atLeast', target: 1, tolerance: 0, unit: 'the plate you name' },
+        budget: pondBudgetFor('why-so-quiet', 'explorer'),
+        ...pondTrialsFor('why-so-quiet', 'explorer'),
+      }),
+    // The guess is about the HEALTHY sprig, not the one in the tank. The tank
+    // is not on screen yet when this is asked, the sick sprig's count changes
+    // with the seed, and stating it here would hand over the first count
+    // before the learner has taken it. What a well-fed sprig of this size
+    // does is fixed, true, and exactly the number the mystery is a gap from.
+    guess: {
+      question: 'A sprig of this pondweed with everything it needs streams bubbles. How many a minute, do you think?',
+      min: 0,
+      max: 60,
+      step: 1,
+      unit: 'bubbles a minute',
+      answer: 38,
+      reveal: 'About 38 a minute. The one waiting for you is doing a fraction of that — and the labels have fallen off its dials.',
+    },
+  },
+  {
+    id: 'three-patients',
+    title: 'Three patients',
+    brief:
+      'Three sprigs, one after another, each with something different wrong with it — and every plate reading a question mark. Nudge one dial, count a minute, and name what is holding each of them back before the plates say it.',
+    band: 'scientist',
+    stage: 2,
+    level: 2,
+    build: (seed) =>
+      make({
+        seed,
+        setup: 'hornwort',
+        band: 'scientist',
+        gatherSeconds: 0,
+        goal: { metric: 'diagnosis', direction: 'atLeast', target: 1, tolerance: 0, unit: 'the plate you name' },
+        budget: pondBudgetFor('three-patients', 'scientist'),
+        ...pondTrialsFor('three-patients', 'scientist'),
+      }),
+    guess: {
+      question: 'Sprig A has been in water that has been standing since yesterday. How many bubbles a minute is it managing, do you think?',
+      min: 0,
+      max: 60,
+      step: 1,
+      unit: 'bubbles a minute',
+      answer: 8,
+      reveal: 'Eight. Not dead — held back. A sprig of this size with everything it needs does about thirty-eight.',
+    },
+  },
+  {
+    id: 'the-ceiling',
+    title: 'The ceiling',
+    brief:
+      'One sprig, and two dials near the edge. Find what is holding it back, fix that, and then find what takes over — because something always does. The counts are noisy: repeat them, and take the mean.',
+    band: 'analyst',
+    stage: 2,
+    level: 3,
+    build: (seed) =>
+      make({
+        seed,
+        setup: 'hornwort',
+        band: 'analyst',
+        gatherSeconds: 0,
+        goal: { metric: 'diagnosis', direction: 'atLeast', target: 1, tolerance: 0, unit: 'the plate you name' },
+        budget: pondBudgetFor('the-ceiling', 'analyst'),
+        ...pondTrialsFor('the-ceiling', 'analyst'),
+      }),
+    guess: {
+      question: 'However this sprig is doing now — how high do you think the dials on this bench can get it?',
+      min: 0,
+      max: 60,
+      step: 1,
+      unit: 'bubbles a minute',
+      answer: 38,
+      reveal: 'Thirty-eight is what this bench can give a sprig of this size. Whether yours is already there is the thing you are here to find out.',
+    },
+  },
+  /* ---- Stage 3 · The Hatches — keep it alive --------------------------- */
   {
     id: 'open-the-hatches',
     title: 'Open the hatches',
     brief:
       'A whole day plays out in ninety seconds. Hold one slider — how far the hatches may open. Open, and carbon comes in and sugar gets made; but water leaves the same way, and a leaf that runs dry goes limp and stops. Bank 100 mg by dusk with the leaf still firm.',
     band: 'explorer',
-    stage: 2,
+    stage: 3,
     level: 1,
     day: { habitat: 'temperate', hours: 12 },
     build: (seed) =>
@@ -410,7 +541,7 @@ export const SUGAR_CHALLENGES: SugarChallengePreset[] = [
     brief:
       'Maize, in the savanna, on a Harmattan day: the air is bone dry from mid-morning and the pot is all the water there is. Bank 730 mg by dusk and keep the leaf firm — the dry air has a name now (vapour-pressure deficit), and the plant will close its own hatches before you do.',
     band: 'scientist',
-    stage: 2,
+    stage: 3,
     level: 2,
     day: { habitat: 'savanna', hours: 12 },
     build: (seed) =>
@@ -432,7 +563,7 @@ export const SUGAR_CHALLENGES: SugarChallengePreset[] = [
     brief:
       'A bean in a hot desert for a day and the night after. Keep it standing and bank 30 mg — then look at what the prickly pear did with the same day. It opens its hatches only at night, when the air has stopped pulling; the bean cannot. Say why that matters, in two lines, on the numbers.',
     band: 'analyst',
-    stage: 2,
+    stage: 3,
     level: 3,
     day: { habitat: 'desert', hours: 24 },
     build: (seed) =>
@@ -455,7 +586,7 @@ export const SUGAR_CHALLENGES: SugarChallengePreset[] = [
     brief:
       'Bank daylight for forty seconds — every catch is starch the leaf puts away. Then the sun goes down and the line has to run on what you banked. Send 45 mg down the phloem before dawn. Your one lever in the dark is the temperature: a cool night burns less of the bank.',
     band: 'explorer',
-    stage: 3,
+    stage: 4,
     level: 1,
     day: { habitat: 'temperate', hours: 10 },
     guess: {
@@ -485,7 +616,7 @@ export const SUGAR_CHALLENGES: SugarChallengePreset[] = [
     brief:
       'Two pipes run the stem: the wood carries water up, the bark ring carries sugar down. The knife has two blades. Stop the sugar reaching the roots — sugar leaving the leaf at 0.5 mg an hour or less — with the leaves still firm. Cut the wrong pipe and the leaves will tell you within a plant hour.',
     band: 'scientist',
-    stage: 3,
+    stage: 4,
     level: 2,
     guess: {
       question: 'Cut the bark ring all the way round the stem. How much of the sugar still gets past?',
@@ -512,7 +643,7 @@ export const SUGAR_CHALLENGES: SugarChallengePreset[] = [
     brief:
       'Release a labelled parcel of sugar and time it between the two marks — your watch, your reaction time. Land the sap at three-quarters of a metre an hour, give or take five centimetres. Three parcels; the sap gets thicker as it gets colder, and that is the whole clue.',
     band: 'analyst',
-    stage: 3,
+    stage: 4,
     level: 3,
     guess: {
       question: 'How fast does sugar travel down a stem, in centimetres an hour?',
@@ -613,7 +744,7 @@ export function challengesForBand(band: Band): SugarChallengePreset[] {
  * with the rest one link away. Falls back to the easiest thing offered so a
  * band with no level of its own still has a door.
  */
-export function levelForBand(band: Band, stage: 1 | 2 | 3 = 1): SugarChallengePreset {
+export function levelForBand(band: Band, stage: SugarStageId = 1): SugarChallengePreset {
   const offered = challengesForBand(band)
   return (
     offered.find((c) => c.stage === stage && c.band === band) ??
@@ -656,12 +787,12 @@ function sameBudget(a: ResourceBudget, b: ResourceBudget): boolean {
 }
 
 /** The campaign stage a preset sits on, or undefined for the extra briefs. */
-export function stageOfPresetId(id: string): 1 | 2 | 3 | undefined {
+export function stageOfPresetId(id: string): SugarStageId | undefined {
   return SUGAR_CHALLENGE_BY_ID[id]?.stage
 }
 
 /** The presets of one campaign stage, in level order. */
-export function levelsOfStage(stage: 1 | 2 | 3): SugarChallengePreset[] {
+export function levelsOfStage(stage: SugarStageId): SugarChallengePreset[] {
   return SUGAR_CHALLENGES.filter((c) => c.stage === stage).sort((a, b) => (a.level ?? 0) - (b.level ?? 0))
 }
 

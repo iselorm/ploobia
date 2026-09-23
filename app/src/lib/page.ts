@@ -80,6 +80,14 @@ export interface Practical {
   level: Partial<Record<Band, string>>
   /** Which syllabus statement ids a hit hand-in is evidence for. */
   stamps: string[]
+  /**
+   * When a door proves different statements at different depths, the
+   * statements each band's hand-in actually evidences — a subset of `stamps`
+   * (which stays the union the ledger lists). Absent means every band stamps
+   * all of `stamps`. The Pond needs it: an Explorer never meets the indicator
+   * tube (6.1.9) or the ceiling (6.1.11), so their hit must not claim them.
+   */
+  stampsBy?: Partial<Record<Band, string[]>>
   /** What the round wants, in the learner's words. */
   line: Localised
   /**

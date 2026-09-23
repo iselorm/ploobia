@@ -120,6 +120,10 @@ const levels = new Set((M.SUGAR_CHALLENGES ?? []).map((p) => p.id))
         for (const [b, lv] of Object.entries(p.practical.level)) if (!levels.has(lv)) bad.push(`${s.code} ${b} level ${lv}`)
         for (const id of p.practical.stamps) if (!statements.has(id)) bad.push(`${s.code} stamp ${id}`)
         for (const id of p.practical.stamps) if (!s.statements.includes(id)) bad.push(`${s.code} stamps a statement outside itself: ${id}`)
+        for (const [b, ids] of Object.entries(p.practical.stampsBy ?? {})) {
+          if (!(b in p.practical.level)) bad.push(`${s.code} stampsBy ${b} has no level`)
+          for (const id of ids) if (!p.practical.stamps.includes(id)) bad.push(`${s.code} ${b} stamps ${id} outside the page's own list`)
+        }
       }
       if (p.check)
         for (const [b, item] of Object.entries(p.check)) {
@@ -129,6 +133,13 @@ const levels = new Set((M.SUGAR_CHALLENGES ?? []).map((p) => p.id))
         }
     }
   check('every practical level exists and every stamp is a real statement of its own section', bad.length === 0, bad.join('; '))
+  // The Pond's honesty by depth (Selorm, 13 Sep): 6.1.7 stays unstamped until
+  // a page can show a variegated leaf; the indicator tube is Scientist+; the
+  // ceiling is the Analyst's.
+  const pond = sections.flatMap((s) => s.pages).find((p) => p.practical?.door === 'pond')
+  check('the Pond never stamps 6.1.7', pond && !pond.practical.stamps.includes('0610:6.1.7'))
+  check('an Explorer\'s Pond stamps only 6.1.8', JSON.stringify(pond?.practical.stampsBy?.explorer) === '["0610:6.1.8"]')
+  check('the Analyst\'s Pond stamps the ceiling too', pond?.practical.stampsBy?.analyst?.includes('0610:6.1.11') === true)
 
   const undiscovered = sections.find((s) => s.code === '8.2')
   const pr = undiscovered.pages.find((p) => p.practical)
@@ -136,7 +147,10 @@ const levels = new Set((M.SUGAR_CHALLENGES ?? []).map((p) => p.id))
   const built = sections.filter((s) => s.code !== '8.2')
   check('every other section has a level for every band', built.every((s) => s.pages.some((p) => p.practical && BANDS.every((b) => p.practical.level[b]))))
   check('every practical carries an explanation item for every band', built.every((s) => s.pages.some((p) => p.practical && BANDS.every((b) => p.practical.explain?.[b]))))
-  check('the explanation items stamp the section\'s statements', built.every((s) => s.pages.every((p) => !p.practical || BANDS.every((b) => JSON.stringify(p.practical.explain[b].stamps) === JSON.stringify(p.practical.stamps)))))
+  check(
+    'the explanation items stamp the section\'s statements — the band\'s own where the door proves different things by depth',
+    built.every((s) => s.pages.every((p) => !p.practical || BANDS.every((b) => JSON.stringify(p.practical.explain[b].stamps) === JSON.stringify(p.practical.stampsBy?.[b] ?? p.practical.stamps)))),
+  )
 
   // The check page only where the practical cannot stamp a statement on its own (decision 3).
   for (const s of sections) {

@@ -8,7 +8,7 @@ import {
   type ChallengeScore,
   type ResourceBudget,
 } from '@/lib/challenge'
-import { drawDown, spentSoFar, type SugarResource } from '@/lib/sugarchallenge'
+import { drawDown, spentSoFar, type SugarResource, type SugarStageId } from '@/lib/sugarchallenge'
 import type { DayTally } from '@/lib/hatches'
 
 /**
@@ -86,9 +86,9 @@ export interface SugarChallengeRun {
   tally: DayTally | null
 
   /** Open the brief — on a rival's score, and/or on a campaign stage's level. */
-  open: (rival?: number | null, stage?: 1 | 2 | 3) => void
+  open: (rival?: number | null, stage?: SugarStageId) => void
   /** Which stage the brief was opened for, so it can pick the right level. */
-  stage: 1 | 2 | 3
+  stage: SugarStageId
   close: () => void
   begin: (c: Challenge) => void
   /** Fired by the gather round on every interception. */
@@ -195,8 +195,8 @@ export function useSugarChallenge(): SugarChallengeRun {
     setPhase(keepRef.current ? 'day' : 'lab')
   }, [phase])
 
-  const [stage, setStage] = useState<1 | 2 | 3>(1)
-  const open = useCallback((r: number | null = null, s: 1 | 2 | 3 = 1) => {
+  const [stage, setStage] = useState<SugarStageId>(1)
+  const open = useCallback((r: number | null = null, s: SugarStageId = 1) => {
     setRival(r ?? null)
     setStage(s)
     setPhase('brief')

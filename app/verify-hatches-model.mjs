@@ -150,8 +150,9 @@ function runDay(specimenId, habitat, seed, policy, hours = 12, dt = 1 / 30) {
 /* Every level: winnable, missable, not already won                   */
 /* ================================================================== */
 {
-  const levels = M.SUGAR_CHALLENGES.filter((p) => p.stage === 2)
-  check('stage 2 has three levels', levels.length === 3 && levels.map((l) => l.level).join() === '1,2,3')
+  // The Hatches became door 3 when the Pond took door 2 (13 Sep 2026).
+  const levels = M.SUGAR_CHALLENGES.filter((p) => p.stage === 3)
+  check('the Hatches are door 3, with three levels', levels.length === 3 && levels.map((l) => l.level).join() === '1,2,3')
   for (const preset of levels) {
     for (const seed of [7, 23, 99]) {
       const c = preset.build(seed)

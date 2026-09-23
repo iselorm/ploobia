@@ -305,16 +305,42 @@ const base = () => ({
   check('there are challenges to play', M.SUGAR_CHALLENGES.length >= 5, String(M.SUGAR_CHALLENGES.length))
   for (const preset of M.SUGAR_CHALLENGES) {
     const c = preset.build(12345)
-    // Two shapes: a gather round banks three resources over a timed round;
-    // a keep round has no gather, a condition, a world for its weather and a
-    // water reference for thrift. Each is well-formed on its own terms.
+    // The cabinet has outgrown "gather round or keep round". What has to be
+    // true of every one of them, whatever shape it is:
+    //
+    //   · it belongs to a cabinet, and has something to reach;
+    //   · it grants *something*, or there is nothing to be thrifty with;
+    //   · if it sends the learner to the collector first, it spends at least
+    //     one of the three things the collector banks — otherwise the gather
+    //     is a toll rather than a supply (which is why the Pond has none);
+    //   · a span has a world, because a span is played through weather.
+    const GATHERED = ['light', 'co2', 'water']
+    const keys = Object.keys(c.budget)
     const ok =
       c.cabinet === 'photosynthesis' &&
       c.goal.target > 0 &&
-      (c.loop === 'keep'
-        ? c.gatherSeconds === 0 && !!c.condition && !!c.world && (c.budget.water ?? 0) > 0
-        : c.gatherSeconds > 0 && Object.keys(c.budget).length === 3)
-    check(`  ${preset.id}: is a well-formed challenge`, ok)
+      keys.length > 0 &&
+      (c.gatherSeconds === 0 || keys.some((k) => GATHERED.includes(k))) &&
+      (c.loop !== 'keep' || !!c.world)
+    check(`  ${preset.id}: is a well-formed challenge`, ok, JSON.stringify({ gs: c.gatherSeconds, budget: c.budget, world: !!c.world }))
+    // And what each shape owes on its own terms.
+    if (c.loop === 'keep') {
+      const night = M.dayWorldOf(c).night
+      check(
+        `  ${preset.id}: the span says what it is played through`,
+        night ? (c.budget.light ?? 0) > 0 : !!c.condition && (c.budget.water ?? 0) > 0,
+        JSON.stringify({ night, condition: c.condition, budget: c.budget }),
+      )
+    }
+    if (c.goal.metric === 'diagnosis') {
+      // A tank is handed its whole kit at the brief: minutes on the clock,
+      // spoons of soda, jugs of water — and enough of each for every sprig.
+      check(
+        `  ${preset.id}: the tank is handed its whole kit`,
+        c.gatherSeconds === 0 && (c.budget.minutes ?? 0) > 0 && (c.budget.spoons ?? 0) > 0 && (c.budget.jugs ?? 0) > 0,
+        JSON.stringify(c.budget),
+      )
+    }
     if (c.loop === 'keep') {
       const back = M.decodeChallenge(M.encodeChallenge(c))
       check(
@@ -421,7 +447,11 @@ const base = () => ({
 
   // Keep rounds are driven as whole days by `verify-hatches-model.mjs`; the
   // grid below is the gather round's.
-  for (const preset of M.SUGAR_CHALLENGES.filter((p) => p.build(7).loop !== 'keep')) {
+  // A diagnosis is not won by a setting: the Pond's goal is to NAME what is
+  // holding a plant back, and no sweep of the dials can hit it. Those levels
+  // are proved by `verify-pond-model.mjs`, which asserts the two guarantees
+  // the accusation rests on.
+  for (const preset of M.SUGAR_CHALLENGES.filter((p) => p.build(7).loop !== 'keep' && p.build(7).goal.metric !== 'diagnosis')) {
     const c = preset.build(7)
     const grid = sweep(c)
     const winners = grid.filter((g) => M.meetsGoal(c.goal, g.value))
@@ -469,7 +499,9 @@ const base = () => ({
   // A bare Node process has no localStorage; the store reads a fallback and
   // writes into the void, which is exactly the walk we want to test.
   M.resetCampaign()
-  check('five doors on the map', M.CAMPAIGN.length === 5 && M.CAMPAIGN.map((s) => s.id).join() === '1,2,3,4,5')
+  // Six since 13 Sep 2026: the Pond took door 2 and four doors shifted by one.
+  check('six doors on the map, in order', M.CAMPAIGN.length === 6 && M.CAMPAIGN.map((s) => s.id).join() === '1,2,3,4,5,6')
+  check('and they are the Factory, the Pond, the Hatches, the Line, the Roots and the Stand', M.CAMPAIGN.map((s) => s.name).join(' · ') === 'The Factory · The Pond · The Hatches · The Line · The Roots · The Stand')
   check('stage 1 is always open', M.isStageOpen(1))
   check('stage 2 is shut until stage 1 is handed in', !M.isStageOpen(2))
   check('the unbuilt stages are undiscovered, not shut', M.CAMPAIGN.filter((s) => !s.built).every((s) => M.doorState(s) === 'undiscovered'))

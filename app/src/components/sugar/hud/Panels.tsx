@@ -903,12 +903,14 @@ export function TipCard({ stage, onClose }: { stage: StageId; onClose: () => voi
   const lines: Record<StageId, string[]> = {
     plant: ['Drag to rotate', 'Scroll to zoom', 'Gold is sugar, blue is water'],
     leaf: ['Grana run on light', 'The cycle runs on CO₂', 'Watch which one stalls first'],
+    pond: ['Change one thing, then count', 'A plate you cannot read is a question', 'Nothing happening is an answer too'],
     hatches: ['Carbon comes in this way', 'Water goes out the same way', 'Light never touches it'],
     stem: ['Two pipes, opposite ways', 'Water crosses over at both ends', 'Cut the ring and watch'],
   }
   const note: Record<StageId, string> = {
     plant: 'Whole plant — source, phloem and every sink.',
     leaf: 'Inside one chloroplast, roughly two micrometres across.',
+    pond: 'A sprig of hornwort in a jar of pond water, under a lamp on a rail.',
     hatches: 'One stoma on the underside of a leaf, about twenty micrometres across.',
     stem: 'One xylem vessel and one sieve tube, hugely enlarged.',
   }

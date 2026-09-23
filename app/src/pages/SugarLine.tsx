@@ -11,7 +11,7 @@ import { Tile } from '@/components/ui/tile'
 import { cn } from '@/lib/utils'
 import { BAND_CAPS, getBand, useBand } from '@/lib/bands'
 import { logEvent } from '@/lib/events'
-import { checkpointBlip, landChord, loadClick, nudge, startAudio } from '@/lib/audio'
+import { checkpointBlip, dialTick, landChord, loadClick, nudge, startAudio } from '@/lib/audio'
 import { useBackHandler, useInputAction } from '@/lib/input'
 import { useLayoutTier, usePortraitPhone } from '@/hooks/use-layout'
 import TurnCard from '@/components/game/TurnCard'
@@ -93,11 +93,36 @@ import {
   shortfall,
 } from '@/components/sugar/hud/Challenge'
 import { DayHud, DayTallyBlock, HatchPlate, type HatchState } from '@/components/sugar/hud/Hatches'
+import { AccusePrompt, CountRing, FieldLogCard, InsideCard, MicroCommit, PondCounts, PondHud, PondPlate, type Guess } from '@/components/sugar/hud/Pond'
+import {
+  POND_KIT,
+  atEnd,
+  bubblesPerMinute,
+  calledIt,
+  canAccuse,
+  confounded,
+  costOf,
+  countWith,
+  indicatorColour,
+  insideSays,
+  insideWorld,
+  nudge as nudgeDial,
+  pondLine,
+  sprigsFor,
+  untried,
+  verdictOf,
+  type Dial,
+  type PondCount,
+  type PondEnv,
+  type PondPatient,
+  type Suspect,
+  type Verdict,
+} from '@/lib/pond'
 import { buildDay, buildNight, dayTally, endDay, FIRM_TURGOR, startDay, weatherAt, type DayRun, type DayTally, type Weather } from '@/lib/hatches'
 import { NightHud, NightTallyBlock, ThermostatPlate, type NightState } from '@/components/sugar/hud/Night'
 import { cactusDay, safestCeiling } from '@/lib/hatchesReplay'
 import { poreOpening, stomatalGates } from '@/lib/ratelab'
-import { bankFromLight, CONDITIONS, dayMetricValue, dayWorldOf, LAB_CONDITIONS, levelForBand, presetIdFor, stageOfPresetId } from '@/lib/sugarchallenge'
+import { bankFromLight, CONDITIONS, dayMetricValue, dayWorldOf, LAB_CONDITIONS, levelForBand, presetIdFor, stageOfPresetId, type SugarStageId } from '@/lib/sugarchallenge'
 import { CAMPAIGN_BY_ID, isStageOpen, recordHandIn, type CampaignStage } from '@/lib/campaign'
 import { soloChallenge } from '@/components/sugar/hud/Challenge'
 import { useSugarChallenge } from '@/hooks/use-sugar-challenge'
@@ -227,6 +252,71 @@ function cap(str: string): string {
 
 /* ------------------------------------------------------------------ */
 
+/** A count is a minute of the tank's time; six seconds of ours. */
+const COUNT_MS = 6000
+
+/** How long the plates have to themselves before the card comes up over them. */
+const PLATES_MS = 1500
+
+/**
+ * The look inside, at the reveal.
+ *
+ * The storyboard called it a six-second look. It does not run on a timer: a
+ * learner mid-sentence being yanked back to the tank is the room taking
+ * something away from them, and on a slow tablet six seconds is barely the
+ * flight. It stays until they leave it.
+ */
+
+/**
+ * Which campaign door a field-guide practical belongs to, by the stage tab
+ * the page names. One table rather than a chain repeated at two call sites:
+ * the renumber to six doors (the Pond took door 2 on 13 Sep) broke the chain
+ * silently, and a guide page that opens the wrong round is worse than one
+ * that opens nothing.
+ */
+const DOOR_STAGE: Record<string, SugarStageId> = { plant: 1, pond: 2, hatches: 3, stem: 4 }
+
+/**
+ * What the learner had just done, in their own words, for the log's first
+ * column. Deduplicated: two notches of the same dial is still one thing
+ * changed, and "moved the lamp and moved the lamp" is not English.
+ */
+function didOf(since: Dial[]): string {
+  const words: Record<Dial, string> = { lamp: 'moved the lamp', soda: 'a spoon', bath: 'changed the bath' }
+  const moved = [...new Set(since)]
+  if (moved.length === 0) return 'again'
+  return moved.map((d) => words[d]).join(' and ')
+}
+
+/**
+ * The bench at the tank, as the page holds it.
+ *
+ * The log is the evidence: every count, what the learner had just done, and
+ * whether two dials had moved since the last one — in which case it proves
+ * nothing and cannot unlock a plate. `guessed` remembers which dials have
+ * had their one direction committed, so the micro-commit asks once per dial
+ * and never again.
+ */
+interface PondRun {
+  sprigs: PondPatient[]
+  at: number
+  env: PondEnv
+  log: PondCount[]
+  kit: { minutes: number; spoons: number; jugs: number }
+  /**
+   * Which band's bench this is. The challenge's own band, not the learner's:
+   * a Scientist playing the Explorer's tank is playing the Explorer's tank,
+   * and its grant was worked out from that bench.
+   */
+  kitBand: 'explorer' | 'scientist' | 'analyst'
+  /** Dials nudged since the last count — more than one and the count is confounded. */
+  since: Dial[]
+  guessed: Partial<Record<Dial, Guess>>
+  pending: { dial: Dial; dir: 'up' | 'down' } | null
+  accused: Suspect | null
+  verdict: Verdict | null
+}
+
 export default function SugarLine() {
   const sim = useMemo(() => createSugarSim(), [])
   const [band] = useBand()
@@ -325,6 +415,61 @@ export default function SugarLine() {
   const [dayRun, setDayRun] = useState<DayRun | null>(null)
   const [dayWeather, setDayWeather] = useState<Weather | null>(null)
   const [hatchState, setHatchState] = useState<HatchState>({ ceiling: 1, pore: 0, plant: 0, turgor: 1 })
+  /* ---- the Pond's mystery run (door 2) ---- */
+  /**
+   * The bench at the tank. The page owns the log because the log is the
+   * evidence: which counts were taken, after which nudge, and whether two
+   * dials had moved since the last one (in which case that count proves
+   * nothing and does not unlock a plate).
+   */
+  const [pond, setPond] = useState<PondRun | null>(null)
+  /**
+   * Whether the Field Log card is up yet.
+   *
+   * The plates flipping is this round's one filmable moment — three question
+   * marks becoming three readings, the accused one first — and the card is a
+   * full-screen sheet that used to mount in the same frame and cover it. The
+   * card now waits for the flip.
+   */
+  const [logCard, setLogCard] = useState(false)
+  /**
+   * The six seconds inside a chloroplast, at the reveal.
+   *
+   * `restore` is the lab exactly as it was before, because this borrows the
+   * Factory's own leaf stage and must give it back untouched.
+   */
+  const [inside, setInside] = useState<{ line: string; restore: { light: number; co2: number; tempC: number; stage: StageId } } | null>(null)
+  /**
+   * A count in progress.
+   *
+   * Two pieces on purpose: `countFrom` is the wall-clock moment the minute
+   * started and is what the clock effect keys on, and `countK` is how full
+   * the ring is drawn. Keying the effect on the progress would tear the
+   * interval down and restart the minute eighty times a second — the count
+   * would never land, which is exactly what it did the first time.
+   */
+  const [countFrom, setCountFrom] = useState<number | null>(null)
+  const [countK, setCountK] = useState<number | null>(null)
+  /** Bubbles collected so far in the minute being counted, for the ring. */
+  const [released, setReleased] = useState(0)
+  /** Whether the counter is running: nothing under it may change. */
+  const counting = countFrom !== null
+  /**
+   * The bench as the clock effect sees it. The effect must not re-key on the
+   * bench — a nudge mid-minute would restart the minute — so it reads the
+   * live values through a ref and keys only on when the minute began.
+   */
+  const pondRef = useRef<PondRun | null>(null)
+  pondRef.current = pond
+  /**
+   * The tank owns the screen.
+   *
+   * The Hatches' day dims the lab HUD and leaves it there; the Pond replaces
+   * it, because none of it belongs at a tank — there is no target on this
+   * round's gauge, no instrument to choose and no condition to set. The
+   * bench, the counts and Ploob are the whole interface.
+   */
+  const inPond = pond !== null
   /* ---- the night shift, mirrored for its HUD ---- */
   const [nightState, setNightState] = useState<NightState>({ bankMg: 0, bankStartMg: 0, sugarMg: 0, totalStartMg: 0, exportRate: 0, velocity: 0, tempC: 20 })
   /** The leaf's whole store at dusk: starch banked plus the free sugar it held. */
@@ -687,6 +832,36 @@ export default function SugarLine() {
     }
   }, [run, dialCaps, goalLast])
 
+  // The bench at the tank, for the browser suite. The answer is deliberately
+  // not in here as an answer: `patient` is the sprig's id and name, and the
+  // verdict only exists once the learner has accused. What the suite has to
+  // be able to prove is that the *counts* are the model's and that the truth
+  // is nowhere in the DOM before the plates flip.
+  useEffect(() => {
+    const w = window as unknown as Record<string, unknown>
+    w.__pond = () =>
+      pond
+        ? {
+            patient: pond.sprigs[pond.at].id,
+            at: pond.at,
+            of: pond.sprigs.length,
+            dials: pond.sprigs[pond.at].dials,
+            env: pond.env,
+            kit: pond.kit,
+            log: pond.log,
+            since: pond.since,
+            guessed: pond.guessed,
+            pending: pond.pending,
+            accused: pond.accused,
+            verdict: pond.verdict,
+            canAccuse: canAccuse(pond.sprigs[pond.at], pond.log),
+          }
+        : null
+    return () => {
+      delete w.__pond
+    }
+  }, [pond])
+
   const patchConditions = useCallback(
     (patch: Partial<Conditions>) => {
       abortTrial()
@@ -1021,6 +1196,259 @@ export default function SugarLine() {
     setDemoStep(0)
   }, [sim])
 
+  /* ------------------------------------------------------------------ */
+  /* The Pond — the mystery run                                          */
+  /* ------------------------------------------------------------------ */
+
+  /** Push the bench's state into the sim, which is what the tank draws from. */
+  const showPond = useCallback(
+    (next: PondRun) => {
+      sim.pond.patientId = next.sprigs[next.at].id
+      sim.pond.env = next.env
+      sim.pond.indicator = indicatorColour(next.env)
+      if (next.verdict && !sim.pond.revealed) sim.pond.revealedAt = performance.now()
+      sim.pond.revealed = !!next.verdict
+      sim.pond.accused = next.accused
+    },
+    [sim],
+  )
+
+  /** Open a sprig: the tank, the kit, and nothing counted yet. */
+  const openSprig = useCallback(
+    (sprigs: PondPatient[], at: number, kitBand: 'explorer' | 'scientist' | 'analyst') => {
+      const next: PondRun = {
+        sprigs,
+        at,
+        env: { ...sprigs[at].setup },
+        log: [],
+        kitBand,
+        // A fresh bench for every patient. The round's grant is the band's
+        // kit times the sprigs it sets (`pondBudgetFor`), so a learner who
+        // spends carefully on the first tank is thrifty across the round
+        // without ever being left unable to finish the last one.
+        kit: { ...POND_KIT[kitBand] },
+        since: [],
+        guessed: {},
+        pending: null,
+        accused: null,
+        verdict: null,
+      }
+      setPond(next)
+      showPond(next)
+      setCountK(null)
+      setLogCard(false)
+      sim.pond.revealedAt = -1
+    },
+    [showPond, sim],
+  )
+
+  /** A nudge. The first touch of any dial asks for a direction before it moves. */
+  const pondNudge = useCallback(
+    (dial: Dial, dir: 'up' | 'down') => {
+      setPond((p) => {
+        if (!p || p.verdict || counting) return p
+        // The end of the rail is checked BEFORE the direction is asked for.
+        // It used to be checked after, so a learner who reached for "dimmer"
+        // on a sprig whose lamp was already at 45 cm answered a question,
+        // watched nothing happen, and had spent that dial's one prediction on
+        // a button that was never connected. The bench disables these now;
+        // this is the belt to that brace.
+        if (atEnd(p.env, dial, dir)) return p
+        if (!p.guessed[dial]) return { ...p, pending: { dial, dir } }
+        const cost = costOf(dial)
+        if (cost.spoons > p.kit.spoons || cost.jugs > p.kit.jugs) return p
+        const env = nudgeDial(p.env, dial, dir)
+        // A new condition wants an empty tube: what the column holds is what
+        // THIS count collected, never a total across the round.
+        sim.pond.released = 0
+        dialTick()
+        const next: PondRun = {
+          ...p,
+          env,
+          kit: { ...p.kit, spoons: p.kit.spoons - cost.spoons, jugs: p.kit.jugs - cost.jugs },
+          since: [...p.since, dial],
+        }
+        showPond(next)
+        if (cost.spoons || cost.jugs) run.draw({ spoons: cost.spoons, jugs: cost.jugs })
+        return next
+      })
+    },
+    [counting, run, showPond, sim],
+  )
+
+  /** The direction, committed once per dial, and then the nudge it was about. */
+  const pondCommit = useCallback(
+    (g: Guess) => {
+      setPond((p) => {
+        if (!p || !p.pending) return p
+        return { ...p, guessed: { ...p.guessed, [p.pending.dial]: g }, pending: null }
+      })
+      const pending = pond?.pending
+      if (pending) window.setTimeout(() => pondNudge(pending.dial, pending.dir), 0)
+    },
+    [pond, pondNudge],
+  )
+
+  /** A minute on the sped-up clock. Nothing may change under the counter. */
+  const pondCount = useCallback(() => {
+    if (!pond || pond.verdict || counting || pond.kit.minutes <= 0) return
+    setCountK(0)
+    setReleased(0)
+    sim.pond.released = 0
+    setCountFrom(Date.now())
+  }, [pond, counting, sim])
+
+  /** The cloth: the control that shows the lamp is needed at all. */
+  const pondCloth = useCallback(() => {
+    setPond((p) => {
+      if (!p || counting) return p
+      const env = { ...p.env, covered: !p.env.covered }
+      sim.pond.released = 0
+      const next = { ...p, env, since: [...p.since, 'lamp' as Dial] }
+      showPond(next)
+      return next
+    })
+  }, [counting, showPond, sim])
+
+  /**
+   * The accusation — the hand-in of this door. The plates flip, the verdict
+   * comes out of the learner's own counts, and the goal metric is 1 only if
+   * the accusation was right AND the jump that proves it is in the log.
+   */
+  const pondAccuse = useCallback(
+    (accused: Suspect) => {
+      setPond((p) => {
+        if (!p || p.verdict || !canAccuse(p.sprigs[p.at], p.log)) return p
+        const verdict = verdictOf(p.sprigs[p.at], accused, p.log)
+        const next = { ...p, accused, verdict }
+        showPond(next)
+        run.offer(verdict.stamps ? 1 : 0)
+        landChord()
+        window.setTimeout(() => setLogCard(true), PLATES_MS)
+        // No write-up is logged here. Tapping a plate is the *claim*; the
+        // reason in the learner's own words is the explain question on the
+        // guide's practical page, and that is what closes the record and
+        // stamps. Awarding "you wrote a conclusion" for a tap would be the
+        // clicks-for-XP this cabinet is built to refuse.
+        return next
+      })
+    },
+    [run, showPond],
+  )
+
+  /**
+   * Six seconds inside a leaf cell, in the state this sprig was found in.
+   *
+   * Not a new picture: the chloroplast stage already runs off `sim.solve`, so
+   * the honest way to show a carbon-starved chloroplast is to starve one and
+   * let the same model draw it. The lab is put back exactly as it was.
+   */
+  const lookInside = useCallback(() => {
+    const p = pondRef.current
+    if (!p || !p.verdict) return
+    const truth = p.sprigs[p.at].truth
+    const world = insideWorld(truth)
+    const restore = { light: sim.light, co2: sim.co2, tempC: sim.tempC, stage: sim.stage }
+    sim.light = world.light
+    sim.co2 = world.co2
+    sim.tempC = world.tempC
+    setConditions((prev) => ({ ...prev, light: world.light, co2: world.co2, tempC: world.tempC }))
+    handleStage('leaf')
+    sim.viewId = 'inside'
+    sim.viewSeq += 1
+    setViewId('inside')
+    setLogCard(false)
+    setInside({ line: insideSays(truth, getBand()), restore })
+  }, [sim, handleStage])
+
+  /** Put the lab back and return to the tank. */
+  const leaveInside = useCallback(() => {
+    setInside((v) => {
+      if (!v) return v
+      sim.light = v.restore.light
+      sim.co2 = v.restore.co2
+      sim.tempC = v.restore.tempC
+      setConditions((prev) => ({ ...prev, light: v.restore.light, co2: v.restore.co2, tempC: v.restore.tempC }))
+      handleStage(v.restore.stage)
+      setLogCard(true)
+      return null
+    })
+  }, [sim, handleStage])
+
+  /** On to the next patient: a fresh bench, the same grant, nothing carried but what was learnt. */
+  const pondNext = useCallback(() => {
+    if (!pond || pond.at + 1 >= pond.sprigs.length) return
+    openSprig(pond.sprigs, pond.at + 1, pond.kitBand)
+  }, [pond, openSprig])
+
+  /**
+   * The tank arrives with the lab and leaves when the round does.
+   *
+   * The round is gathered in the field first, so the camera stays on the
+   * plant through the collector and the handover; the bench is already set
+   * behind it, which is why the flight down is instant.
+   */
+  useEffect(() => {
+    // …except during the look inside, which borrows the leaf stage for six
+    // seconds and hands it back itself.
+    if (pond && !inside && run.phase === 'lab' && stage !== 'pond') handleStage('pond')
+  }, [pond, inside, run.phase, stage, handleStage])
+
+  useEffect(() => {
+    if (run.phase !== 'off' || !pond) return
+    setPond(null)
+    setCountK(null)
+    if (sim.stage === 'pond') handleStage('plant')
+  }, [run.phase, pond, sim, handleStage])
+
+  /**
+   * A count, on the wall clock.
+   *
+   * A minute of market — six seconds of ours — with the bubbles the tank is
+   * already drawing as its face. Nothing may change under the counter: the
+   * nudges are disabled while it runs, which is the rule the Factory already
+   * teaches as "set, then measure".
+   */
+  useEffect(() => {
+    if (countFrom === null) return
+    const id = window.setInterval(() => {
+      const k = Math.min(1, (Date.now() - countFrom) / COUNT_MS)
+      setCountK(k)
+      sim.pond.counting = k
+      const live = pondRef.current
+      if (live) {
+        sim.pond.released = Math.round(bubblesPerMinute(live.env) * k)
+        setReleased(sim.pond.released)
+      }
+      if (k < 1) return
+      window.clearInterval(id)
+      setCountFrom(null)
+      setCountK(null)
+      sim.pond.counting = 0
+      setPond((p) => {
+        if (!p) return p
+        // The Analyst's counter is the real one: a count is a Poisson draw
+        // around the rate, so two identical minutes do not agree and the
+        // only honest answer to "did that do anything?" is to repeat it.
+        const bubbles = p.kitBand === 'analyst' ? countWith(p.env, Math.random) : bubblesPerMinute(p.env)
+        const did = p.log.length === 0 ? 'as found' : p.since.length === 0 ? 'again' : didOf(p.since)
+        // One dial, however many notches: that count is evidence about that
+        // dial. Two different dials and it is evidence about neither, which
+        // is what `confounded` says.
+        const moved = [...new Set(p.since)]
+        const dial = moved.length === 1 ? moved[0] : null
+        const prev = p.log.length ? p.log[p.log.length - 1].bubbles : null
+        const guess = dial ? p.guessed[dial] : undefined
+        const called = guess && prev !== null ? { guess, right: calledIt(guess, bubbles - prev) } : undefined
+        const entry: PondCount = { did, dial, env: p.env, bubbles, confounded: confounded(p.since), called }
+        return { ...p, log: [...p.log, entry], since: [], kit: { ...p.kit, minutes: Math.max(0, p.kit.minutes - 1) } }
+      })
+      runRef.current.spend({ minutes: 1 })
+      checkpointBlip()
+    }, 80)
+    return () => window.clearInterval(id)
+  }, [countFrom, sim])
+
   /* ---- the challenge layer's own handlers ----------------------------- */
 
   /**
@@ -1063,7 +1491,16 @@ export default function SugarLine() {
         girdled: false,
         xylemCut: false,
       }))
-      const door = stageOfPresetId(presetIdFor(c) ?? '')
+      const presetId = presetIdFor(c) ?? ''
+      const door = stageOfPresetId(presetId)
+      // Door 2 is the tank: a diagnosis, not a number. The sprigs come from
+      // the preset and the seed, so a shared link is the same mystery.
+      // The bench is set here but the camera does not fly to it yet: this
+      // round is gathered in the field first, and the tank arrives with the
+      // lab, which is where the learner's hands are needed.
+      if (c.goal.metric === 'diagnosis') {
+        openSprig(sprigsFor(presetId || 'why-so-quiet', c.seed), 0, c.band as 'explorer' | 'scientist' | 'analyst')
+      } else setPond(null)
       const night = dayWorldOf(c).night
       if (c.loop !== 'keep' && c.gatherSeconds === 0) {
         // Nothing to gather: the whole grant is handed over, so the pot
@@ -1096,8 +1533,9 @@ export default function SugarLine() {
       } else if (sim.stage !== 'plant') handleStage('plant')
       run.begin(c)
     },
-    [sim, abortTrial, handleStage, run],
+    [sim, abortTrial, handleStage, run, openSprig],
   )
+
 
   /**
    * The front door.
@@ -1116,7 +1554,9 @@ export default function SugarLine() {
       setStarted(true)
       startNarration()
       startAudio()
-      const stageId = (stage?.id === 2 || stage?.id === 3 ? stage.id : 1) as 1 | 2 | 3
+      // Doors 1–4 are built (the Pond took door 2 on 13 Sep 2026); the rest
+      // are on the map and undiscovered, and Play falls back to the Factory.
+      const stageId = (stage && stage.id <= 4 ? stage.id : 1) as SugarStageId
       if (band === 'explorer') beginChallenge(stage ? soloChallenge(levelForBand(band, stageId)) : playChallengeFor(band))
       else run.open(null, stageId)
     },
@@ -1152,13 +1592,20 @@ export default function SugarLine() {
       for (const ch of BOOK_0610.chapters)
         for (const sec of ch.sections)
           for (const pg of sec.pages)
-            if (pg.practical && pg.practical.level[bandNow] === presetId) pg.practical.stamps.forEach((id) => stamps.add(id))
+            if (pg.practical && pg.practical.level[bandNow] === presetId) (pg.practical.stampsBy?.[bandNow] ?? pg.practical.stamps).forEach((id) => stamps.add(id))
       const g = run.challenge.goal
+      // A tank's record is its counts, not the lab's dials: "light 0 %, CO₂
+      // 400 ppm" describes a plant that is not in this room.
+      const tank = pondRef.current
       noteHandIn({
         cabinet: 'photosynthesis',
         source: presetId,
-        action: `light ${Math.round(sim.light * 100)} %, CO₂ ${Math.round(sim.co2 * CO2_MAX_PPM)} ppm, ${Math.round(sim.tempC)} °C, water ${Math.round(sim.soilWater * 100)} %${sim.night ? ', night' : ''}${sim.girdled ? ', ring cut' : ''}${sim.xylemCut ? ', wood cut' : ''}`,
-        observed: `${g.metric} ${run.best === null ? '—' : Math.round(run.best * 100) / 100} ${g.unit}`.trim(),
+        action: tank
+          ? `${tank.log.length} counts on ${tank.sprigs[tank.at].name}; tried ${[...new Set(tank.log.map((c) => c.dial).filter(Boolean))].join(', ') || 'nothing'}`
+          : `light ${Math.round(sim.light * 100)} %, CO₂ ${Math.round(sim.co2 * CO2_MAX_PPM)} ppm, ${Math.round(sim.tempC)} °C, water ${Math.round(sim.soilWater * 100)} %${sim.night ? ', night' : ''}${sim.girdled ? ', ring cut' : ''}${sim.xylemCut ? ', wood cut' : ''}`,
+        observed: tank
+          ? `${tank.log[0]?.bubbles ?? 0} → ${tank.log.reduce((m, c) => Math.max(m, c.bubbles), 0)} bubbles a minute; named the ${tank.accused ?? '—'}`
+          : `${g.metric} ${run.best === null ? '—' : Math.round(run.best * 100) / 100} ${g.unit}`.trim(),
         stamps: [...stamps],
       })
       if (stamps.size) {
@@ -1542,6 +1989,19 @@ export default function SugarLine() {
   const coach = useMemo(() => {
     if (!started) return null
     if (demoStep >= 0) return null
+    // At the tank Ploob reacts to the counts and asks the next question. He
+    // never states the rule and never draws the inference — that line is the
+    // learner's, and the browser suite checks that *limiting*, *factor* and
+    // *rate* appear nowhere in this room.
+    if (pond) {
+      const patient = pond.sprigs[pond.at]
+      if (pond.verdict) return { text: pond.verdict.line, hint: patient.story }
+      if (counting) return { text: 'Counting. Nothing moves while the counter runs.', hint: patient.story }
+      return {
+        text: pondLine(pond.log, canAccuse(patient, pond.log), untried(patient, pond.log)),
+        hint: patient.story,
+      }
+    }
     // Inside a challenge the coach follows the run, not the missions: the
     // chip is the one voice the learner is trained to look for, and a round
     // with nobody talking in it was the whole feature's worst fault.
@@ -1617,7 +2077,7 @@ export default function SugarLine() {
     const next = missions.find((m) => !m.check(readings))
     if (next) return { text: next.title, hint: next.brief }
     return { text: 'Every mission is done. Try another specimen.', hint: undefined }
-  }, [started, demoStep, active, conditions.girdled, conditions.xylemCut, tracerActive, tracerWatch, predictionPending, readings, band, run.phase, run.challenge, run.trials, run.hit, run.bank, goalLast, trialRunning, ceilingWhy])
+  }, [started, demoStep, active, conditions.girdled, conditions.xylemCut, tracerActive, tracerWatch, predictionPending, readings, band, run.phase, run.challenge, run.trials, run.hit, run.bank, goalLast, trialRunning, ceilingWhy, pond, counting])
 
   const stageMeta = STAGE_BY_ID[stage]
   const missionList = missionsForBand(band)
@@ -1782,6 +2242,8 @@ export default function SugarLine() {
             habitat={habitat}
             obstructBottom={sheetPx}
             gather={gatherProps}
+            canAccuse={!!pond && !pond.verdict && canAccuse(pond.sprigs[pond.at], pond.log)}
+            onAccuse={pondAccuse}
             onContextLost={() => setContextLost(true)}
           />
         </Suspense>
@@ -1819,7 +2281,7 @@ export default function SugarLine() {
       {/* The gather round takes the whole screen: it is played by dragging
           across the canvas, and any panel is both in the way of the finger and
           in the way of the eye. */}
-      {!stereo.on && compact && !gathering && (
+      {!stereo.on && compact && !gathering && !inPond && (
         <div className="hud pointer-events-none fixed inset-0 z-20">
           {/* The phone tier (landscape, ≤ ~520 px tall). The scene owns the
               frame: one strip along the top, one toolbar along the bottom,
@@ -1902,7 +2364,7 @@ export default function SugarLine() {
                     onNavigate={setGuide}
                     onClose={() => setSheet(null)}
                     onStartPractical={(door) => {
-                      const st = door === 'plant' ? 1 : door === 'hatches' ? 2 : door === 'stem' ? 3 : null
+                      const st = DOOR_STAGE[door] ?? null
                       if (!st) return
                       setSheet(null)
                       run.open(null, st)
@@ -2019,7 +2481,7 @@ export default function SugarLine() {
         </div>
       )}
 
-      {!stereo.on && !compact && !gathering && (
+      {!stereo.on && !compact && !gathering && !inPond && (
         <div className="hud pointer-events-none fixed inset-0 z-20">
           {/* Left column. */}
           <div
@@ -2053,7 +2515,7 @@ export default function SugarLine() {
                   onNavigate={setGuide}
                   onClose={() => setGuide(null)}
                   onStartPractical={(door) => {
-                    const st = door === 'plant' ? 1 : door === 'hatches' ? 2 : door === 'stem' ? 3 : null
+                    const st = DOOR_STAGE[door] ?? null
                     if (!st) return
                     run.open(null, st)
                   }}
@@ -2324,11 +2786,11 @@ export default function SugarLine() {
           total={run.challenge.gatherSeconds}
           readyLeft={run.readyLeft}
           ready={run.phase === 'ready'}
-          moved={gatherMoved}
           bank={run.bank}
           budget={run.challenge.budget}
           caught={caught}
           challenge={run.challenge}
+          moved={gatherMoved}
           onDone={run.endGather}
         />
       )}
@@ -2398,6 +2860,82 @@ export default function SugarLine() {
         </>
       )}
 
+      {/* ---- the Pond's mystery run ----
+          The bench replaces the lab HUD rather than dimming it: the gauge
+          carries no target (there is nothing to reach — the answer is a
+          cause), the plate carries the six verbs, and the counts sit down
+          the left where the learner's own evidence accumulates in the order
+          they took it. */}
+      {!stereo.on && inPond && pond && run.phase !== 'scored' && !inside && (
+        <>
+          <PondHud
+            patient={pond.sprigs[pond.at]}
+            now={pond.log.length ? pond.log[pond.log.length - 1].bubbles : null}
+            last={pond.log.length > 1 ? pond.log[pond.log.length - 2].bubbles : null}
+            asFound={pond.log.length ? pond.log[0].bubbles : null}
+            kit={pond.kit}
+            band={pond.kitBand}
+            compact={compact}
+            counting={counting}
+            onQuit={run.close}
+          />
+          <div
+            className={cn(
+              'pointer-events-auto fixed z-30 flex flex-col gap-2 overflow-y-auto',
+              compact ? 'top-[3.4rem] bottom-[9rem] left-2 w-[11.5rem]' : 'top-[4.6rem] bottom-[9.5rem] left-4 w-[15rem]',
+            )}
+          >
+            <PondCounts log={pond.log} revealed={!!pond.verdict} compact={compact} />
+            {pond.sprigs.length > 1 && (
+              <p className="atlas-plate-quiet px-2 py-1 text-[10.5px] font-extrabold text-[#5C4F3F]" data-testid="pond-which">
+                Sprig {pond.at + 1} of {pond.sprigs.length}
+              </p>
+            )}
+          </div>
+          <PondPlate
+            dials={pond.sprigs[pond.at].dials}
+            env={pond.env}
+            kit={pond.kit}
+            counting={counting}
+            canCount={!pond.verdict && pond.kit.minutes > 0}
+            covered={!!pond.env.covered}
+            indicator={indicatorColour(pond.env)}
+            band={pond.kitBand}
+            compact={compact}
+            onNudge={pondNudge}
+            onCount={pondCount}
+            onCloth={pondCloth}
+          />
+          {countK !== null && <CountRing k={countK} released={released} compact={compact} />}
+          {!pond.verdict && !counting && pond.log.length > 0 && (
+            <AccusePrompt untriedDials={untried(pond.sprigs[pond.at], pond.log)} compact={compact} />
+          )}
+          {coach && (
+            <div className={cn('pointer-events-none fixed inset-x-0 z-20 flex justify-center px-4', compact ? 'bottom-[7.2rem]' : 'bottom-[8.5rem]')}>
+              <Coach text={coach.text} hint={coach.hint} />
+            </div>
+          )}
+          {pond.pending && <MicroCommit dial={pond.pending.dial} dir={pond.pending.dir} onPick={pondCommit} />}
+          {pond.verdict && logCard && (
+            <FieldLogCard
+              patient={pond.sprigs[pond.at]}
+              verdict={pond.verdict}
+              log={pond.log}
+              band={band}
+              onNext={pond.at + 1 < pond.sprigs.length ? pondNext : undefined}
+              nextLabel={pond.at + 1 < pond.sprigs.length ? 'The next sprig →' : undefined}
+              onScore={run.finish}
+              onClose={run.close}
+              onInside={lookInside}
+            />
+          )}
+        </>
+      )}
+
+      {/* The look inside stands outside the tank's block, because the tank's
+          own furniture stands down while it is up. */}
+      {!stereo.on && inside && <InsideCard line={inside.line} compact={compact} onDone={leaveInside} />}
+
       {!stereo.on && run.phase === 'scored' && run.challenge && run.score && (
         <ScoreCard
           challenge={run.challenge}
@@ -2413,7 +2951,7 @@ export default function SugarLine() {
             const next = doorOpened
             if (!next || !isStageOpen(next.id)) return
             setDoorOpened(null)
-            const stageId = (next.id === 2 || next.id === 3 ? next.id : 1) as 1 | 2 | 3
+            const stageId = (next.id <= 4 ? next.id : 1) as SugarStageId
             if (band === 'explorer') beginChallenge(soloChallenge(levelForBand(band, stageId)))
             else {
               run.close()

@@ -84,6 +84,32 @@ export const VIEWPOINTS: Viewpoint[] = [
     target: [0.05, 1.05, 0.15],
   },
   {
+    id: 'tank',
+    label: 'The tank',
+    stage: 'pond',
+    hint: 'The whole bench: the jar, the lamp on its rail, and the plates with nothing on them.',
+    // Front and a little to the right, so the lamp's rail runs away from the
+    // eye and the plates sit on the near face rather than edge-on.
+    position: [1.15, 1.75, 6.1],
+    target: [0.1, 0.92, 0],
+  },
+  {
+    id: 'bubbles',
+    label: 'The bubbles',
+    stage: 'pond',
+    hint: 'The cut stem, the funnel and the tube. This is the thing you count.',
+    position: [0.55, 1.5, 2.55],
+    target: [-0.1, 1.2, 0],
+  },
+  {
+    id: 'plates',
+    label: 'The plates',
+    stage: 'pond',
+    hint: 'The labels that fell off. Tap one only when your counts can name it.',
+    position: [0.2, 0.95, 3.2],
+    target: [0.05, 0.36, 0.7],
+  },
+  {
     id: 'pore',
     label: 'The pore',
     stage: 'hatches',

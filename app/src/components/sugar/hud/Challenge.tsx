@@ -25,6 +25,7 @@ import {
   metricLabel,
   type SugarChallengePreset,
   type SugarResource,
+  type SugarStageId,
 } from '@/lib/sugarchallenge'
 import { isStageOpen } from '@/lib/campaign'
 import { useInputMode } from '@/lib/input'
@@ -139,6 +140,38 @@ export function shortfall(c: Challenge, value: number | null): { hit: boolean; t
   return { hit: false, text: `${abs} short` }
 }
 
+/**
+ * The Pond's specimen, so the learner can recognise it in a real pond
+ * (Selorm, 13 Sep): hornwort, *Ceratophyllum demersum* — stiff, forked
+ * bristle-leaves in whorls on a stem with no roots. The painted card is
+ * `public/art/pond/hornwort.webp` (the jar picture he chose, "you can see the
+ * bubbles clearer"); a missing file leaves the words, which are the point.
+ */
+function SpecimenCard() {
+  const [gone, setGone] = useState(false)
+  return (
+    <div
+      className="mt-3 flex items-center gap-3 rounded-[14px] border border-[#DCE7D2] bg-[#F1F6EA] p-2"
+      data-testid="pond-specimen"
+    >
+      {!gone && (
+        <img
+          src="art/pond/hornwort.webp"
+          alt="A sprig of hornwort in a jar of pond water, bubbles rising from it"
+          width={96}
+          height={54}
+          onError={() => setGone(true)}
+          className="h-[54px] w-[96px] flex-none rounded-[10px] object-cover"
+        />
+      )}
+      <p className="text-[11px] leading-snug font-semibold text-[#3F5A38]">
+        <span className="font-extrabold">Hornwort</span> — <span className="italic">Ceratophyllum demersum</span>. Stiff,
+        forked bristle-leaves in whorls, on a stem with no roots. That is what to look for in a real pond.
+      </p>
+    </div>
+  )
+}
+
 export function ChallengeBrief({
   band,
   incoming,
@@ -152,7 +185,7 @@ export function ChallengeBrief({
   incoming: Challenge | null
   rival: number | null
   /** The campaign stage the brief opens on. */
-  stage?: 1 | 2 | 3
+  stage?: SugarStageId
   onBegin: (c: Challenge) => void
   onClose: () => void
 }) {
@@ -301,6 +334,7 @@ export function ChallengeBrief({
 
         {offer && (
           <>
+            {offer.setup === 'hornwort' && <SpecimenCard />}
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
               <Chip tone="good">
                 <Target className="h-3 w-3" /> Target: {goalSentence(offer).replace(/^(Get|Land|Keep) /, '')}

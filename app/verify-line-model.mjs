@@ -169,11 +169,13 @@ const night = (bank, tempC, hours = 10) => {
   check('level 3: some temperature lands the sap in the band', hits.length >= 1, `hits at ${hits.join(', ')} °C`)
   check('level 3: the default 24 °C does not', Math.abs(at(24) - l3.goal.target) > l3.goal.tolerance, at(24).toFixed(2))
   check('level 3: the band is narrow enough to need the thermometer', hits.length <= 3)
-  check('stage 3 has three levels, one per band', M.levelsOfStage(3).map((p) => p.band).join() === 'explorer,scientist,analyst')
-  check('door 3 is built on the map', M.CAMPAIGN_BY_ID[3].built === true && M.CAMPAIGN_BY_ID[3].tab === 'stem')
+  // The Line became door 4 when the Pond took door 2 (13 Sep 2026). Progress
+  // is keyed by preset id, so the move cost no learner a hand-in.
+  check('stage 4 has three levels, one per band', M.levelsOfStage(4).map((p) => p.band).join() === 'explorer,scientist,analyst')
+  check('door 4 is the Line, and it is built on the map', M.CAMPAIGN_BY_ID[4].built === true && M.CAMPAIGN_BY_ID[4].tab === 'stem' && M.CAMPAIGN_BY_ID[4].name === 'The Line')
   check('the level-2 goal carries the leaves-firm condition', M.SUGAR_CHALLENGE_BY_ID['cut-the-ring'].build(1).condition === 'leafFirm')
   const ids = new Set(M.SUGAR_CHALLENGES.map((c) => c.id))
-  check('every stage-3 preset is found again from its own challenge', ['night-shift', 'cut-the-ring', 'time-the-sugar'].every((id) => ids.has(id) && M.presetIdFor(M.SUGAR_CHALLENGE_BY_ID[id].build(7)) === id))
+  check('every Line preset is found again from its own challenge', ['night-shift', 'cut-the-ring', 'time-the-sugar'].every((id) => ids.has(id) && M.presetIdFor(M.SUGAR_CHALLENGE_BY_ID[id].build(7)) === id))
 }
 
 console.log(`\n${fails === 0 ? 'ALL PASS' : `${fails} FAIL`}`)

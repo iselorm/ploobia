@@ -1,10 +1,16 @@
 /**
- * The campaign map — five doors, one plant.
+ * The campaign map — six doors, one plant.
  *
- * The Sugar Line's game layer is five stages in the order the sugar takes:
- * made in the leaf, rationed by the hatches, pushed down the line, banked in
- * the roots, multiplied across a plot. This module is the map of them and
- * the one rule that walks a learner along it.
+ * The Sugar Line's game layer is six stages in the order the sugar takes:
+ * made in the leaf, diagnosed in the tank, rationed by the hatches, pushed
+ * down the line, banked in the roots, multiplied across a plot. This module
+ * is the map of them and the one rule that walks a learner along it.
+ *
+ * **The Pond is door 2** (decided 13 Sep 2026, with the Mystery Run): the
+ * Factory teaches what a dial does, and the Pond takes the dials away, which
+ * is where "after the learner understands the controls" puts it. Four doors
+ * shifted by one to make room. Progress is stored per PRESET id, never per
+ * door number, so the renumber costs no learner a hand-in.
  *
  * **The gate is light, and it is the only gate.** One hand-in at any level of
  * a stage opens the next. Not "finish every level" — a Scientist who wants
@@ -26,7 +32,7 @@ import { useCallback, useSyncExternalStore } from 'react'
 import { read, write } from './persist'
 import { stageOfPresetId } from './sugarchallenge'
 
-export type CampaignStageId = 1 | 2 | 3 | 4 | 5
+export type CampaignStageId = 1 | 2 | 3 | 4 | 5 | 6
 
 export interface CampaignStage {
   id: CampaignStageId
@@ -38,7 +44,7 @@ export interface CampaignStage {
   /** Whether the cabinet has this stage yet. */
   built: boolean
   /** The cabinet's stage tab this door opens onto, when built. */
-  tab?: 'plant' | 'leaf' | 'hatches' | 'stem'
+  tab?: 'plant' | 'leaf' | 'pond' | 'hatches' | 'stem'
 }
 
 export const CAMPAIGN: CampaignStage[] = [
@@ -52,6 +58,14 @@ export const CAMPAIGN: CampaignStage[] = [
   },
   {
     id: 2,
+    name: 'The Pond',
+    where: 'a tank of hornwort',
+    question: 'The labels have fallen off its dials. What is holding this plant back?',
+    built: true,
+    tab: 'pond',
+  },
+  {
+    id: 3,
     name: 'The Hatches',
     where: 'the stomata',
     question: 'Open, and the carbon comes in but the water goes out. How open, and when?',
@@ -59,7 +73,7 @@ export const CAMPAIGN: CampaignStage[] = [
     tab: 'hatches',
   },
   {
-    id: 3,
+    id: 4,
     name: 'The Line',
     where: 'xylem & phloem',
     question: 'Two pipes, opposite directions. Which carries what, and what pushes it?',
@@ -67,14 +81,14 @@ export const CAMPAIGN: CampaignStage[] = [
     tab: 'stem',
   },
   {
-    id: 4,
+    id: 5,
     name: 'The Roots',
     where: 'soil & store',
     question: 'Roots drink, anchor and bank. What happens when the soil is too dry — and too wet?',
     built: false,
   },
   {
-    id: 5,
+    id: 6,
     name: 'The Stand',
     where: 'field → forest',
     question: 'One plant makes sugar. What does a field do to the air — and what does clearing it do?',
@@ -128,7 +142,7 @@ export function isStageHandedIn(stage: number): boolean {
 /** Stage 1 is always open; every other door opens on a hand-in at the one before. */
 export function isStageOpen(stage: number): boolean {
   if (stage <= 1) return true
-  if (stage > 5) return false
+  if (stage > 6) return false
   return isStageHandedIn(stage - 1)
 }
 

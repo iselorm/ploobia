@@ -29,6 +29,9 @@ export const SUGAR_VERBS = [
   'pore/open',
   'pore/close',
   'pore/skin',
+  'pond/tank',
+  'pond/bubbles',
+  'pond/plates',
   'stem/section',
   'stem/plate',
   'stem/xylem',
@@ -124,6 +127,12 @@ export function registerSugarVerbs(api: SugarVerbApi): () => void {
       api.hatch(0)
     },
     'pore/skin': go('hatches', 'skin'),
+    // The tank. A page may fly to the bench, close on the thing that is
+    // counted, or put the plates in front of the reader — but it can never
+    // turn a dial there, because the dials are the round's mystery.
+    'pond/tank': go('pond', 'tank'),
+    'pond/bubbles': go('pond', 'bubbles'),
+    'pond/plates': go('pond', 'plates'),
     'stem/section': go('stem', 'section'),
     'stem/plate': go('stem', 'plate'),
     'stem/xylem': () => {

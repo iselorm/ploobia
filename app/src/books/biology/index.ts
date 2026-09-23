@@ -52,6 +52,47 @@ const EXPLAIN_BY_DOOR: Record<string, Explain> = {
       points: [{ en: 'raising light no longer changed the rate → light not limiting' }, { en: 'the factor that did change the rate was the limiting one' }, { en: 'the rate is set by the factor in shortest supply' }],
     },
   },
+  pond: {
+    explorer: {
+      kind: 'pick',
+      stamps: [],
+      question: { en: 'One dial made the bubbles jump. The others changed almost nothing. What does that tell you?' },
+      options: [
+        { en: 'The plant was short of that one thing, and had enough of the others' },
+        { en: 'The plant only likes that dial' },
+        { en: 'The other dials do not do anything at all' },
+      ],
+      answer: 0,
+      reveal: { en: 'It was short of one thing. The others were already enough — which is exactly why moving them did nothing. Give it more of what it has plenty of and nothing happens.' },
+    },
+    scientist: {
+      kind: 'pick',
+      stamps: [],
+      question: { en: 'Moving one dial changed nothing; moving another changed everything. Why?' },
+      options: [
+        { en: 'The second was the factor in shortest supply — the limiting factor; the first was already in excess' },
+        { en: 'The first dial was broken' },
+        { en: 'Only one factor affects photosynthesis at a time, and it is always that one' },
+      ],
+      answer: 0,
+      reveal: { en: 'The rate is set by whichever factor is in shortest supply. Raise one that is already in excess and the rate does not move; raise the limiting one and it does. Fix that, and something else becomes limiting — there is always a ceiling.' },
+    },
+    analyst: {
+      kind: 'write',
+      stamps: [],
+      question: { en: 'Explain how your counts identified the limiting factor, and why the first dial you moved changed nothing.' },
+      marks: 4,
+      model: {
+        en: 'Changing one variable at a time while holding the others fixed, the count did not rise when the first factor was increased, so that factor was already in excess and was not limiting. Increasing the other factor raised the bubble count substantially, identifying it as the factor in shortest supply — the limiting factor — because the rate is set by whichever requirement is least available. Counts were repeated because a bubble count carries sampling error, so a single pair of readings could differ by chance rather than by cause.',
+      },
+      points: [
+        { en: 'one variable changed at a time, the others held' },
+        { en: 'no rise when a factor in excess was increased → not limiting' },
+        { en: 'a clear rise when the scarce factor was increased → limiting' },
+        { en: 'the rate is set by the factor in shortest supply' },
+      ],
+    },
+  },
   hatches: {
     explorer: {
       kind: 'pick',
@@ -136,7 +177,7 @@ function withExplain(section: Section): Section {
       // The record stamps the section's statements, so the explain items
       // carry them — the door's question, the section's evidence.
       const stamped = Object.fromEntries(
-        Object.entries(explain).map(([band, item]) => [band, { ...item, stamps: p.practical!.stamps }]),
+        Object.entries(explain).map(([band, item]) => [band, { ...item, stamps: p.practical!.stampsBy?.[band as Band] ?? p.practical!.stamps }]),
       ) as Explain
       const practical: Practical = { ...p.practical, explain: stamped }
       return { ...p, practical }

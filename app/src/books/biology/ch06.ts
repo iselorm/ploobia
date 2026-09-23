@@ -69,8 +69,49 @@ export const CH06: Chapter = {
           practical: {
             door: 'plant',
             level: { explorer: 'first-light', scientist: 'land-it', analyst: 'balance-books' },
-            stamps: ['0610:6.1.1', '0610:6.1.2', '0610:6.1.4', '0610:6.1.8'],
+            stamps: ['0610:6.1.1', '0610:6.1.2', '0610:6.1.4'],
             line: { en: 'Catch the light, then land the export the order asks for.' },
+          },
+        },
+        {
+          id: '6.1.pondweed',
+          kind: 'rule',
+          title: { en: 'Counting the bubbles' },
+          figure: 'pond/bubbles',
+          text: {
+            explorer: {
+              en: 'You cannot see sugar being made. But a piece of pond plant under water lets go of {bubbles:pond/bubbles} while it works, and bubbles you can count. Put the sprig in a {jar:pond/tank} with a funnel over the cut end and a tube above it, and every bubble that leaves goes where you can see it. Count for a minute and you have a number. Change one thing, count again, and the two numbers can be compared — which is the whole trick.',
+            },
+            scientist: {
+              en: 'The gas released by an aquatic plant is oxygen, a product of photosynthesis, so the number of {bubbles:pond/bubbles} leaving the cut stem in a fixed time is a measure of the rate. A {sprig of pondweed:pond/tank} is held cut-end up under an inverted funnel with a graduated tube above it; the lamp\'s distance sets the light intensity, sodium hydrogencarbonate raises the carbon dioxide concentration, and a water bath sets the temperature. Vary one, hold the others, and the count answers.',
+            },
+            analyst: {
+              en: 'Bubble count is a proxy for the rate of photosynthesis and its limits should be stated: bubble size is not constant, some oxygen dissolves rather than escaping, and the count is a small number so it carries sampling error — which is why counts are repeated and a mean taken. Collecting the gas in a graduated {tube:pond/bubbles} and measuring volume per unit time is the better measure. Light intensity from a lamp at distance d follows an inverse-square relation, so equal steps along the rail are not equal steps of light. The {plates:pond/plates} on the tank carry the settings; in the round they are blank, which is the only thing about this apparatus that is not true to the bench.',
+            },
+          },
+          ext: {
+            en: 'Hydrogencarbonate indicator reads the carbon dioxide in the water, not the oxygen: orange-red at atmospheric, {purple:pond/tank} when the plant has taken more out than it puts back, yellow when respiration has put more in — which is what it does in the dark.',
+          },
+        },
+        {
+          id: '6.1.pond',
+          kind: 'practical',
+          title: { en: 'The Pond' },
+          practical: {
+            door: 'pond',
+            level: { explorer: 'why-so-quiet', scientist: 'three-patients', analyst: 'the-ceiling' },
+            // 6.1.7 (chlorophyll needs a variegated leaf) stays unstamped
+            // cabinet-wide — the ledger says "not here" until a page can show
+            // one. 6.1.8 needs all three factors varied, which every level
+            // does across its sprigs; 6.1.9 is the indicator tube, on the
+            // bench from Scientist; 6.1.11 is the ceiling, the Analyst's level.
+            stamps: ['0610:6.1.8', '0610:6.1.9', '0610:6.1.11'],
+            stampsBy: {
+              explorer: ['0610:6.1.8'],
+              scientist: ['0610:6.1.8', '0610:6.1.9'],
+              analyst: ['0610:6.1.8', '0610:6.1.9', '0610:6.1.11'],
+            },
+            line: { en: 'The labels have fallen off the dials. Change one thing, count the bubbles, and name what is holding the sprig back.' },
           },
         },
         {

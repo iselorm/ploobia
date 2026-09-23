@@ -161,14 +161,14 @@ async function sweepPointer(page, moves) {
   check('the welcome card leads with Play', doors[0] === 'Play', doors.join(' → '))
   check('and keeps the free lab one tap away', doors.includes('Start'))
 
-  /* -- the map: five doors, named, honestly shut -- */
+  /* -- the map: six doors, named, honestly shut (the Pond took door 2 on 13 Sep) -- */
   const states = await page.evaluate(() =>
     [...document.querySelectorAll('[data-testid^="door-"]')].map((d) => d.getAttribute('data-state')),
   )
-  check('the welcome card shows five doors', states.length === 5, states.join(','))
+  check('the welcome card shows six doors', states.length === 6, states.join(','))
   check('the first is open and the second is shut', states[0] === 'open' && states[1] === 'shut', states.join(','))
-  check('the third door is built and shut behind the second', states[2] === 'shut', states.join(','))
-  check('the unbuilt ones are on the map, undiscovered', states.slice(3).every((s) => s === 'undiscovered'), states.join(','))
+  check('the built ones behind it are shut, not undiscovered', states[2] === 'shut' && states[3] === 'shut', states.join(','))
+  check('the unbuilt ones are on the map, undiscovered', states.slice(4).every((s) => s === 'undiscovered'), states.join(','))
   check('and none of them says coming soon', !(await page.evaluate(() => /coming soon/i.test(document.body.innerText))))
   await resilientClick(page.getByTestId('door-2'), { label: 'door 2' })
   await page.waitForTimeout(300)

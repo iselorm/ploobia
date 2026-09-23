@@ -12,6 +12,7 @@ import type { Band, BandCaps } from './bands'
 import type { LabEnv } from './ratelab'
 import { CO2_AMBIENT_PPM, CO2_MAX_PPM, PAR_FULL_SUN, TEMP_MAX_C, TEMP_MIN_C } from './ratelab'
 import { stepDay, type DayRun } from './hatches'
+import { PATIENT_BY_ID, type Dial, type IndicatorColour, type PondEnv, type Suspect } from './pond'
 import { DEFAULT_SPECIMEN, SPECIMEN_BY_ID, type Specimen } from './specimens'
 import {
   clamp,
@@ -65,10 +66,12 @@ export const TRACER_GAP_FRACTION = 0.3
 /* ------------------------------------------------------------------ */
 
 /**
- * Three views of one plant, in the order a learner should meet them: the whole
- * supply chain, then the factory that feeds it, then the pipe it travels down.
+ * Views of one plant, in the order a learner should meet them: the whole
+ * supply chain, then the factory that feeds it, then the tank at the back
+ * where a second plant has something wrong with it, then the hatches and the
+ * pipe the sugar travels down.
  */
-export type StageId = 'plant' | 'leaf' | 'hatches' | 'stem'
+export type StageId = 'plant' | 'leaf' | 'pond' | 'hatches' | 'stem'
 
 export interface StageMeta {
   id: StageId
@@ -95,6 +98,13 @@ export const STAGES: StageMeta[] = [
     eyebrow: 'THE FACTORY',
     hint: 'A chloroplast at work: light split water, the Calvin cycle builds sugar.',
     scale: { label: '2 µm', metres: 2e-6 },
+  },
+  {
+    id: 'pond',
+    label: 'The tank',
+    eyebrow: 'THE POND',
+    hint: 'A sprig of hornwort under a lamp, and three plates whose labels have fallen off.',
+    scale: { label: '10 cm', metres: 0.1 },
   },
   {
     id: 'hatches',
@@ -202,6 +212,36 @@ export interface TrialSnapshot {
   xylemCut: boolean
 }
 
+/**
+ * The tank at the back of the room (round E, the Mystery Run).
+ *
+ * The Pond's whole point is that the learner cannot READ the dials, so what
+ * the scene holds is what they can see: where the lamp is, how much soda went
+ * in, how warm the bath is, whether a count is running, and whether the
+ * plates have flipped. The numbers behind the plates live in `lib/pond.ts`
+ * and reach the picture only at the reveal.
+ */
+export interface PondLive {
+  /** Which sprig is on the bench. */
+  patientId: string
+  env: PondEnv
+  /** A count in progress, 0–1 of its minute. Zero when nothing is counting. */
+  counting: number
+  /** Bubbles that have left the stem in this count, for the picture. */
+  released: number
+  /** The plates have flipped and read their numbers. */
+  revealed: boolean
+  /** When they started flipping, so they can go over one at a time. */
+  revealedAt: number
+  /** Which plate the learner accused, so it can flip first. */
+  accused: Suspect | null
+  /** The last dial nudged, for the small shove the scene gives it. */
+  nudged: Dial | null
+  nudgedAt: number
+  /** The indicator tube beside the tank. */
+  indicator: IndicatorColour
+}
+
 export interface SugarSim {
   /* ---- environment (what the learner sets) ---- */
   light: number
@@ -280,6 +320,9 @@ export interface SugarSim {
   viewReset: number
   autoOrbit: boolean
 
+  /** The Pond's bench, when the learner is at it. */
+  pond: PondLive
+
   /* ---- measurement trial ---- */
   measure: MeasureId
   xVar: SugarVarId
@@ -351,6 +394,19 @@ export function createSugarSim(): SugarSim {
     viewZoom: 0,
     viewReset: 0,
     autoOrbit: false,
+
+    pond: {
+      patientId: 'stuffy',
+      env: { ...PATIENT_BY_ID['stuffy'].setup },
+      counting: 0,
+      released: 0,
+      revealed: false,
+      revealedAt: -1,
+      accused: null,
+      nudged: null,
+      nudgedAt: -1,
+      indicator: 'red',
+    },
 
     measure: 'export',
     xVar: 'light',
@@ -1094,6 +1150,13 @@ export function stageBlurb(stage: StageId, caps: BandCaps): string {
       : caps.vocab === 'formal'
         ? 'A chloroplast: light-dependent reactions in the thylakoid membranes, the Calvin cycle in the stroma.'
         : 'Thylakoid membranes run the light-dependent reactions; the stroma runs Calvin–Benson carbon fixation on the ATP and NADPH they supply.'
+  }
+  if (stage === 'pond') {
+    return caps.vocab === 'simple'
+      ? 'A cut piece of pond plant makes bubbles when it is working. Count them and you can tell how fast it is going.'
+      : caps.vocab === 'formal'
+        ? 'Submerged pondweed releases oxygen as it photosynthesises; the bubbles leaving the cut stem are a rough measure of the rate.'
+        : 'Oxygen evolution from a submerged macrophyte, counted at the cut stem — a rough proxy for gross rate, and the syllabus practical for limiting factors.'
   }
   if (stage === 'stem') {
     return caps.vocab === 'simple'
