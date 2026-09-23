@@ -4,7 +4,8 @@ import { useFrame } from '@react-three/fiber'
 import { CuboidCollider, CylinderCollider, RigidBody, type RapierRigidBody } from '@react-three/rapier'
 import { registerInteractable, useWorld } from '@/lib/archipelago'
 import { registerBody } from './bodies'
-import Sky from './Sky'
+import Lighting, { Lamp } from './Lighting'
+import { lightingFor, useSun } from '@/lib/looks'
 
 /**
  * The Landing — the hub island. Previz: a plaza on a floating rock, a lift
@@ -22,23 +23,13 @@ export default function Landing() {
     () => registerInteractable({ id: 'portal.foundry', verb: 'portal', label: 'The Foundry', pos: PORTAL, radius: 1.3 }),
     [],
   )
+  const lamps = lightingFor(useSun(), 'landing').lamps
   return (
     <>
-      <Sky />
-      <ambientLight intensity={0.55} color="#FFF4E0" />
-      <hemisphereLight args={['#BFD8F5', '#8A6A3F', 0.9]} />
-      <directionalLight
-        position={[18, 26, 10]}
-        intensity={2.6}
-        color="#FFE9C4"
-        castShadow
-        shadow-mapSize={[1024, 1024]}
-        shadow-camera-left={-22}
-        shadow-camera-right={22}
-        shadow-camera-top={22}
-        shadow-camera-bottom={-22}
-        shadow-bias={-0.0008}
-      />
+      <Lighting zone="landing" />
+      <Lamp position={[PORTAL[0] - 1.6, 3, PORTAL[2] + 0.4]} up={lamps} />
+      <Lamp position={[PORTAL[0] + 1.6, 3, PORTAL[2] + 0.4]} up={lamps} />
+      <Lamp position={[0, 3.2, 4.8]} up={lamps} distance={12} power={7} />
 
       {/* the island: plaza disc on a rock */}
       <RigidBody type="fixed" colliders={false} name="landing-island">

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { BookOpen, Eye, Hand, Ruler, Thermometer } from 'lucide-react'
+import { BookOpen, Eye, Hand, Moon, Ruler, Sun, Sunset, Thermometer } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { isCoarse, useInputMode } from '@/lib/input'
 import { useBandCaps } from '@/lib/bands'
 import { clearSave, describeSave } from '@/lib/worldsave'
 import { sefuLines } from '@/lib/sefu'
+import { LOOK_PRESETS, nearestLook, setSun, useSun } from '@/lib/looks'
 import {
   COPPER_MELT_C,
   FUELS,
@@ -177,6 +178,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
             </span>
             <span className="block text-[11px] font-semibold text-[#F6F2E8]/75">{s.zone === 'landing' ? 'The Landing' : 'The Foundry'}</span>
           </div>
+          <LooksChip />
         </div>
         {playing && (
           <div className="glass pointer-events-auto w-[16rem] max-w-[calc(100vw-1.5rem)] px-3 py-2" data-testid="quest-plate">
@@ -559,6 +561,61 @@ function Brief({ onDone }: { onDone: () => void }) {
     commitPrediction(n)
     onDone()
   }
+}
+
+/**
+ * Looks: the time-of-day slider in a pocket under the wordmark. Day and
+ * Night shift are the ends, the evening between; one scalar drives the
+ * whole rig (`lib/looks.ts`). Remembered across visits.
+ */
+function LooksChip() {
+  const sun = useSun()
+  const [open, setOpen] = useState(false)
+  const look = nearestLook(sun)
+  const Icon = look === 'day' ? Sun : look === 'evening' ? Sunset : Moon
+  return (
+    <div className="relative ml-1">
+      <button
+        type="button"
+        aria-label="Looks — time of day"
+        aria-expanded={open}
+        data-testid="looks"
+        className={cn('grid h-10 w-10 place-items-center rounded-full text-[#F6F2E8] transition-colors', open ? 'bg-[#E8A33D] text-[#2A2823]' : 'bg-[#F6F2E8]/10 hover:bg-[#F6F2E8]/20')}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Icon size={18} />
+      </button>
+      {open && (
+        <div className="glass absolute top-12 left-0 z-10 w-[15rem] px-3 py-2.5" data-testid="looks-pocket">
+          <span className="glass-eyebrow block">Looks · {LOOK_PRESETS.find((p) => p.id === look)?.label}</span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={sun}
+            aria-label="Time of day"
+            data-testid="sun"
+            className="mt-2 w-full accent-[#E8A33D]"
+            onChange={(e) => setSun(Number(e.target.value))}
+          />
+          <div className="mt-1.5 flex gap-1">
+            {LOOK_PRESETS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                data-testid={`look-${p.id}`}
+                className={cn('flex-1 rounded-full px-2 py-1.5 text-[11px] font-bold', look === p.id ? 'bg-[#E8A33D] text-[#2A2823]' : 'bg-[#F6F2E8]/10 text-[#F6F2E8]')}
+                onClick={() => setSun(p.sun)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 /**

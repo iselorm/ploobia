@@ -413,6 +413,51 @@ async function hold(page, code, ms) {
 }
 
 /* ------------------------------------------------------------------------ */
+/* Looks: the time-of-day slider drives the rig; Night shift keeps lamps up  */
+/* ------------------------------------------------------------------------ */
+{
+  const { page, ctx, errors } = await open({ width: 1440, height: 900 })
+  await resilientClick(page.getByTestId('play'), { label: 'Play' })
+  await waitFor(page, () => window.__world.get().phase === 'play')
+  await page.waitForTimeout(600)
+  check('the default look is Day', (await page.evaluate(() => window.__world.sun())) === 1)
+  const rig = () => page.evaluate(() => {
+    const sc = window.__world.scene
+    let key = null, amb = null, lamps = 0
+    sc.traverse((o) => {
+      if (o.isDirectionalLight) key = { i: o.intensity, c: '#' + o.color.getHexString() }
+      if (o.isAmbientLight) amb = o.intensity
+      if (o.isPointLight && o.color.getHexString() === 'ffc46a' && o.intensity > 0.1) lamps++
+    })
+    return { key, amb, lamps, fog: sc.fog ? '#' + sc.fog.color.getHexString() : null }
+  })
+  const day = await rig()
+  check('by day the sun is strong and no lamps burn', !!day.key && day.key.i > 2 && day.lamps === 0, JSON.stringify(day))
+  check('the Looks chip is in the wordmark', (await page.getByTestId('looks').count()) === 1)
+  await resilientClick(page.getByTestId('looks'), { label: 'Looks' })
+  await page.waitForTimeout(200)
+  check('it opens a pocket with the slider and three presets', (await page.getByTestId('sun').count()) === 1 && (await page.getByTestId('look-night').count()) === 1)
+  await resilientClick(page.getByTestId('look-night'), { label: 'Night shift' })
+  await page.waitForTimeout(400)
+  const night = await rig()
+  check('Night shift: a dim blue key, the fog dark, the lamps up', !!night.key && night.key.i < 1 && night.lamps >= 3 && night.fog !== day.fog, JSON.stringify(night))
+  check('Night shift: the room is never black', night.amb > 0.15, String(night.amb))
+  check('the chip now reads Night shift', await page.getByTestId('looks-pocket').textContent().then((t) => /Night shift/.test(t)).catch(() => false))
+  await page.evaluate(() => window.__world.setSun(0.42))
+  await page.waitForTimeout(300)
+  const eve = await rig()
+  check('the evening lies between: a low warm sun and half the lamps', !!eve.key && eve.key.i > night.key.i && eve.key.i < day.key.i && eve.lamps >= 3, JSON.stringify(eve))
+  check('the look is remembered', (await page.evaluate(() => localStorage.getItem('ploobia.looks.v1'))) != null)
+  await page.evaluate(() => window.__world.setSun(0))
+  await page.screenshot({ path: path.join(SHOTS, 'world-night.png') })
+  await page.reload({ waitUntil: 'load' })
+  await page.waitForFunction(() => !!window.__world, null, { timeout: 60000 })
+  check('…across a reload', (await page.evaluate(() => window.__world.sun())) === 0)
+  check('Looks: no console errors', errors.length === 0, errors.slice(0, 2).join(' | '))
+  await ctx.close()
+}
+
+/* ------------------------------------------------------------------------ */
 /* Sefu: walk up, talk, his lines follow the quest; Escape steps away        */
 /* ------------------------------------------------------------------------ */
 {

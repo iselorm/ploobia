@@ -6,6 +6,7 @@ import PerfProbe from '@/components/PerfProbe'
 import { getQualityCaps, useQualityCaps } from '@/lib/quality'
 import { getWorld, setWorld, tickWorld, useWorld } from '@/lib/archipelago'
 import { setBand } from '@/lib/bands'
+import { getSun, setSun } from '@/lib/looks'
 import Explorer from './Explorer'
 import FollowCamera from './FollowCamera'
 import Companion from './Companion'
@@ -45,6 +46,8 @@ function Expose() {
       setPos: (x: number, y: number, z: number) => {
         live.requestPos = [x, y, z]
       },
+      setSun,
+      sun: getSun,
     }
     return () => {
       delete w.__world

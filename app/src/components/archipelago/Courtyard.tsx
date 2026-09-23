@@ -20,7 +20,8 @@ import {
 import { bodies, registerBody } from './bodies'
 import { live } from './live'
 import { interactables as interactableMap } from '@/lib/archipelago'
-import Sky from './Sky'
+import Lighting, { Lamp } from './Lighting'
+import { lightingFor, useSun } from '@/lib/looks'
 import Prop from './Prop'
 import { Banner, Braces, Chalkboard, Lintel, Skyline, ToolRack } from './Dressing'
 import { useWorldMesh, useWorldTexture } from './useWorldMesh'
@@ -60,23 +61,16 @@ export default function Courtyard() {
     return () => offs.forEach((f) => f())
   }, [])
   const heat = THREE.MathUtils.clamp((s.furnace.temp - 20) / (COPPER_MELT_C + 200), 0, 1)
+  const lamps = lightingFor(useSun(), 'foundry').lamps
   return (
     <>
-      <Sky top="#F0B354" horizon="#F6E3C6" fog="#EBD6B4" />
-      <ambientLight intensity={0.5} color="#FFF0D8" />
-      <hemisphereLight args={['#F8DDB0', '#7A5A3C', 0.9]} />
-      <directionalLight
-        position={[-14, 22, 12]}
-        intensity={2.4}
-        color="#FFE2B0"
-        castShadow
-        shadow-mapSize={[1024, 1024]}
-        shadow-camera-left={-18}
-        shadow-camera-right={18}
-        shadow-camera-top={18}
-        shadow-camera-bottom={-18}
-        shadow-bias={-0.0008}
-      />
+      <Lighting zone="foundry" />
+      {/* the yard's lamps: up as the sun goes down (Night shift keeps the subject lit, never the room black) */}
+      <Lamp position={[-3.4, 3.1, 11.9]} up={lamps} />
+      <Lamp position={[3.4, 3.1, 11.9]} up={lamps} />
+      <Lamp position={[9.3, 3.2, -0.2]} up={lamps} distance={11} power={7} />
+      <Lamp position={[-6, 3.4, -5.2]} up={lamps} distance={11} power={7} />
+      <Lamp position={[-11.6, 3.2, 4]} up={lamps} />
       {s.furnace.lit && <pointLight position={[0, 1.6, -5.5]} intensity={6 + heat * 30} distance={14} color="#FF8A3D" />}
 
       {/* floor and walls */}
