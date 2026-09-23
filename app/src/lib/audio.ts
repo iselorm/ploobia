@@ -102,12 +102,42 @@ function ready(): boolean {
   return true
 }
 
+/**
+ * The graph for a layer that keeps continuous nodes alive (the world's
+ * furnace bed): available once audio has started, muted or not — mute is
+ * the master gain's business, so a bed built while muted is heard the
+ * moment the learner unmutes. Null before the first gesture.
+ */
+export function audioGraph(): { ctx: AudioContext; master: GainNode } | null {
+  if (!ctx || !master) return null
+  if (ctx.state === 'suspended') void ctx.resume()
+  return { ctx, master }
+}
+
+/** True once a one-shot may sound now (started, and not muted). */
+export function canPlay(): boolean {
+  return ready()
+}
+
+/** A shared two-second white-noise buffer for bursts and beds. */
+let noiseBuf: AudioBuffer | null = null
+export function noiseBuffer(): AudioBuffer | null {
+  if (!ctx) return null
+  if (!noiseBuf) {
+    const n = Math.floor(ctx.sampleRate * 2)
+    noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate)
+    const d = noiseBuf.getChannelData(0)
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1
+  }
+  return noiseBuf
+}
+
 /* ------------------------------------------------------------------ */
 /* Voices                                                             */
 /* ------------------------------------------------------------------ */
 
 /** A short pitched blip: sine/triangle with a fast attack and a soft tail. */
-function blip(freq: number, dur: number, gain: number, type: OscillatorType = 'sine', slideTo?: number): void {
+export function blip(freq: number, dur: number, gain: number, type: OscillatorType = 'sine', slideTo?: number): void {
   if (!ready() || !ctx || !master) return
   const t = ctx.currentTime
   const osc = ctx.createOscillator()

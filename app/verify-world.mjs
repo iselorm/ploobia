@@ -413,6 +413,34 @@ async function hold(page, code, ms) {
 }
 
 /* ------------------------------------------------------------------------ */
+/* Sound: starts on Play, the furnace bed follows the heat, mute is honoured */
+/* ------------------------------------------------------------------------ */
+{
+  const { page, ctx, errors } = await open({ width: 1440, height: 900 })
+  check('nothing sounds before a gesture', (await page.evaluate(() => !!window.__audioStarted)) === false)
+  await resilientClick(page.getByTestId('play'), { label: 'Play' })
+  await waitFor(page, () => window.__world.get().phase === 'play')
+  check('Play starts the audio', (await page.evaluate(() => window.__audioStarted)) === true)
+  check('the sound chip is in the wordmark, on', (await page.getByTestId('sound').getAttribute('aria-pressed')) === 'true')
+  await page.evaluate(() => { window.__world.setBand('explorer'); window.__world.set({ zone: 'foundry', prediction: 1000, fed: ['scrap.a', 'scrap.b'], lit: ['wetwood', 'drywood', 'charcoal'], bellowsSeen: true, pipeFixed: true }) })
+  await page.waitForTimeout(600)
+  const cold = await page.evaluate(() => window.__world.bed())
+  check('a cold furnace has a silent bed', cold == null || cold.gain < 0.01, JSON.stringify(cold))
+  await page.evaluate(() => window.__world.set({ air: 1, furnace: { lit: true, fuel: 'charcoal', temp: 900 } }))
+  await page.waitForTimeout(1500)
+  const hot = await page.evaluate(() => window.__world.bed())
+  check('a burning furnace has a roar that follows its heat', !!hot && hot.gain > 0.05 && hot.cutoff > 500, JSON.stringify(hot))
+  await resilientClick(page.getByTestId('sound'), { label: 'Sound' })
+  await page.waitForTimeout(200)
+  check('the chip mutes, and is remembered', (await page.evaluate(() => window.__audioMuted)) === true && (await page.evaluate(() => localStorage.getItem('ploobia.audio.v1'))) === 'muted')
+  await resilientClick(page.getByTestId('sound'), { label: 'Sound' })
+  await page.waitForTimeout(200)
+  check('…and unmutes', (await page.evaluate(() => window.__audioMuted)) === false)
+  check('sound: no console errors', errors.length === 0, errors.slice(0, 2).join(' | '))
+  await ctx.close()
+}
+
+/* ------------------------------------------------------------------------ */
 /* Looks: the time-of-day slider drives the rig; Night shift keeps lamps up  */
 /* ------------------------------------------------------------------------ */
 {

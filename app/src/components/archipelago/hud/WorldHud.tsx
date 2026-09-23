@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { BookOpen, Eye, Hand, Moon, Ruler, Sun, Sunset, Thermometer } from 'lucide-react'
+import { BookOpen, Eye, Hand, Moon, Ruler, Sun, Sunset, Thermometer, Volume2, VolumeX } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { isCoarse, useInputMode } from '@/lib/input'
 import { useBandCaps } from '@/lib/bands'
 import { clearSave, describeSave } from '@/lib/worldsave'
 import { sefuLines } from '@/lib/sefu'
 import { LOOK_PRESETS, nearestLook, setSun, useSun } from '@/lib/looks'
+import { isMuted, onMuteChange, setMuted, startAudio } from '@/lib/audio'
 import {
   COPPER_MELT_C,
   FUELS,
@@ -179,6 +180,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
             <span className="block text-[11px] font-semibold text-[#F6F2E8]/75">{s.zone === 'landing' ? 'The Landing' : 'The Foundry'}</span>
           </div>
           <LooksChip />
+          <SoundChip />
         </div>
         {playing && (
           <div className="glass pointer-events-auto w-[16rem] max-w-[calc(100vw-1.5rem)] px-3 py-2" data-testid="quest-plate">
@@ -286,7 +288,11 @@ export default function WorldHud({ compact }: { compact: boolean }) {
             <p className="mt-2 text-[11px] leading-relaxed text-[#8B8471]">
               {coarse ? 'Stick to walk · drag to look · the prompt to act' : 'WASD to walk · drag to look · E to act · Q for the Lens · J for the journal · Space to jump'}
             </p>
-            <Tile autoFocus data-testid="play" className="mt-4 w-full rounded-full bg-[#E8A33D] px-5 py-3 text-[15px] font-extrabold text-[#2A2823]" onClick={() => setWorld({ phase: 'play', resumed: false })}>
+            <Tile autoFocus data-testid="play" className="mt-4 w-full rounded-full bg-[#E8A33D] px-5 py-3 text-[15px] font-extrabold text-[#2A2823]" onClick={() => {
+                startAudio()
+                setWorld({ phase: 'play', resumed: false })
+              }}
+            >
               {s.resumed ? 'Continue' : 'Play'}
             </Tile>
             {s.resumed && (
@@ -294,6 +300,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
                 data-testid="restart"
                 className="mt-2 w-full rounded-full border border-[#2A2823]/15 bg-white/60 px-5 py-2.5 text-[13px] font-bold text-[#5F5A4E]"
                 onClick={() => {
+                  startAudio()
                   clearSave()
                   resetWorld()
                   setAfter(0)
@@ -561,6 +568,27 @@ function Brief({ onDone }: { onDone: () => void }) {
     commitPrediction(n)
     onDone()
   }
+}
+
+/** Sound on/off — the platform's mute, remembered across cabinets. */
+function SoundChip() {
+  const [mute, setMute] = useState(() => isMuted())
+  useEffect(() => onMuteChange(setMute), [])
+  return (
+    <button
+      type="button"
+      aria-label={mute ? 'Sound off — turn on' : 'Sound on — turn off'}
+      aria-pressed={!mute}
+      data-testid="sound"
+      className="ml-1 grid h-10 w-10 place-items-center rounded-full bg-[#F6F2E8]/10 text-[#F6F2E8] hover:bg-[#F6F2E8]/20"
+      onClick={() => {
+        startAudio()
+        setMuted(!mute)
+      }}
+    >
+      {mute ? <VolumeX size={18} /> : <Volume2 size={18} />}
+    </button>
+  )
 }
 
 /**

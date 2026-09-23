@@ -7,6 +7,7 @@ import { getQualityCaps, useQualityCaps } from '@/lib/quality'
 import { getWorld, setWorld, tickWorld, useWorld } from '@/lib/archipelago'
 import { setBand } from '@/lib/bands'
 import { getSun, setSun } from '@/lib/looks'
+import { bedLevel } from '@/lib/worldaudio'
 import Explorer from './Explorer'
 import FollowCamera from './FollowCamera'
 import Companion from './Companion'
@@ -48,6 +49,7 @@ function Expose() {
       },
       setSun,
       sun: getSun,
+      bed: bedLevel,
     }
     return () => {
       delete w.__world

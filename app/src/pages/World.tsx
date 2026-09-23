@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useLayoutTier, usePortraitPhone } from '@/hooks/use-layout'
 import { getWorld, resetWorld, returnFromCabinet } from '@/lib/archipelago'
 import { loadSave, restoreWorld, watchWorld } from '@/lib/worldsave'
+import { installWorldAudio } from '@/lib/worldaudio'
 import SceneErrorBoundary from '@/components/SceneErrorBoundary'
 import TurnCard from '@/components/game/TurnCard'
 import ArchipelagoScene from '@/components/archipelago/ArchipelagoScene'
@@ -46,6 +47,7 @@ export default function World() {
   })
   useEffect(() => installWorldKeys(), [])
   useEffect(() => watchWorld(() => ({ pos: [live.pos.x, live.pos.y, live.pos.z], facing: live.facing, cam: [live.camYaw, live.camPitch] })), [])
+  useEffect(() => installWorldAudio(() => ({ speed: live.speed, grounded: live.grounded })), [])
   if (portrait) return <TurnCard line="The Archipelago is explored the wide way round." />
   const compact = tier === 'phone'
   return (
