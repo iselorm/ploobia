@@ -20,6 +20,7 @@ import {
   craneLeave,
   craneTip,
   currentStep,
+  draughtFor,
   evalPredicate,
   fallTimes,
   feedFurnace,
@@ -330,7 +331,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       {playing && !brief && s.talk === 'talk.foreman' && <TalkCard lines={sefuLines(s)} compact={compact} onClose={() => talkTo(null)} />}
 
       {/* the furnace room — a cabinet interior, entered by a cut */}
-      {inRoom && !s.poured && <Room lit={s.lit} hearths={s.hearths} fuel={s.furnace.fuel} air={s.air} pipeFixed={s.pipeFixed} />}
+      {inRoom && !s.poured && <Room lit={s.lit} hearths={s.hearths} fuel={s.furnace.fuel} air={s.air} pipeFixed={s.pipeFixed} compact={compact} />}
 
       {/* the pour — the hand-in card, then the three whys, then the stamp */}
       {s.poured && !seenPour && (
@@ -755,49 +756,104 @@ function TalkCard({ lines, compact, onClose }: { lines: readonly string[]; compa
 }
 
 /** The furnace room's controls: what to burn, and how hard to work the bellows. */
-function Room({ lit, hearths, fuel, air, pipeFixed }: { lit: FuelId[]; hearths: Record<FuelId, number>; fuel: FuelId | null; air: number; pipeFixed: boolean }) {
+function Room({ lit, hearths, fuel, air, pipeFixed, compact }: { lit: FuelId[]; hearths: Record<FuelId, number>; fuel: FuelId | null; air: number; pipeFixed: boolean; compact: boolean }) {
+  const fuels = FUEL_ORDER.map((f) => {
+    const read = lit.includes(f)
+    const on = fuel === f
+    return (
+      <Tile key={f} data-testid={`feed-${f}`} aria-pressed={on} className={cn('rounded-[14px] px-2 text-left', compact ? 'py-1' : 'py-2', on ? 'bg-[#E8A33D]' : 'bg-[#FBEBD2]')} onClick={() => feedFurnace(f)}>
+        <span className="block text-[12px] font-extrabold text-[#2A2823]">{FUELS[f].name}</span>
+        <span className="block text-[11px] tabular-nums text-[#5F5A4E]">{read ? `${Math.round(hearths[f])} °C` : 'not read'}</span>
+      </Tile>
+    )
+  })
   return (
     <div className="pointer-events-auto absolute inset-x-0 bottom-0 flex justify-center p-3">
-      <div className="atlas-plate w-full max-w-[30rem] rounded-[20px] px-4 py-3" data-testid="room">
+      <div className={cn('atlas-plate w-full rounded-[20px] px-4', compact ? 'max-w-[36rem] py-2' : 'max-w-[30rem] py-3')} data-testid="room">
         <div className="flex items-baseline justify-between">
           <span className="atlas-eyebrow">Inside the furnace</span>
           <Tile className="rounded-full px-3 py-1 text-[11px] font-extrabold text-[#8B8471]" data-testid="step-out" onClick={leaveRoom}>
             Step out
           </Tile>
         </div>
-        <p className="mt-1 text-[12px] font-semibold text-[#5F5A4E]">What goes on the bed, and how hard you work the bellows. The gauge only knows what you read.</p>
-        <div className="mt-2 grid grid-cols-3 gap-2">
-          {FUEL_ORDER.map((f) => {
-            const read = lit.includes(f)
-            const on = fuel === f
-            return (
-              <Tile key={f} data-testid={`feed-${f}`} aria-pressed={on} className={cn('rounded-[14px] px-2 py-2 text-left', on ? 'bg-[#E8A33D]' : 'bg-[#FBEBD2]')} onClick={() => feedFurnace(f)}>
-                <span className="block text-[12px] font-extrabold text-[#2A2823]">{FUELS[f].name}</span>
-                <span className="block text-[11px] tabular-nums text-[#5F5A4E]">{read ? `${Math.round(hearths[f])} °C` : 'not read'}</span>
-              </Tile>
-            )
-          })}
-        </div>
-        <div className="mt-3 flex items-center gap-3">
-          <label htmlFor="world-air" className="atlas-eyebrow whitespace-nowrap">
-            Bellows
-          </label>
-          <input
-            id="world-air"
-            data-testid="air"
-            type="range"
-            min={0}
-            max={100}
-            step={5}
-            value={Math.round(air * 100)}
-            onChange={(e) => setAir(Number(e.target.value) / 100)}
-            className="h-2 w-full accent-[#2F7F7A]"
-            aria-label="Bellows stroke"
-          />
-          <span className="w-12 text-right text-[12px] font-extrabold tabular-nums text-[#2A2823]">{Math.round(air * 100)}%</span>
-        </div>
-        <p className="mt-1 text-[10px] text-[#8B8471]">{pipeFixed ? 'The pipe is whole: what you pump arrives.' : 'The pipe is split: most of what you pump leaves before the fire.'}</p>
+        {compact ? (
+          // A phone: the bed and the air side by side, so the plate stays under the screen.
+          <div className="mt-1 grid grid-cols-[1fr_1.5fr] gap-3">
+            <div className="grid gap-1.5">
+              <span className="atlas-eyebrow">On the bed</span>
+              {fuels}
+            </div>
+            <AirIntake air={air} pipeFixed={pipeFixed} compact />
+          </div>
+        ) : (
+          <>
+            <p className="mt-1 text-[12px] font-semibold text-[#5F5A4E]">What goes on the bed, and how hard you work the bellows. The gauge only knows what you read.</p>
+            <div className="mt-2 grid grid-cols-3 gap-2">{fuels}</div>
+            <AirIntake air={air} pipeFixed={pipeFixed} />
+          </>
+        )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * The air control. Selorm 2026-09-23: "the bellows slider is confusing for a
+ * new user — make it Air intake, something that shows the amount of air
+ * pumping into the furnace." So: three plain settings (none · steady · hard)
+ * plus the slider, a meter of what is pumped, and inside it what actually
+ * reaches the fire — which is the whole lesson while the pipe is split.
+ */
+const AIR_PRESETS = [
+  { label: 'No air', value: 0 },
+  { label: 'Steady', value: 0.5 },
+  { label: 'Hard', value: 1 },
+] as const
+
+function AirIntake({ air, pipeFixed, compact = false }: { air: number; pipeFixed: boolean; compact?: boolean }) {
+  const pumped = Math.round(air * 100)
+  const reaching = Math.round(draughtFor(pipeFixed, air) * 100)
+  return (
+    <div className={compact ? '' : 'mt-3'} data-testid="air-intake">
+      <div className="flex items-baseline justify-between">
+        <span className="atlas-eyebrow">Air into the furnace</span>
+        <span className="text-[11px] font-bold text-[#5F5A4E]">the bellows</span>
+      </div>
+      <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+        {AIR_PRESETS.map((p) => {
+          const on = Math.abs(air - p.value) < 0.06
+          return (
+            <Tile key={p.label} data-testid={`air-${p.label.toLowerCase().replace(' ', '-')}`} aria-pressed={on} className={cn('rounded-full px-2 py-1.5 text-[12px] font-extrabold', on ? 'bg-[#2F7F7A] text-white' : 'bg-[#E4EFEE] text-[#2A2823]')} onClick={() => setAir(p.value)}>
+              {p.label}
+            </Tile>
+          )
+        })}
+      </div>
+      <div className="mt-2 flex items-center gap-3">
+        <input
+          id="world-air"
+          data-testid="air"
+          type="range"
+          min={0}
+          max={100}
+          step={5}
+          value={pumped}
+          onChange={(e) => setAir(Number(e.target.value) / 100)}
+          className="h-2 w-full accent-[#2F7F7A]"
+          aria-label="Air pumped by the bellows"
+        />
+        <span className="w-12 text-right text-[12px] font-extrabold tabular-nums text-[#2A2823]">{pumped}%</span>
+      </div>
+      {/* the meter: pumped (pale) and what reaches the fire (teal, or amber while the pipe leaks) */}
+      <div className="relative mt-2 h-3 w-full overflow-hidden rounded-full bg-[#EEE6D6]" role="img" aria-label={`${pumped}% pumped, ${reaching}% reaching the fire`}>
+        <div className="absolute inset-y-0 left-0 rounded-full bg-[#BFD9D6]" style={{ width: `${pumped}%` }} />
+        <div className={cn('absolute inset-y-0 left-0 rounded-full transition-[width]', pipeFixed ? 'bg-[#2F7F7A]' : 'bg-[#E8A33D]')} style={{ width: `${reaching}%` }} />
+      </div>
+      <p className="mt-1 text-[11px] font-semibold text-[#5F5A4E]" data-testid="air-reaching">
+        Pumping <b className="tabular-nums text-[#2A2823]">{pumped}%</b> · reaching the fire <b className={cn('tabular-nums', pipeFixed ? 'text-[#2F7F7A]' : 'text-[#B5650E]')}>{reaching}%</b>
+        {pipeFixed ? ' — the pipe is whole; what you pump arrives.' : ' — the pipe is split; most of it leaves before the fire.'}
+      </p>
+      {!compact && <p className="mt-0.5 text-[10px] text-[#8B8471]">The fuel sets how hot the fire can get. The air sets how close it gets.</p>}
     </div>
   )
 }

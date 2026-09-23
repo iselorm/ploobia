@@ -248,6 +248,10 @@ async function hold(page, code, ms) {
   await page.waitForTimeout(2500)
   const cold = await world(page)
   check('with the bellows shut the furnace warms but stays under copper', cold.furnace.temp > 30 && cold.furnace.temp < COPPER, `temp=${Math.round(cold.furnace.temp)}`)
+  check('the air control says what reaches the fire', await page.getByTestId('air-reaching').textContent().then((t) => /Pumping 0%/.test(t) && /reaching the fire 8%/.test(t)).catch(() => false))
+  await resilientClick(page.getByTestId('air-steady'), { label: 'Steady' })
+  await waitFor(page, () => Math.abs(window.__world.get().air - 0.5) < 0.01)
+  check('Steady pumps half', await page.getByTestId('air-reaching').textContent().then((t) => /Pumping 50%/.test(t) && /reaching the fire 54%/.test(t) && /pipe is whole/.test(t)).catch(() => false), await page.getByTestId('air-reaching').textContent().catch(() => ''))
   await page.evaluate(() => {
     const el = document.querySelector('[data-testid=air]')
     const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
