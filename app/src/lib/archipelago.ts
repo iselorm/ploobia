@@ -472,7 +472,7 @@ export const RELIGHT: Quest = {
     {
       id: 'build',
       label: 'Fix the bellows pipe',
-      coach: 'The air stops at the split pipe. Fix it.',
+      coach: 'See it? The air escapes at the split in the pipe. Walk up to the split and fix it.',
       target: 'build.pipe',
       until: { type: 'state', source: 'pipeFixed', equals: true },
     },

@@ -197,9 +197,9 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       {/* top-right: the compass minimap */}
       {playing && !compact && <Minimap s={s} />}
 
-      {/* bottom-left: the toolbelt */}
+      {/* bottom-left: the toolbelt — on a phone it moves to the top-right, and the stick has the bottom-left corner to itself */}
       {playing && !inRoom && !driving && (
-        <div className="absolute bottom-3 left-3 flex items-end gap-1.5" data-testid="toolbelt">
+        <div className={cn('absolute flex items-end gap-1.5', compact ? 'top-3 right-3' : 'bottom-3 left-3')} data-testid="toolbelt">
           <Tool label="Lens" keyHint={coarse ? undefined : 'Q'} active={s.ring === 'system'} testid="lens" onClick={() => (control.lens = true)}>
             <Eye size={18} />
           </Tool>
@@ -212,13 +212,18 @@ export default function WorldHud({ compact }: { compact: boolean }) {
           <Tool label="Journal" keyHint={coarse ? undefined : 'J'} testid="journal" active={journalOpen} onClick={() => setJournalOpen((o) => !o)}>
             <BookOpen size={18} />
           </Tool>
-          {coarse && <Stick />}
+          {coarse && !compact && <Stick />}
+        </div>
+      )}
+      {playing && !inRoom && !driving && coarse && compact && (
+        <div className="absolute bottom-3 left-3 flex">
+          <Stick />
         </div>
       )}
 
-      {/* low-centre: the one verb, near the thing */}
+      {/* low-centre: the one verb, near the thing — on a phone, the right thumb's corner */}
       {playing && !inRoom && !driving && (
-        <div className="absolute inset-x-0 flex justify-center" style={{ bottom: compact ? 16 : 22 }}>
+        <div className={cn('absolute flex', compact ? 'right-3 bottom-3 justify-end' : 'inset-x-0 justify-center')} style={{ bottom: compact ? 12 : 22 }}>
           <Tile
             aria-label={verbLabel ?? 'Nothing near'}
             data-testid="interact"
@@ -246,9 +251,9 @@ export default function WorldHud({ compact }: { compact: boolean }) {
         </div>
       )}
 
-      {/* bottom-right: Ploob's hint */}
+      {/* bottom-right: Ploob's hint — on a phone it sits between the stick and the verb, off both thumbs */}
       {playing && !brief && !inRoom && !afterPour && (
-        <div className="absolute right-3 bottom-3 max-w-[min(24rem,calc(100vw-1.5rem))]">
+        <div className={cn('absolute bottom-3', compact ? 'left-[9rem] right-[13.5rem]' : 'right-3 max-w-[min(24rem,calc(100vw-1.5rem))]')}>
           <button
             type="button"
             className="glass pointer-events-auto flex w-full items-center gap-3 px-3 py-2.5 text-left"
@@ -258,12 +263,12 @@ export default function WorldHud({ compact }: { compact: boolean }) {
               control.hint = true
             }}
           >
-            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#F6F2E8]/10">
-              <Ploob2 size={compact ? 26 : 32} />
+            <div className={cn('grid shrink-0 place-items-center rounded-full bg-[#F6F2E8]/10', compact ? 'h-9 w-9' : 'h-12 w-12')}>
+              <Ploob2 size={compact ? 22 : 32} />
             </div>
             <div className="min-w-0 flex-1">
-              <span className="glass-eyebrow block">Ploob</span>
-              <p className="text-[12.5px] leading-snug font-extrabold">{hintText}</p>
+              {!compact && <span className="glass-eyebrow block">Ploob</span>}
+              <p className={cn('leading-snug font-extrabold', compact ? 'line-clamp-2 text-[11.5px]' : 'text-[12.5px]')}>{hintText}</p>
             </div>
             {!coarse && <kbd className="glass-key shrink-0">H</kbd>}
           </button>
@@ -318,8 +323,11 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       {/* the brief — the foreman's ask, a number you type */}
       {brief && <Brief onDone={() => setBriefed(true)} />}
 
+      {/* the Lens up in the courtyard: the scope of the air system, the split marked */}
+      {playing && !inRoom && !driving && s.zone === 'foundry' && s.ring === 'system' && <Scope pipeFixed={s.pipeFixed} compact={compact} />}
+
       {/* talking — Sefu's account of the stall, one line at a time */}
-      {playing && !brief && s.talk === 'talk.foreman' && <TalkCard lines={sefuLines(s)} onClose={() => talkTo(null)} />}
+      {playing && !brief && s.talk === 'talk.foreman' && <TalkCard lines={sefuLines(s)} compact={compact} onClose={() => talkTo(null)} />}
 
       {/* the furnace room — a cabinet interior, entered by a cut */}
       {inRoom && !s.poured && <Room lit={s.lit} hearths={s.hearths} fuel={s.furnace.fuel} air={s.air} pipeFixed={s.pipeFixed} />}
@@ -570,6 +578,65 @@ function Brief({ onDone }: { onDone: () => void }) {
   }
 }
 
+/**
+ * The scope: what the System ring is showing, drawn plainly — bellows, pipe,
+ * furnace, and the split where the air escapes — so the Lens's picture in
+ * the scene has a caption a first-timer can read. After the fix, the same
+ * picture whole. Selorm 2026-09-23: the hint to fix the bellows was not
+ * clear; an expanded Lens view of the pipes was asked for.
+ */
+function Scope({ pipeFixed, compact }: { pipeFixed: boolean; compact: boolean }) {
+  return (
+    <div className={cn('pointer-events-none absolute inset-x-0 flex justify-center px-3', compact ? 'top-14' : 'top-20')}>
+      <div className={cn('glass w-full px-3 py-2.5', compact ? 'max-w-[20rem]' : 'max-w-[24rem]')} data-testid="scope">
+        <span className="glass-eyebrow block">The Lens · System ring · the air</span>
+        <svg viewBox="0 0 320 64" className="mt-1.5 h-16 w-full" role="img" aria-label={pipeFixed ? 'Air runs from the bellows through a whole pipe into the furnace' : 'Air leaves the bellows and escapes at a split in the pipe before the furnace'}>
+          {/* furnace, left */}
+          <rect x="6" y="14" width="54" height="40" rx="6" fill="#4A3A2C" stroke="#F6F2E8" strokeOpacity="0.5" />
+          <rect x="22" y="30" width="22" height="24" rx="4" fill={pipeFixed ? '#FF8A3D' : '#2A2823'} />
+          <text x="33" y="10" textAnchor="middle" fontSize="9" fill="#F6F2E8" fontWeight="700">
+            furnace
+          </text>
+          {/* bellows, right */}
+          <path d="M262 22 L312 14 L312 54 L262 46 Z" fill="#7A5A3C" stroke="#F6F2E8" strokeOpacity="0.5" />
+          <text x="287" y="10" textAnchor="middle" fontSize="9" fill="#F6F2E8" fontWeight="700">
+            bellows
+          </text>
+          {/* the pipe: whole, or split at x≈150 */}
+          {pipeFixed ? (
+            <>
+              <rect x="60" y="30" width="202" height="10" rx="5" fill="#6B7B8C" />
+              {[80, 120, 160, 200, 240].map((x) => (
+                <path key={x} d={`M${x + 8} 35 L${x} 31 L${x} 39 Z`} fill="#8FE3B0" />
+              ))}
+              <text x="160" y="58" textAnchor="middle" fontSize="9.5" fill="#8FE3B0" fontWeight="800">
+                the pipe is whole — air reaches the fire
+              </text>
+            </>
+          ) : (
+            <>
+              <rect x="60" y="30" width="82" height="10" rx="5" fill="#6B7B8C" opacity="0.55" />
+              <rect x="164" y="30" width="98" height="10" rx="5" fill="#6B7B8C" />
+              {[200, 240].map((x) => (
+                <path key={x} d={`M${x - 8} 35 L${x} 31 L${x} 39 Z`} fill="#8FE3B0" />
+              ))}
+              {/* the escape: arrows up and out at the split */}
+              <path d="M158 30 L150 14 M158 30 L164 12 M158 30 L146 20" stroke="#FF6A5A" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+              <circle cx="153" cy="35" r="9" fill="none" stroke="#FF6A5A" strokeWidth="2" />
+              <text x="153" y="58" textAnchor="middle" fontSize="9.5" fill="#FF6A5A" fontWeight="800">
+                the split — the air escapes here
+              </text>
+            </>
+          )}
+        </svg>
+        <p className="mt-1 text-[12px] leading-snug font-extrabold text-[#F6F2E8]" data-testid="scope-line">
+          {pipeFixed ? 'Air runs from the bellows to the fire. Now feed it.' : 'The bellows push air down the pipe. At the split most of it escapes — little reaches the fire. Go to the split and fix it.'}
+        </p>
+      </div>
+    </div>
+  )
+}
+
 /** Sound on/off — the platform's mute, remembered across cabinets. */
 function SoundChip() {
   const [mute, setMute] = useState(() => isMuted())
@@ -651,7 +718,7 @@ function LooksChip() {
  * goes on; the last line's button steps back to work. Escape closes (the
  * explorer's exit key). Nothing here is instruction — that is Ploob's.
  */
-function TalkCard({ lines, onClose }: { lines: readonly string[]; onClose: () => void }) {
+function TalkCard({ lines, compact, onClose }: { lines: readonly string[]; compact: boolean; onClose: () => void }) {
   const [i, setI] = useState(0)
   const last = i >= lines.length - 1
   const next = () => (last ? onClose() : setI(i + 1))
@@ -666,7 +733,7 @@ function TalkCard({ lines, onClose }: { lines: readonly string[]; onClose: () =>
     return () => window.removeEventListener('keydown', onKey)
   })
   return (
-    <div className="pointer-events-auto absolute inset-x-0 bottom-24 flex justify-center px-4 sm:bottom-28" data-focus-layer="">
+    <div className={cn('pointer-events-auto absolute inset-x-0 flex justify-center px-4', compact ? 'top-16' : 'bottom-24 sm:bottom-28')} data-focus-layer="">
       <div className="atlas-plate w-full max-w-[26rem] rounded-[22px] px-6 py-5" data-testid="talk">
         <span className="atlas-eyebrow block">
           {WORLD_TEXT.people.foreman.name} · {WORLD_TEXT.people.foreman.title}

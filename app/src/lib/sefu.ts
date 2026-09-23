@@ -23,6 +23,7 @@ export const SEFU_LINES: Record<SefuMood, readonly string[]> = {
   clear: [
     'The belt stopped when the copper fell off it. The small pieces you can lift — the big one wants the crane.',
     'Forty bells due Friday. I have fed this furnace everything I own and it sits there cold.',
+    'My father had a rule for a machine that hides its fault: raise the Lens. It shows the air and the heat — what the eye cannot.',
   ],
   probe: [
     'I burned the wet stack first. Heaviest wood I had. The gauge never got past five hundred.',
@@ -32,6 +33,7 @@ export const SEFU_LINES: Record<SefuMood, readonly string[]> = {
   lens: [
     'The bellows boy pumped until his arms gave out. The fire never noticed.',
     'Good fuel, cold furnace. Three nights I have stared at it and I cannot tell you why.',
+    'Raise the Lens by the furnace and follow the air. If it is going somewhere it should not, you will see it.',
   ],
   build: [
     'That pipe has been split since the rains. I never thought it mattered.',

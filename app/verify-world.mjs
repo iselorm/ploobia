@@ -413,6 +413,32 @@ async function hold(page, code, ms) {
 }
 
 /* ------------------------------------------------------------------------ */
+/* The scope: the Lens up in the courtyard captions the air, split marked    */
+/* ------------------------------------------------------------------------ */
+{
+  const { page, ctx, errors } = await open({ width: 1440, height: 900 })
+  await resilientClick(page.getByTestId('play'), { label: 'Play' })
+  await waitFor(page, () => window.__world.get().phase === 'play')
+  await page.evaluate(() => { window.__world.setBand('explorer'); window.__world.set({ zone: 'foundry', prediction: 1000, fed: ['scrap.a', 'scrap.b'], lit: ['wetwood', 'drywood', 'charcoal'] }) })
+  await page.waitForTimeout(900)
+  check('no scope while the Lens is down', (await page.getByTestId('scope').count()) === 0)
+  await page.keyboard.press('KeyQ')
+  await waitFor(page, () => window.__world.get().ring === 'system', 5000).catch(() => {})
+  await page.getByTestId('scope').waitFor({ timeout: 3000 }).catch(() => {})
+  check('the Lens up shows the scope of the air', (await page.getByTestId('scope').count()) === 1)
+  check('…with the split marked and the way said', await page.getByTestId('scope').textContent().then((t) => /the split — the air escapes here/.test(t) && /Go to the split and fix it/.test(t)).catch(() => false))
+  check('Ploob now points at the split', await page.getByTestId('coach').textContent().then((t) => /split in the pipe/.test(t)).catch(() => false))
+  await page.evaluate(() => window.__world.set({ pipeFixed: true }))
+  await page.waitForTimeout(300)
+  check('after the fix the scope shows the pipe whole', await page.getByTestId('scope').textContent().then((t) => /the pipe is whole/.test(t) && /Now feed it/.test(t)).catch(() => false))
+  await page.keyboard.press('KeyQ')
+  await page.waitForTimeout(300)
+  check('the Lens down takes the scope with it', (await page.getByTestId('scope').count()) === 0)
+  check('scope: no console errors', errors.length === 0, errors.slice(0, 2).join(' | '))
+  await ctx.close()
+}
+
+/* ------------------------------------------------------------------------ */
 /* Sound: starts on Play, the furnace bed follows the heat, mute is honoured */
 /* ------------------------------------------------------------------------ */
 {
@@ -514,6 +540,10 @@ async function hold(page, code, ms) {
   await page.waitForTimeout(250)
   const line2 = await page.getByTestId('talk-line').textContent()
   check('E goes on to his next line', line2 !== line1 && /Forty bells/.test(line2), line2)
+  await page.keyboard.press('KeyE')
+  await page.waitForTimeout(250)
+  const lineLens = await page.getByTestId('talk-line').textContent()
+  check('from the start he says the Lens shows what hides', /raise the Lens/i.test(lineLens), lineLens)
   await page.keyboard.press('Escape')
   await page.waitForTimeout(300)
   check('Escape steps away', (await page.getByTestId('talk').count()) === 0 && (await world(page)).talk === null)
@@ -618,6 +648,7 @@ async function hold(page, code, ms) {
 for (const [name, viewport, touch] of [
   ['tablet', { width: 1180, height: 820 }, true],
   ['phone', { width: 915, height: 412 }, true],
+  ['small-phone', { width: 740, height: 360 }, true],
 ]) {
   const { page, ctx, errors } = await open(viewport, { touch })
   await resilientClick(page.getByTestId('play'), { label: 'Play' })
@@ -655,6 +686,20 @@ for (const [name, viewport, touch] of [
   check(`${name}: every control is at least 40 px`, small.length === 0, small.join(', '))
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)
   check(`${name}: nothing scrolls sideways`, !overflow)
+  const clear = await page.evaluate(() => {
+    const st = document.querySelector('[data-testid="stick"]')?.getBoundingClientRect()
+    if (!st) return null
+    const hits = []
+    const stick = document.querySelector('[data-testid="stick"]')
+    for (const id of ['coach', 'interact', 'toolbelt']) {
+      const el = document.querySelector(`[data-testid="${id}"]`)
+      if (!el || el.contains(stick)) continue
+      const r = el.getBoundingClientRect()
+      if (r.width > 0 && r.left < st.right && r.right > st.left && r.top < st.bottom && r.bottom > st.top) hits.push(id)
+    }
+    return hits
+  })
+  check(`${name}: nothing covers the stick`, clear !== null && clear.length === 0, JSON.stringify(clear))
   await page.screenshot({ path: path.join(SHOTS, `world-${name}.png`) })
   check(`${name}: no console errors`, errors.length === 0, errors.slice(0, 2).join(' | '))
   await ctx.close()
