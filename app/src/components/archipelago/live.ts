@@ -110,7 +110,7 @@ export function installWorldKeys(): () => void {
       // Escape is the platform's "back" — unless the explorer is inside a
       // mode, where it steps out of that first.
       const w = getWorld()
-      if (w.crane.active || w.room !== 'none') {
+      if (w.crane.active || w.room !== 'none' || w.talk) {
         control.exit = true
         e.preventDefault()
       }

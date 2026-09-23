@@ -413,6 +413,63 @@ async function hold(page, code, ms) {
 }
 
 /* ------------------------------------------------------------------------ */
+/* Sefu: walk up, talk, his lines follow the quest; Escape steps away        */
+/* ------------------------------------------------------------------------ */
+{
+  const { page, ctx, errors } = await open({ width: 1440, height: 900 })
+  await resilientClick(page.getByTestId('play'), { label: 'Play' })
+  await waitFor(page, () => window.__world.get().phase === 'play')
+  await page.evaluate(() => {
+    window.__world.setBand('explorer')
+    window.__world.set({ zone: 'foundry', prediction: 1000 })
+  })
+  await page.waitForTimeout(900)
+  await page.evaluate(() => window.__world.setPos(3.2, 0.6, 9.3))
+  await waitFor(page, () => window.__world.get().near === 'talk.foreman', 8000).catch(() => {})
+  check('Sefu is someone to walk up to', (await world(page)).near === 'talk.foreman')
+  check('the prompt says Talk to Sefu', await page.getByTestId('interact').textContent().then((t) => /Talk to Sefu/.test(t)).catch(() => false))
+  await page.keyboard.press('KeyE')
+  await page.waitForTimeout(400)
+  check('E opens his card, in his name', (await page.getByTestId('talk').count()) === 1 && (await page.getByTestId('talk').textContent()).includes('Sefu'))
+  const line1 = await page.getByTestId('talk-line').textContent()
+  check('at the jam he talks about the belt', /belt/i.test(line1), line1)
+  const before = await pos(page)
+  await hold(page, 'KeyW', 500)
+  const after = await pos(page)
+  check('talking holds the explorer still', Math.hypot(after[0] - before[0], after[2] - before[2]) < 0.2)
+  await page.keyboard.press('KeyE')
+  await page.waitForTimeout(250)
+  const line2 = await page.getByTestId('talk-line').textContent()
+  check('E goes on to his next line', line2 !== line1 && /Forty bells/.test(line2), line2)
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(300)
+  check('Escape steps away', (await page.getByTestId('talk').count()) === 0 && (await world(page)).talk === null)
+  // The pipe: his lines change with the quest.
+  await page.evaluate(() => window.__world.set({ fed: ['scrap.a', 'scrap.b'], lit: ['wetwood', 'drywood', 'charcoal'], bellowsSeen: true }))
+  await waitFor(page, () => window.__world.get().step === 'build', 5000).catch(() => {})
+  await page.keyboard.press('KeyE')
+  await page.waitForTimeout(400)
+  const line3 = await page.getByTestId('talk-line').textContent()
+  check('at the split pipe he talks about the pipe', /pipe/i.test(line3), line3)
+  await resilientClick(page.getByTestId('talk-next'), { label: 'Go on' })
+  await page.waitForTimeout(200)
+  await resilientClick(page.getByTestId('talk-next'), { label: 'Back to work' })
+  await page.waitForTimeout(300)
+  check('the last line\'s button steps away', (await page.getByTestId('talk').count()) === 0)
+  // After the pour and the bronze why, the Bench is his subject.
+  await page.evaluate(() => window.__world.set({ pipeFixed: true, poured: true, pourSeen: true, whys: [0, 0, 1] }))
+  await page.waitForTimeout(300)
+  await page.keyboard.press('KeyE')
+  await page.waitForTimeout(400)
+  const line4 = await page.getByTestId('talk-line').textContent()
+  check('with the door open he talks about bells and copper', /bells/i.test(line4) && /copper/i.test(line4), line4)
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(200)
+  check('Sefu: no console errors', errors.length === 0, errors.slice(0, 2).join(' | '))
+  await ctx.close()
+}
+
+/* ------------------------------------------------------------------------ */
 /* The save: reload mid-quest and find the courtyard as it was; start over   */
 /* ------------------------------------------------------------------------ */
 {

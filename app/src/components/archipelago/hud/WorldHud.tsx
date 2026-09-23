@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { isCoarse, useInputMode } from '@/lib/input'
 import { useBandCaps } from '@/lib/bands'
 import { clearSave, describeSave } from '@/lib/worldsave'
+import { sefuLines } from '@/lib/sefu'
 import {
   COPPER_MELT_C,
   FUELS,
@@ -27,6 +28,7 @@ import {
   setAir,
   setWorld,
   stampReady,
+  talkTo,
   useWorld,
   worldStore,
   type CurvePoint,
@@ -145,9 +147,11 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       ? nearDoor.unlocked(s)
         ? `Enter ${nearDoor.label}`
         : `${nearDoor.label} · shut`
-      : near && near.verb !== 'portal' && near.verb !== 'talk'
-        ? near.label
-        : null
+      : near?.verb === 'talk'
+        ? `Talk to ${near.label}`
+        : near && near.verb !== 'portal'
+          ? near.label
+          : null
   const showGauge = s.zone === 'foundry' && (s.lit.length > 0 || s.furnace.lit)
   const brief = s.zone === 'foundry' && s.prediction == null && !briefed && s.phase === 'play'
   const inRoom = s.room === 'furnace'
@@ -304,6 +308,9 @@ export default function WorldHud({ compact }: { compact: boolean }) {
 
       {/* the brief — the foreman's ask, a number you type */}
       {brief && <Brief onDone={() => setBriefed(true)} />}
+
+      {/* talking — Sefu's account of the stall, one line at a time */}
+      {playing && !brief && s.talk === 'talk.foreman' && <TalkCard lines={sefuLines(s)} onClose={() => talkTo(null)} />}
 
       {/* the furnace room — a cabinet interior, entered by a cut */}
       {inRoom && !s.poured && <Room lit={s.lit} hearths={s.hearths} fuel={s.furnace.fuel} air={s.air} pipeFixed={s.pipeFixed} />}
@@ -552,6 +559,47 @@ function Brief({ onDone }: { onDone: () => void }) {
     commitPrediction(n)
     onDone()
   }
+}
+
+/**
+ * Sefu's card: his lines for the moment, one at a time. E, Enter or Space
+ * goes on; the last line's button steps back to work. Escape closes (the
+ * explorer's exit key). Nothing here is instruction — that is Ploob's.
+ */
+function TalkCard({ lines, onClose }: { lines: readonly string[]; onClose: () => void }) {
+  const [i, setI] = useState(0)
+  const last = i >= lines.length - 1
+  const next = () => (last ? onClose() : setI(i + 1))
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === 'KeyE' || e.code === 'Enter' || e.code === 'Space') {
+        if (!e.repeat) next()
+        e.preventDefault()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+  return (
+    <div className="pointer-events-auto absolute inset-x-0 bottom-24 flex justify-center px-4 sm:bottom-28" data-focus-layer="">
+      <div className="atlas-plate w-full max-w-[26rem] rounded-[22px] px-6 py-5" data-testid="talk">
+        <span className="atlas-eyebrow block">
+          {WORLD_TEXT.people.foreman.name} · {WORLD_TEXT.people.foreman.title}
+        </span>
+        <p className="mt-1 text-[15px] leading-snug font-semibold text-[#2A2823]" data-testid="talk-line">
+          “{lines[i]}”
+        </p>
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <span className="text-[11px] text-[#8B8471]">
+            {i + 1} / {lines.length}
+          </span>
+          <Tile autoFocus data-testid="talk-next" className="rounded-full bg-[#E8A33D] px-4 py-2 text-[13px] font-extrabold text-[#2A2823]" onClick={next}>
+            {last ? 'Back to work' : 'Go on'}
+          </Tile>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 /** The furnace room's controls: what to burn, and how hard to work the bellows. */

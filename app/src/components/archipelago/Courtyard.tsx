@@ -18,6 +18,7 @@ import {
   DOORS,
 } from '@/lib/archipelago'
 import { bodies, registerBody } from './bodies'
+import { live } from './live'
 import { interactables as interactableMap } from '@/lib/archipelago'
 import Sky from './Sky'
 import Prop from './Prop'
@@ -163,16 +164,7 @@ export default function Courtyard() {
         ))}
 
         {/* Sefu, the foreman — his W2 mesh with its idle, facing the gate; the capsule stays as the stand-in */}
-        <Prop id="foreman" position={[3.2, 0, 8]} rotation={[0, -Math.PI / 2 + 0.35, 0]} animate>
-          <mesh position={[0, 0.7, 0]} castShadow>
-            <capsuleGeometry args={[0.28, 0.7, 6, 12]} />
-            <meshStandardMaterial color="#C8552E" roughness={0.6} />
-          </mesh>
-          <mesh position={[0, 1.4, 0]} castShadow>
-            <sphereGeometry args={[0.22, 14, 10]} />
-            <meshStandardMaterial color="#5A3A26" roughness={0.6} />
-          </mesh>
-        </Prop>
+        <Foreman />
 
         {/* the gate back */}
         <mesh position={[0, 1.55, 12.7]}>
@@ -659,6 +651,39 @@ function Smoke({ lit }: { lit: boolean }) {
           <meshBasicMaterial color="#F1EADB" transparent opacity={0.4} depthWrite={false} toneMapped={false} />
         </mesh>
       ))}
+    </group>
+  )
+}
+
+const FOREMAN_AT: [number, number, number] = [3.2, 0, 8]
+const FOREMAN_REST = -Math.PI / 2 + 0.35
+
+/** Sefu stands by the belt and turns to whoever is talking to him; the rest yaw faces the yard. */
+function Foreman() {
+  const turn = useRef<THREE.Group>(null)
+  useFrame((_, dtRaw) => {
+    const g = turn.current
+    if (!g) return
+    const dt = Math.min(0.05, dtRaw)
+    const talking = getWorld().talk === 'talk.foreman'
+    // The mesh fronts +Z after its own rest yaw; the group adds the turn toward the explorer.
+    const want = talking ? Math.atan2(live.pos.x - FOREMAN_AT[0], live.pos.z - FOREMAN_AT[2]) - FOREMAN_REST : 0
+    let d = want - g.rotation.y
+    d = Math.atan2(Math.sin(d), Math.cos(d))
+    g.rotation.y += d * Math.min(1, dt * 5)
+  })
+  return (
+    <group ref={turn} position={FOREMAN_AT}>
+      <Prop id="foreman" rotation={[0, FOREMAN_REST, 0]} animate>
+        <mesh position={[0, 0.7, 0]} castShadow>
+          <capsuleGeometry args={[0.28, 0.7, 6, 12]} />
+          <meshStandardMaterial color="#C8552E" roughness={0.6} />
+        </mesh>
+        <mesh position={[0, 1.4, 0]} castShadow>
+          <sphereGeometry args={[0.22, 14, 10]} />
+          <meshStandardMaterial color="#5A3A26" roughness={0.6} />
+        </mesh>
+      </Prop>
     </group>
   )
 }

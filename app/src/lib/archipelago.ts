@@ -223,6 +223,8 @@ export interface WorldState {
   returnPos: [number, number, number] | null
   /** This visit began from a save: the welcome offers to continue. Never saved itself. */
   resumed: boolean
+  /** The interactable being talked to (a `talk` verb), or null. The card is the HUD's. */
+  talk: string | null
 }
 
 /** Cabinets a courtyard door can open. Each is an existing arcade page; the door is the link. */
@@ -281,6 +283,7 @@ const initial = (): WorldState => ({
   cabinet: null,
   returnPos: null,
   resumed: false,
+  talk: null,
   journal: { prediction: null, action: null, observed: null, explanation: null },
 })
 
@@ -667,6 +670,10 @@ export function returnFromCabinet(): [number, number, number] | null {
   const at = s.returnPos
   setWorld({ cabinet: null, returnPos: null })
   return at
+}
+
+export function talkTo(id: string | null): void {
+  setWorld({ talk: id })
 }
 
 export function crossPortal(to: ZoneId): void {

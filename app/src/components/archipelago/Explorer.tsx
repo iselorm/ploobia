@@ -16,6 +16,7 @@ import {
   lightHearth,
   nearestInteractable,
   setWorld,
+  talkTo,
   toggleLens,
   type FuelId,
   type ZoneId,
@@ -191,6 +192,7 @@ export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void
       control.exit = false
       if (s.crane.active) craneLeave()
       else if (s.room !== 'none') leaveRoom()
+      else if (s.talk) talkTo(null)
     }
     // At the crane the keys drive the crane; in a room the room's controls take over.
     if (s.crane.active && s.phase === 'play') {
@@ -202,7 +204,8 @@ export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void
       control.jump = false
       control.lens = false
     }
-    const playing = s.phase === 'play' && s.room === 'none' && !s.crane.active
+    // Talking holds the explorer still; the card takes the keys.
+    const playing = s.phase === 'play' && s.room === 'none' && !s.crane.active && !s.talk
 
     // A zone change is a teleport to that zone's spawn — the load is the walk.
     if (zoneRef.current !== s.zone) {
@@ -390,6 +393,7 @@ export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void
         return
       }
       case 'talk':
+        talkTo(id)
         return
     }
   }
