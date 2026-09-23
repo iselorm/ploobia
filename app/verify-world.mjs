@@ -1,0 +1,723 @@
+/**
+ * The Archipelago — round W0, the Foundry Courtyard walked end to end.
+ *
+ * Serve a WORLD build on :8766 first:
+ *   VITE_WORLD=1 npx vite build --outDir dist-world && node ../serve.mjs
+ *   (or: cd dist-world && python3 -m http.server 8766)
+ *
+ * What only a browser can settle: that the route mounts a scene with a
+ * canvas and Rapier alive; that Play is the front door; that the explorer
+ * walks on the keys and the camera follows; that the portal is walked into
+ * and loads the courtyard; that the brief asks for a typed number before the
+ * work; that a light block can be lifted and a heavy one cannot; that the
+ * belt feeds what is put on it; that the hearths light and climb; that the
+ * Lens is the only way to see the air and the pipe cannot be fixed before it
+ * is seen; that a fed furnace on charcoal pours and the card scores in the
+ * three words; and that every control on the phone tier is under the finger.
+ *
+ * Movement is driven with real key events; the suite also teleports the
+ * explorer (`__world.setPos`) to keep the walk short on a software renderer.
+ * Physics is Rapier's; nothing here fakes a collision.
+ */
+import { chromium } from 'playwright'
+import fs from 'node:fs'
+import path from 'node:path'
+import { reporter, resilientClick } from './verify-lib.mjs'
+
+const BASE = process.env.WORLD_BASE ?? 'http://localhost:8766/index.html'
+const SHOTS = path.resolve('shots')
+fs.mkdirSync(SHOTS, { recursive: true })
+const { check, tally } = reporter()
+const COPPER = 1085
+
+const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] })
+
+async function open(viewport, { touch = false } = {}) {
+  const ctx = await browser.newContext({ viewport, hasTouch: touch, deviceScaleFactor: 1 })
+  const page = await ctx.newPage()
+  const errors = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  page.on('console', (m) => {
+    if (m.type() === 'error' && !/ERR_TUNNEL|favicon|WebGL|GPU|swiftshader|503/i.test(m.text())) errors.push(m.text())
+  })
+  await page.goto(`${BASE}?q=low#/world`, { waitUntil: 'load' })
+  await page.waitForFunction(() => !!window.__world, null, { timeout: 60000 })
+  return { page, ctx, errors }
+}
+
+const world = (page) => page.evaluate(() => window.__world.get())
+const pos = (page) => page.evaluate(() => { const p = window.__world.live.pos; return [p.x, p.y, p.z] })
+const waitFor = (page, fn, ms = 15000) => page.waitForFunction(fn, null, { timeout: ms })
+
+/** Hold a key for `ms` of wall time. */
+async function hold(page, code, ms) {
+  await page.keyboard.down(code)
+  await page.waitForTimeout(ms)
+  await page.keyboard.up(code)
+}
+
+/* ------------------------------------------------------------------------ */
+/* Desktop: the whole quest                                                  */
+/* ------------------------------------------------------------------------ */
+{
+  const { page, ctx, errors } = await open({ width: 1440, height: 900 })
+  check('route mounts a canvas', (await page.locator('canvas').count()) >= 1)
+  check('welcome is play-first', await page.getByTestId('play').isVisible())
+  await page.screenshot({ path: path.join(SHOTS, 'world-welcome.png') })
+  await resilientClick(page.getByTestId('play'), { label: 'Play' })
+  await waitFor(page, () => window.__world.get().phase === 'play')
+  // This walk is the Explorer's: three written options at the whys.
+  await page.evaluate(() => window.__world.setBand('explorer'))
+  check('the wordmark names the zone', await page.getByTestId('wordmark').textContent().then((t) => /Landing/.test(t)))
+  check('the checklist is up with nothing ticked', (await page.locator('[data-testid=checklist] li').count()) === 5 && (await page.locator('[data-testid=checklist] li[data-done=true]').count()) === 0)
+  check('the toolbelt shows Lens · Probe · Measure · Journal', (await page.getByTestId('toolbelt').textContent()) .replace(/\s+/g, ' ').includes('Lens') && (await page.getByTestId('measure').isDisabled()))
+  check('the minimap is up', (await page.getByTestId('minimap').count()) === 1)
+
+  // Walk: W for a second must move the explorer along the camera's forward.
+  const p0 = await pos(page)
+  await hold(page, 'KeyW', 900)
+  await page.waitForTimeout(200)
+  const p1 = await pos(page)
+  const moved = Math.hypot(p1[0] - p0[0], p1[2] - p0[2])
+  check('explorer walks on W', moved > 0.8, `${moved.toFixed(2)} m`)
+  check('explorer stays on the island', p1[1] > -1 && p1[1] < 3, `y=${p1[1].toFixed(2)}`)
+
+  // Jump: Space lifts y.
+  const y0 = (await pos(page))[1]
+  await page.keyboard.down('Space')
+  await page.waitForTimeout(260)
+  const y1 = (await pos(page))[1]
+  await page.keyboard.up('Space')
+  check('space jumps', y1 > y0 + 0.15, `${y0.toFixed(2)} → ${y1.toFixed(2)}`)
+  await page.waitForTimeout(900)
+
+  // Portal: walk into the gate at (0,0,-11.5). Point the camera, then walk.
+  await page.evaluate(() => {
+    window.__world.live.camYaw = Math.PI // camera behind, facing -z
+  })
+  await page.evaluate(() => window.__world.setPos(0, 0.6, -8.5))
+  await hold(page, 'KeyW', 1400)
+  await waitFor(page, () => window.__world.get().zone === 'foundry', 20000)
+  check('walking into the gate loads the Foundry', (await world(page)).zone === 'foundry')
+  await waitFor(page, () => !!document.querySelector('[data-testid=brief]'), 10000)
+  check('the brief asks for a number before the work', await page.getByTestId('brief').isVisible())
+  await page.getByTestId('prediction').fill('1000')
+  await resilientClick(page.getByTestId('commit'), { label: 'Say it' })
+  await waitFor(page, () => window.__world.get().prediction === 1000)
+  check('prediction is recorded as typed', (await world(page)).prediction === 1000)
+  await page.waitForTimeout(600)
+  await page.screenshot({ path: path.join(SHOTS, 'world-courtyard-desktop.png') })
+
+  // Step: clear. The heavy piece refuses the hand; a light one lifts.
+  await page.evaluate(() => window.__world.setPos(-5.2, 0.6, -9.6))
+  await page.waitForTimeout(700)
+  check('near the heavy scrap', (await world(page)).near === 'scrap.heavy', (await world(page)).near ?? 'nothing')
+  await page.keyboard.press('KeyE')
+  await page.waitForTimeout(300)
+  check('the heavy scrap cannot be carried', (await world(page)).held === null)
+  check('Ploob points at the crane', await page.getByTestId('coach').textContent().then((t) => /crane/i.test(t)))
+
+  await page.evaluate(() => window.__world.setPos(-5, 0.6, -0.4))
+  await page.waitForTimeout(700)
+  check('near a light scrap', (await world(page)).near === 'scrap.b', (await world(page)).near ?? 'nothing')
+  await page.keyboard.press('KeyE')
+  await waitFor(page, () => window.__world.get().held === 'scrap.b')
+  check('a light scrap lifts', (await world(page)).held === 'scrap.b')
+  check('the verb prompt reads Put it down', await page.getByTestId('interact').textContent().then((t) => /put it down/i.test(t)))
+  await page.keyboard.press('KeyE')
+  await waitFor(page, () => window.__world.get().held === null)
+  check('and puts down', (await world(page)).held === null)
+
+  // The crane: driven from the post. W/S raise and lower, A/D swing, E takes and releases.
+  await page.evaluate(() => window.__world.setPos(-8.6, 0.6, -8.2))
+  await page.waitForTimeout(700)
+  check('near the crane post', (await world(page)).near === 'crane.controls', (await world(page)).near ?? 'nothing')
+  await page.keyboard.press('KeyE')
+  await waitFor(page, () => window.__world.get().crane.active)
+  check('E at the post takes the controls', (await world(page)).crane.active)
+  check('the crane panel names the keys', await page.getByTestId('crane-panel').textContent().then((t) => /Raise/.test(t) && /Rotate/.test(t)))
+  const c0 = (await world(page)).crane
+  await hold(page, 'KeyD', 400)
+  await hold(page, 'KeyW', 400)
+  const c1 = (await world(page)).crane
+  check('D swings the boom and W raises the hook', c1.yaw > c0.yaw && c1.hookY > c0.hookY, `yaw ${c0.yaw.toFixed(2)}→${c1.yaw.toFixed(2)} hook ${c0.hookY.toFixed(2)}→${c1.hookY.toFixed(2)}`)
+  const p2 = await pos(page)
+  check('the explorer stays at the post while driving', Math.hypot(p2[0] + 8.6, p2[2] + 8.2) < 0.6)
+  // Over the heavy piece, hook low: take it.
+  await page.evaluate(() => { const w = window.__world.get(); window.__world.set({ crane: { ...w.crane, yaw: 1.222, hookY: 1.5 } }) })
+  await page.waitForTimeout(400)
+  await page.keyboard.press('KeyE')
+  await waitFor(page, () => window.__world.get().crane.holding === 'scrap.heavy')
+  check('a low hook over the heavy piece takes it', (await world(page)).crane.holding === 'scrap.heavy')
+  await page.evaluate(() => { const w = window.__world.get(); window.__world.set({ crane: { ...w.crane, hookY: 4.4 } }) })
+  await page.waitForTimeout(600)
+  check('Ploob makes his bet when it hangs high', await page.getByTestId('coach').textContent().then((t) => /falls faster/i.test(t)))
+  await page.screenshot({ path: path.join(SHOTS, 'world-crane.png') })
+  // Swing over the belt and let go: the fall is timed.
+  await page.evaluate(() => { const w = window.__world.get(); window.__world.set({ crane: { ...w.crane, yaw: 0.2 } }) })
+  await page.waitForTimeout(400)
+  await page.keyboard.press('KeyE')
+  await waitFor(page, () => window.__world.get().crane.holding === null)
+  await waitFor(page, () => window.__world.get().crane.drops['scrap.heavy']?.t1 != null, 20000).catch(() => {})
+  const dh = (await world(page)).crane.drops['scrap.heavy']
+  check('the heavy drop is timed', !!dh && dh.t1 != null && dh.t1 > dh.t0, JSON.stringify(dh))
+  // Now the light one from the same height.
+  await page.evaluate(() => { const w = window.__world.get(); window.__world.set({ crane: { ...w.crane, yaw: 0.9, hookY: 1.4 } }) })
+  await page.waitForTimeout(500)
+  await page.keyboard.press('KeyE')
+  await waitFor(page, () => window.__world.get().crane.holding === 'scrap.a', 8000).catch(() => {})
+  check('the hook takes a light piece too', (await world(page)).crane.holding === 'scrap.a', (await world(page)).crane.holding ?? 'nothing')
+  await page.evaluate(() => { const w = window.__world.get(); window.__world.set({ crane: { ...w.crane, hookY: 4.4, yaw: 0.2 } }) })
+  await page.waitForTimeout(500)
+  await page.keyboard.press('KeyE')
+  await waitFor(page, () => window.__world.get().crane.drops['scrap.a']?.t1 != null, 20000).catch(() => {})
+  const ft = await page.evaluate(() => { const w = window.__world.get(); const h = w.crane.drops['scrap.heavy']; const a = w.crane.drops['scrap.a']; return h && a && h.t1 != null && a.t1 != null ? { heavy: h.t1 - h.t0, light: a.t1 - a.t0, from: [h.from, a.from] } : null })
+  check('two masses, same height, same fall time', !!ft && Math.abs(ft.heavy - ft.light) < 0.15, JSON.stringify(ft))
+  await page.waitForTimeout(400)
+  check('Ploob says same time, and no air', await page.getByTestId('coach').textContent().then((t) => /same time/i.test(t) && /no air/i.test(t)))
+  await page.keyboard.press('Escape')
+  await waitFor(page, () => !window.__world.get().crane.active)
+  check('Escape steps down from the crane (and does not leave the world)', !(await world(page)).crane.active && /#\/world/.test(page.url()))
+
+  // Both landed on the belt: fed.
+  await waitFor(page, () => window.__world.get().fed.length >= 2, 25000).catch(() => {})
+  await waitFor(page, () => window.__world.get().step === 'probe', 3000).catch(() => {})
+  const s1 = await world(page)
+  check('the belt feeds what the crane dropped → the probe step', s1.fed.length >= 2 && s1.step === 'probe', `fed=${JSON.stringify(s1.fed)} step=${s1.step}`)
+  check('the checklist ticks the jam', (await page.locator('[data-testid=checklist] li[data-done=true]').count()) >= 1)
+
+  // Step: probe. Light all three hearths.
+  for (const [i, f] of ['wetwood', 'drywood', 'charcoal'].entries()) {
+    await page.evaluate((x) => window.__world.setPos(x, 0.6, 4), 6 + i * 2.3)
+    await page.waitForTimeout(400)
+    await page.keyboard.press('KeyE')
+    await page.waitForFunction((f2) => window.__world.get().lit.includes(f2), f, { timeout: 5000 }).catch(() => {})
+  }
+  const s2 = await world(page)
+  check('three hearths lit → the Lens step', s2.lit.length === 3 && s2.step === 'lens', `lit=${s2.lit.length} step=${s2.step}`)
+  await waitFor(page, () => { const h = window.__world.get().hearths; return h.charcoal > h.drywood && h.drywood > h.wetwood }, 25000).catch(() => {})
+  const s3 = await world(page)
+  check('hearths climb and charcoal leads', s3.hearths.charcoal > s3.hearths.drywood && s3.hearths.drywood > s3.hearths.wetwood, JSON.stringify(s3.hearths))
+  check('the gauge shows the hearths', (await page.getByTestId('hearth-charcoal').textContent()) !== '—')
+
+  // Build before Lens: refused with a line.
+  await page.evaluate(() => window.__world.setPos(3.2, 0.6, -6))
+  await page.waitForTimeout(400)
+  check('near the split pipe', (await world(page)).near === 'build.pipe', (await world(page)).near ?? 'nothing')
+  await page.keyboard.press('KeyE')
+  await page.waitForTimeout(300)
+  check('the pipe cannot be fixed before it is seen', !(await world(page)).pipeFixed)
+  check('Ploob says look first', await page.getByTestId('coach').textContent().then((t) => /look first/i.test(t)))
+
+  // Lens on: the System ring, the air lanes visible.
+  await page.keyboard.press('KeyQ')
+  await waitFor(page, () => window.__world.get().ring === 'system')
+  const lanesVisible = await page.evaluate(() => {
+    let v = false
+    window.__world.scene.traverse((o) => { if (o.isInstancedMesh && o.geometry?.type === 'CapsuleGeometry' && o.visible) v = true })
+    return v
+  })
+  check('the System ring shows the air lanes', lanesVisible)
+  check('seeing the air completes the Lens step', (await world(page)).step === 'build')
+  await page.screenshot({ path: path.join(SHOTS, 'world-lens-system.png') })
+  await page.keyboard.press('KeyE')
+  await waitFor(page, () => window.__world.get().pipeFixed)
+  check('the pipe is fixed after the Lens', (await world(page)).pipeFixed && (await world(page)).step === 'feed')
+  await page.keyboard.press('KeyL')
+
+  // Feed: the furnace is a ROOM — a camera cut into the same tree, no reload.
+  await page.evaluate(() => window.__world.setPos(0, 0.6, -5.2))
+  await page.waitForTimeout(500)
+  check('near the furnace mouth', (await world(page)).near === 'feed.furnace', (await world(page)).near ?? 'nothing')
+  const urlBefore = page.url()
+  await page.keyboard.press('KeyE')
+  await waitFor(page, () => window.__world.get().room === 'furnace')
+  check('E on the furnace enters the room', (await world(page)).room === 'furnace')
+  check('the room is a cut, not a route', page.url() === urlBefore)
+  await page.waitForTimeout(200)
+  const roomCam = await page.evaluate(() => window.__world.cam())
+  check('the camera cut to the interior viewpoint', !!roomCam && Math.abs(roomCam[2] - -4.3) < 0.6 && Math.abs(roomCam[1] - 1.7) < 0.6, JSON.stringify(roomCam))
+  const explorerHidden = await page.evaluate(() => { const m = window.__world.scene.getObjectByName('explorer-mesh'); return m ? !m.visible : null })
+  check('the explorer is out of frame inside the room', explorerHidden === true)
+  await waitFor(page, () => !!document.querySelector('[data-testid=room]'))
+  check('the room panel shows what was read', await page.getByTestId('feed-charcoal').textContent().then((t) => /°C/.test(t)))
+  await page.screenshot({ path: path.join(SHOTS, 'world-room.png') })
+  await resilientClick(page.getByTestId('feed-charcoal'), { label: 'Charcoal' })
+  await waitFor(page, () => window.__world.get().furnace.lit)
+  // Bellows shut: it warms but never reaches copper. Then pump.
+  await page.waitForTimeout(2500)
+  const cold = await world(page)
+  check('with the bellows shut the furnace warms but stays under copper', cold.furnace.temp > 30 && cold.furnace.temp < COPPER, `temp=${Math.round(cold.furnace.temp)}`)
+  check('the air control says what reaches the fire', await page.getByTestId('air-reaching').textContent().then((t) => /Pumping 0%/.test(t) && /reaching the fire 8%/.test(t)).catch(() => false))
+  await resilientClick(page.getByTestId('air-steady'), { label: 'Steady' })
+  await waitFor(page, () => Math.abs(window.__world.get().air - 0.5) < 0.01)
+  check('Steady pumps half', await page.getByTestId('air-reaching').textContent().then((t) => /Pumping 50%/.test(t) && /reaching the fire 54%/.test(t) && /pipe is whole/.test(t)).catch(() => false), await page.getByTestId('air-reaching').textContent().catch(() => ''))
+  await page.evaluate(() => {
+    const el = document.querySelector('[data-testid=air]')
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    set.call(el, '100')
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await waitFor(page, () => window.__world.get().air >= 0.99)
+  check('the bellows slider sets the air', (await world(page)).air >= 0.99)
+  await waitFor(page, () => window.__world.get().poured, 40000).catch(() => {})
+  const s4 = await world(page)
+  check('charcoal with air pours', s4.poured, `temp=${Math.round(s4.furnace.temp)}`)
+  await waitFor(page, () => !!document.querySelector('[data-testid=pour-card]'), 5000).catch(() => {})
+  const card = await page.getByTestId('pour-card').textContent().catch(() => '')
+  check('the pour card scores in the three words', /Accuracy/.test(card) && /Economy/.test(card) && /Thrift/.test(card))
+  check('the pour card shows the prediction against the reading', /1000 °C/.test(card) && /1085 °C/.test(card))
+  check('the curve comes to the learner', (await page.getByTestId('curve').count()) === 1 && s4.curve.length >= 4, `${s4.curve.length} points`)
+  await page.screenshot({ path: path.join(SHOTS, 'world-pour-desktop.png') })
+  await resilientClick(page.getByRole('button', { name: 'Step out' }), { label: 'Step out' })
+  await waitFor(page, () => window.__world.get().room === 'none')
+  check('stepping out returns to the courtyard', (await world(page)).room === 'none')
+
+  // Three whys, growing; a wrong answer gets a reasoned line, not a buzzer.
+  await waitFor(page, () => !!document.querySelector('[data-testid=why-0]'))
+  await resilientClick(page.getByTestId('why-0-1'), { label: 'wrong answer' })
+  await waitFor(page, () => !!document.querySelector('[data-testid=why-line]'))
+  check('a wrong why gets Ploob reasoning back', await page.getByTestId('why-line').textContent().then((t) => /same charcoal/i.test(t)))
+  await resilientClick(page.getByTestId('why-next'), { label: 'Next' })
+  await waitFor(page, () => !!document.querySelector('[data-testid=why-1]'))
+  check('the second why is the heavier-wet-wood misconception', await page.getByTestId('why-1').textContent().then((t) => /heavier/i.test(t)))
+  await resilientClick(page.getByTestId('why-1-1'), { label: 'water' })
+  await waitFor(page, () => !!document.querySelector('[data-testid=why-line]'))
+  await resilientClick(page.getByTestId('why-next'), { label: 'Next' })
+  await waitFor(page, () => !!document.querySelector('[data-testid=why-2]'))
+  await resilientClick(page.getByTestId('why-2-1'), { label: 'tin' })
+  await waitFor(page, () => !!document.querySelector('[data-testid=why-line]'))
+  check('the third why points at the Bench', await page.getByTestId('why-line').textContent().then((t) => /Bench/.test(t)))
+  await resilientClick(page.getByTestId('why-next'), { label: 'To the journal' })
+  await waitFor(page, () => !!document.querySelector('[data-testid=stamp]'))
+  const j = (await world(page)).journal
+  check('the journal has prediction and action', !!j.prediction && !!j.action)
+  check('observed is earned by the pour itself, in the reading', !!j.observed && /°C/.test(j.observed))
+  check('explanation is earned by the right second why', !!j.explanation)
+  check('four lines earned → STAMPED', await page.getByTestId('stamp-state').textContent().then((t) => /^STAMPED$/.test(t.trim())))
+  await page.screenshot({ path: path.join(SHOTS, 'world-stamp.png') })
+  await resilientClick(page.getByRole('button', { name: 'Close' }), { label: 'Close' })
+
+  // Back through the gate: the far island is lit.
+  await page.evaluate(() => { window.__world.live.camYaw = 0; window.__world.setPos(0, 0.6, 11.2) })
+  await hold(page, 'KeyW', 1200)
+  await waitFor(page, () => window.__world.get().zone === 'landing', 20000).catch(() => {})
+  check('the gate back returns to the Landing', (await world(page)).zone === 'landing')
+  await page.waitForTimeout(800)
+  await page.screenshot({ path: path.join(SHOTS, 'world-landing-lit.png') })
+
+  const perf = await page.evaluate(() => window.__perf ?? null)
+  check('perf probe publishes', !!perf, perf ? `calls=${perf.calls ?? perf.drawCalls ?? '?'} tris=${perf.triangles ?? '?'}` : 'no __perf')
+  check('no console errors across the walk', errors.length === 0, errors.slice(0, 3).join(' | '))
+  await ctx.close()
+}
+
+/* ------------------------------------------------------------------------ */
+/* Own words: an Investigator writes the why; a typed judge decides          */
+/* ------------------------------------------------------------------------ */
+{
+  const { page, ctx, errors } = await open({ width: 1440, height: 900 })
+  // The judge is mocked at the route: what arrives at /api/why is asserted, and
+  // the verdicts are scripted — partial, then right, then a 503 (no key).
+  const seen = []
+  let n = 0
+  await page.route('**/api/why', async (route) => {
+    const body = JSON.parse(route.request().postData() || '{}')
+    seen.push(body)
+    n++
+    if (n === 1) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, verdict: 'partial', confidence: 0.82, misconception: null, usesEvidence: 0.3 }) })
+    if (n === 2) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, verdict: 'right', confidence: 0.91, misconception: null, usesEvidence: 0.7 }) })
+    if (n === 3) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, verdict: 'misconception', confidence: 0.88, misconception: 'mass_burns_slower', usesEvidence: 0.1 }) })
+    return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'no TYPESAFE_API_KEY secret' }) })
+  })
+  await resilientClick(page.getByTestId('play'), { label: 'Play' })
+  await waitFor(page, () => window.__world.get().phase === 'play')
+  await page.evaluate(() => {
+    window.__world.setBand('scientist')
+    window.__world.set({
+      zone: 'foundry', prediction: 1000, lit: ['wetwood', 'drywood', 'charcoal'], hearths: { wetwood: 550, drywood: 900, charcoal: 1200 },
+      pipeFixed: true, bellowsSeen: true, air: 1, fed: ['scrap.a', 'scrap.heavy'], step: 'done',
+      furnace: { lit: true, fuel: 'charcoal', temp: 1150 }, poured: true, room: 'furnace',
+      curve: [[0, 20], [1, 400], [2, 800], [3, 1150]],
+      journal: { prediction: 'Said 1000 °C.', action: 'Fed charcoal, pipe whole.', observed: 'Read 1150 °C.', explanation: null },
+    })
+  })
+  await waitFor(page, () => !!document.querySelector('[data-testid=pour-card]'))
+  await resilientClick(page.getByRole('button', { name: 'Step out' }), { label: 'Step out' })
+  await waitFor(page, () => !!document.querySelector('[data-testid=why-0]'))
+  check('own words: an Investigator gets a text box, not three options', (await page.getByTestId('own-words').count()) === 1 && (await page.getByTestId('why-0-0').count()) === 0)
+  await page.getByTestId('why-text').fill('it got hotter')
+  await resilientClick(page.getByTestId('why-say'), { label: 'Say it' })
+  await waitFor(page, () => !!document.querySelector('[data-testid=why-nudge]'))
+  check('a partial answer gets a nudge back, not a mark', await page.getByTestId('why-nudge').textContent().then((t) => /reached the fire/i.test(t)))
+  check('the judge was sent the ask, the target and the misconceptions by key', seen[0]?.ask === 'What happened when the pipe was whole again?' && /More air/.test(seen[0]?.target) && seen[0]?.misconceptions?.map((m) => m.key).join() === 'fuel_changed,copper_changed')
+  check('the judge was sent only facts the learner could have seen', seen[0]?.facts?.furnace_reading_c >= 1150 && /Charcoal reached 1200/.test(seen[0]?.facts?.fuels_tested) && seen[0]?.facts?.pipe.includes('fixed'), JSON.stringify(seen[0]?.facts))
+  await page.getByTestId('why-text').fill('more air reached the fire so the charcoal burned hotter')
+  await resilientClick(page.getByTestId('why-say'), { label: 'Say it' })
+  await waitFor(page, () => !!document.querySelector('[data-testid=why-line]'))
+  check('a right answer gets Ploob\'s reasoned line from the quest data', await page.getByTestId('why-line').textContent().then((t) => /More air, more of the charcoal/.test(t)))
+  check('the card keeps the learner\'s own sentence', await page.getByTestId('why-0').textContent().then((t) => /“more air reached the fire so the charcoal burned hotter”/.test(t)))
+  await resilientClick(page.getByTestId('why-next'), { label: 'Next' })
+  await waitFor(page, () => !!document.querySelector('[data-testid=why-1]'))
+  await page.getByTestId('why-text').fill('because it is heavier so it burns slower')
+  await resilientClick(page.getByTestId('why-say'), { label: 'Say it' })
+  await waitFor(page, () => !!document.querySelector('[data-testid=why-line]'))
+  check('a named misconception maps onto its option and Ploob answers it', await page.getByTestId('why-line').textContent().then((t) => /Weight is not the reason/.test(t)))
+  check('a wrong why leaves the explanation unearned', (await world(page)).journal.explanation === null)
+  await resilientClick(page.getByTestId('why-next'), { label: 'Next' })
+  await waitFor(page, () => !!document.querySelector('[data-testid=why-2]'))
+  await page.getByTestId('why-text').fill('tin and the bench')
+  await resilientClick(page.getByTestId('why-say'), { label: 'Say it' })
+  await waitFor(page, () => !!document.querySelector('[data-testid=why-2-0]'), 8000).catch(() => {})
+  check('no judge (503) → the three options, silently', (await page.getByTestId('why-2-0').count()) === 1)
+  check('no console errors on the own-words path', errors.length === 0, errors.slice(0, 2).join(' | '))
+  await ctx.close()
+}
+
+/* ------------------------------------------------------------------------ */
+/* The door: the Bench cabinet, shut until the bronze why, open after; back  */
+/* ------------------------------------------------------------------------ */
+{
+  const { page, ctx, errors } = await open({ width: 1440, height: 900 })
+  await resilientClick(page.getByTestId('play'), { label: 'Play' })
+  await waitFor(page, () => window.__world.get().phase === 'play')
+  await page.evaluate(() => {
+    window.__world.setBand('explorer')
+    window.__world.set({ zone: 'foundry', prediction: 1000, step: 'done' })
+  })
+  await page.waitForTimeout(900)
+  await page.evaluate(() => window.__world.setPos(10.2, 0.6, 5.6))
+  await waitFor(page, () => window.__world.get().near === 'door.bench', 8000).catch(() => {})
+  check('the Bench door is a thing to walk up to', (await world(page)).near === 'door.bench')
+  check('shut: the prompt says so', await page.getByTestId('interact').textContent().then((t) => /Bench · shut/.test(t)).catch(() => false))
+  await page.keyboard.press('KeyE')
+  await page.waitForTimeout(500)
+  check('shut: E goes nowhere, Ploob says why', page.url().includes('#/world') && (await world(page)).cabinet === null && (await page.getByTestId('coach').textContent().then((t) => /after the pour/.test(t)).catch(() => false)))
+  await page.evaluate(() => window.__world.set({ poured: true, pourSeen: true, whys: [0, 0, 1] }))
+  await page.waitForTimeout(300)
+  check('open: the prompt invites', await page.getByTestId('interact').textContent().then((t) => /Enter The Bench/.test(t)).catch(() => false))
+  await page.keyboard.press('KeyE')
+  await page.waitForFunction(() => location.hash.startsWith('#/atoms'), null, { timeout: 8000 }).catch(() => {})
+  check('open: E walks into the atoms cabinet, Door 2 asked for', /#\/atoms\?from=world&door=2/.test(page.url()), page.url())
+  await page.waitForTimeout(1500)
+  const back = page.getByRole('link', { name: 'Back to the courtyard' })
+  await back.waitFor({ timeout: 10000 }).catch(() => {})
+  check('the cabinet\'s back link points at the courtyard', (await back.count()) === 1)
+  await resilientClick(back, { label: 'Courtyard' })
+  await page.waitForFunction(() => location.hash.startsWith('#/world') && !!window.__world, null, { timeout: 15000 }).catch(() => {})
+  // The return spot is applied after the zone settle, a beat after the mount.
+  await waitFor(page, () => { const q = window.__world.live.pos; return Math.hypot(q.x - 9.1, q.z - 5.6) < 1.5 }, 10000).catch(() => {})
+  await page.waitForTimeout(400)
+  const w = await world(page)
+  const p = await pos(page)
+  check('back in the world with nothing reset', w.poured === true && w.zone === 'foundry' && w.cabinet === null, JSON.stringify({ poured: w.poured, zone: w.zone, cabinet: w.cabinet }))
+  check('standing by the door, a step outside its reach', Math.hypot(p[0] - 9.1, p[2] - 5.6) < 1.5 && w.near !== 'door.bench', JSON.stringify(p))
+  check('no console errors through the door and back', errors.length === 0, errors.slice(0, 2).join(' | '))
+  await ctx.close()
+}
+
+/* ------------------------------------------------------------------------ */
+/* The scope: the Lens up in the courtyard captions the air, split marked    */
+/* ------------------------------------------------------------------------ */
+{
+  const { page, ctx, errors } = await open({ width: 1440, height: 900 })
+  await resilientClick(page.getByTestId('play'), { label: 'Play' })
+  await waitFor(page, () => window.__world.get().phase === 'play')
+  await page.evaluate(() => { window.__world.setBand('explorer'); window.__world.set({ zone: 'foundry', prediction: 1000, fed: ['scrap.a', 'scrap.b'], lit: ['wetwood', 'drywood', 'charcoal'] }) })
+  await page.waitForTimeout(900)
+  check('no scope while the Lens is down', (await page.getByTestId('scope').count()) === 0)
+  await page.keyboard.press('KeyQ')
+  await waitFor(page, () => window.__world.get().ring === 'system', 5000).catch(() => {})
+  await page.getByTestId('scope').waitFor({ timeout: 3000 }).catch(() => {})
+  check('the Lens up shows the scope of the air', (await page.getByTestId('scope').count()) === 1)
+  check('…with the split marked and the way said', await page.getByTestId('scope').textContent().then((t) => /the split — the air escapes here/.test(t) && /Go to the split and fix it/.test(t)).catch(() => false))
+  check('Ploob now points at the split', await page.getByTestId('coach').textContent().then((t) => /split in the pipe/.test(t)).catch(() => false))
+  await page.evaluate(() => window.__world.set({ pipeFixed: true }))
+  await page.waitForTimeout(300)
+  check('after the fix the scope shows the pipe whole', await page.getByTestId('scope').textContent().then((t) => /the pipe is whole/.test(t) && /Now feed it/.test(t)).catch(() => false))
+  await page.keyboard.press('KeyQ')
+  await page.waitForTimeout(300)
+  check('the Lens down takes the scope with it', (await page.getByTestId('scope').count()) === 0)
+  check('scope: no console errors', errors.length === 0, errors.slice(0, 2).join(' | '))
+  await ctx.close()
+}
+
+/* ------------------------------------------------------------------------ */
+/* Sound: starts on Play, the furnace bed follows the heat, mute is honoured */
+/* ------------------------------------------------------------------------ */
+{
+  const { page, ctx, errors } = await open({ width: 1440, height: 900 })
+  check('nothing sounds before a gesture', (await page.evaluate(() => !!window.__audioStarted)) === false)
+  await resilientClick(page.getByTestId('play'), { label: 'Play' })
+  await waitFor(page, () => window.__world.get().phase === 'play')
+  check('Play starts the audio', (await page.evaluate(() => window.__audioStarted)) === true)
+  check('the sound chip is in the wordmark, on', (await page.getByTestId('sound').getAttribute('aria-pressed')) === 'true')
+  await page.evaluate(() => { window.__world.setBand('explorer'); window.__world.set({ zone: 'foundry', prediction: 1000, fed: ['scrap.a', 'scrap.b'], lit: ['wetwood', 'drywood', 'charcoal'], bellowsSeen: true, pipeFixed: true }) })
+  await page.waitForTimeout(600)
+  const cold = await page.evaluate(() => window.__world.bed())
+  check('a cold furnace has a silent bed', cold == null || cold.gain < 0.01, JSON.stringify(cold))
+  await page.evaluate(() => window.__world.set({ air: 1, furnace: { lit: true, fuel: 'charcoal', temp: 900 } }))
+  await page.waitForTimeout(1500)
+  const hot = await page.evaluate(() => window.__world.bed())
+  check('a burning furnace has a roar that follows its heat', !!hot && hot.gain > 0.05 && hot.cutoff > 500, JSON.stringify(hot))
+  await resilientClick(page.getByTestId('sound'), { label: 'Sound' })
+  await page.waitForTimeout(200)
+  check('the chip mutes, and is remembered', (await page.evaluate(() => window.__audioMuted)) === true && (await page.evaluate(() => localStorage.getItem('ploobia.audio.v1'))) === 'muted')
+  await resilientClick(page.getByTestId('sound'), { label: 'Sound' })
+  await page.waitForTimeout(200)
+  check('…and unmutes', (await page.evaluate(() => window.__audioMuted)) === false)
+  check('sound: no console errors', errors.length === 0, errors.slice(0, 2).join(' | '))
+  await ctx.close()
+}
+
+/* ------------------------------------------------------------------------ */
+/* Looks: the time-of-day slider drives the rig; Night shift keeps lamps up  */
+/* ------------------------------------------------------------------------ */
+{
+  const { page, ctx, errors } = await open({ width: 1440, height: 900 })
+  await resilientClick(page.getByTestId('play'), { label: 'Play' })
+  await waitFor(page, () => window.__world.get().phase === 'play')
+  await page.waitForTimeout(600)
+  check('the default look is Day', (await page.evaluate(() => window.__world.sun())) === 1)
+  const rig = () => page.evaluate(() => {
+    const sc = window.__world.scene
+    let key = null, amb = null, lamps = 0
+    sc.traverse((o) => {
+      if (o.isDirectionalLight) key = { i: o.intensity, c: '#' + o.color.getHexString() }
+      if (o.isAmbientLight) amb = o.intensity
+      if (o.isPointLight && o.color.getHexString() === 'ffc46a' && o.intensity > 0.1) lamps++
+    })
+    return { key, amb, lamps, fog: sc.fog ? '#' + sc.fog.color.getHexString() : null }
+  })
+  const day = await rig()
+  check('by day the sun is strong and no lamps burn', !!day.key && day.key.i > 2 && day.lamps === 0, JSON.stringify(day))
+  check('the Looks chip is in the wordmark', (await page.getByTestId('looks').count()) === 1)
+  await resilientClick(page.getByTestId('looks'), { label: 'Looks' })
+  await page.waitForTimeout(200)
+  check('it opens a pocket with the slider and three presets', (await page.getByTestId('sun').count()) === 1 && (await page.getByTestId('look-night').count()) === 1)
+  await resilientClick(page.getByTestId('look-night'), { label: 'Night shift' })
+  await page.waitForTimeout(400)
+  const night = await rig()
+  check('Night shift: a dim blue key, the fog dark, the lamps up', !!night.key && night.key.i < 1 && night.lamps >= 3 && night.fog !== day.fog, JSON.stringify(night))
+  check('Night shift: the room is never black', night.amb > 0.15, String(night.amb))
+  check('the chip now reads Night shift', await page.getByTestId('looks-pocket').textContent().then((t) => /Night shift/.test(t)).catch(() => false))
+  await page.evaluate(() => window.__world.setSun(0.42))
+  await page.waitForTimeout(300)
+  const eve = await rig()
+  check('the evening lies between: a low warm sun and half the lamps', !!eve.key && eve.key.i > night.key.i && eve.key.i < day.key.i && eve.lamps >= 3, JSON.stringify(eve))
+  check('the look is remembered', (await page.evaluate(() => localStorage.getItem('ploobia.looks.v1'))) != null)
+  await page.evaluate(() => window.__world.setSun(0))
+  await page.screenshot({ path: path.join(SHOTS, 'world-night.png') })
+  await page.reload({ waitUntil: 'load' })
+  await page.waitForFunction(() => !!window.__world, null, { timeout: 60000 })
+  check('…across a reload', (await page.evaluate(() => window.__world.sun())) === 0)
+  check('Looks: no console errors', errors.length === 0, errors.slice(0, 2).join(' | '))
+  await ctx.close()
+}
+
+/* ------------------------------------------------------------------------ */
+/* Sefu: walk up, talk, his lines follow the quest; Escape steps away        */
+/* ------------------------------------------------------------------------ */
+{
+  const { page, ctx, errors } = await open({ width: 1440, height: 900 })
+  await resilientClick(page.getByTestId('play'), { label: 'Play' })
+  await waitFor(page, () => window.__world.get().phase === 'play')
+  await page.evaluate(() => {
+    window.__world.setBand('explorer')
+    window.__world.set({ zone: 'foundry', prediction: 1000 })
+  })
+  await page.waitForTimeout(900)
+  await page.evaluate(() => window.__world.setPos(3.2, 0.6, 9.3))
+  await waitFor(page, () => window.__world.get().near === 'talk.foreman', 8000).catch(() => {})
+  check('Sefu is someone to walk up to', (await world(page)).near === 'talk.foreman')
+  check('the prompt says Talk to Sefu', await page.getByTestId('interact').textContent().then((t) => /Talk to Sefu/.test(t)).catch(() => false))
+  await page.keyboard.press('KeyE')
+  await page.waitForTimeout(400)
+  check('E opens his card, in his name', (await page.getByTestId('talk').count()) === 1 && (await page.getByTestId('talk').textContent()).includes('Sefu'))
+  const line1 = await page.getByTestId('talk-line').textContent()
+  check('at the jam he talks about the belt', /belt/i.test(line1), line1)
+  const before = await pos(page)
+  await hold(page, 'KeyW', 500)
+  const after = await pos(page)
+  check('talking holds the explorer still', Math.hypot(after[0] - before[0], after[2] - before[2]) < 0.2)
+  await page.keyboard.press('KeyE')
+  await page.waitForTimeout(250)
+  const line2 = await page.getByTestId('talk-line').textContent()
+  check('E goes on to his next line', line2 !== line1 && /Forty bells/.test(line2), line2)
+  await page.keyboard.press('KeyE')
+  await page.waitForTimeout(250)
+  const lineLens = await page.getByTestId('talk-line').textContent()
+  check('from the start he says the Lens shows what hides', /raise the Lens/i.test(lineLens), lineLens)
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(300)
+  check('Escape steps away', (await page.getByTestId('talk').count()) === 0 && (await world(page)).talk === null)
+  // The pipe: his lines change with the quest.
+  await page.evaluate(() => window.__world.set({ fed: ['scrap.a', 'scrap.b'], lit: ['wetwood', 'drywood', 'charcoal'], bellowsSeen: true }))
+  await waitFor(page, () => window.__world.get().step === 'build', 5000).catch(() => {})
+  await page.keyboard.press('KeyE')
+  await page.waitForTimeout(400)
+  const line3 = await page.getByTestId('talk-line').textContent()
+  check('at the split pipe he talks about the pipe', /pipe/i.test(line3), line3)
+  await resilientClick(page.getByTestId('talk-next'), { label: 'Go on' })
+  await page.waitForTimeout(200)
+  await resilientClick(page.getByTestId('talk-next'), { label: 'Back to work' })
+  await page.waitForTimeout(300)
+  check('the last line\'s button steps away', (await page.getByTestId('talk').count()) === 0)
+  // After the pour and the bronze why, the Bench is his subject.
+  await page.evaluate(() => window.__world.set({ pipeFixed: true, poured: true, pourSeen: true, whys: [0, 0, 1] }))
+  await page.waitForTimeout(300)
+  await page.keyboard.press('KeyE')
+  await page.waitForTimeout(400)
+  const line4 = await page.getByTestId('talk-line').textContent()
+  check('with the door open he talks about bells and copper', /bells/i.test(line4) && /copper/i.test(line4), line4)
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(200)
+  check('Sefu: no console errors', errors.length === 0, errors.slice(0, 2).join(' | '))
+  await ctx.close()
+}
+
+/* ------------------------------------------------------------------------ */
+/* The save: reload mid-quest and find the courtyard as it was; start over   */
+/* ------------------------------------------------------------------------ */
+{
+  const { page, ctx, errors } = await open({ width: 1440, height: 900 })
+  check('a fresh visit has nothing saved', (await page.evaluate(() => localStorage.getItem('ploobia.world.v1'))) === null)
+  check('a fresh visit says Play, not Continue', await page.getByTestId('play').textContent().then((t) => /^Play$/.test(t.trim())).catch(() => false))
+  await resilientClick(page.getByTestId('play'), { label: 'Play' })
+  await waitFor(page, () => window.__world.get().phase === 'play')
+  check('the Landing alone is not worth a save', (await page.evaluate(() => localStorage.getItem('ploobia.world.v1'))) === null)
+  // Mid-quest: at the Foundry, the hearths lit, the pipe fixed, the furnace burning charcoal with a curve behind it.
+  await page.evaluate(() => {
+    window.__world.setBand('scientist')
+    window.__world.set({
+      zone: 'foundry', prediction: 1100, fed: ['scrap.a', 'scrap.b'], lit: ['wetwood', 'drywood', 'charcoal'], hearths: { wetwood: 300, drywood: 400, charcoal: 700 },
+      bellowsSeen: true, pipeFixed: true, air: 0.8, furnace: { lit: true, fuel: 'charcoal', temp: 640 }, curve: [[0, 20], [0.5, 60], [1, 120]], crossings: 1,
+      journal: { prediction: 'I predicted 1100 °C.', action: null, observed: null, explanation: null },
+    })
+  })
+  await page.waitForTimeout(900)
+  await page.evaluate(() => window.__world.setPos(-4, 0.6, 2))
+  await waitFor(page, () => { const q = window.__world.live.pos; return Math.hypot(q.x + 4, q.z - 2) < 1 }, 8000).catch(() => {})
+  await waitFor(page, () => window.__world.get().step === 'feed', 5000).catch(() => {})
+  await page.waitForTimeout(6000)
+  const raw = await page.evaluate(() => localStorage.getItem('ploobia.world.v1'))
+  check('the save is written while the store is quiet', raw != null, raw == null ? 'nothing under ploobia.world.v1' : '')
+  let saved = null
+  try { saved = JSON.parse(raw) } catch {}
+  check('the save keeps the quest, the fuels, the pipe and the spot', !!saved && saved.s.step === 'feed' && saved.s.lit.length === 3 && saved.s.pipeFixed === true && saved.pos && Math.hypot(saved.pos[0] + 4, saved.pos[2] - 2) < 1.5, JSON.stringify(saved && { step: saved.s.step, lit: saved.s.lit, pos: saved.pos }))
+  check('the save keeps nothing transient', !!saved && !('held' in saved.s) && !('room' in saved.s) && !('near' in saved.s) && !('cabinet' in saved.s) && !('resumed' in saved.s))
+  const tempBefore = saved ? saved.s.furnace.temp : 0
+
+  await page.reload({ waitUntil: 'load' })
+  await page.waitForFunction(() => !!window.__world, null, { timeout: 60000 })
+  await page.waitForTimeout(800)
+  check('after a reload the welcome offers Continue', await page.getByTestId('play').textContent().then((t) => /Continue/.test(t)).catch(() => false))
+  check('…and says where you were', await page.getByTestId('welcome-line').textContent().then((t) => /Next: Reach 1085 °C and pour/.test(t)).catch(() => false))
+  check('…with a way to start over', (await page.getByTestId('restart').count()) === 1)
+  await resilientClick(page.getByTestId('play'), { label: 'Continue' })
+  await waitFor(page, () => window.__world.get().phase === 'play')
+  await waitFor(page, () => { const q = window.__world.live.pos; return Math.hypot(q.x + 4, q.z - 2) < 1.5 }, 10000).catch(() => {})
+  await page.waitForTimeout(1500)
+  const w = await world(page)
+  const p = await pos(page)
+  check('continue: the courtyard is as it was', w.zone === 'foundry' && w.step === 'feed' && w.pipeFixed && w.lit.length === 3 && w.fed.length === 2 && w.prediction === 1100 && w.journal.prediction != null && w.phase === 'play' && !w.resumed, JSON.stringify({ zone: w.zone, step: w.step, lit: w.lit, fed: w.fed }))
+  check('continue: standing where you stood', Math.hypot(p[0] + 4, p[2] - 2) < 1.5, JSON.stringify(p))
+  check('continue: the furnace is still burning, the gauge no lower than it was', w.furnace.lit && w.furnace.fuel === 'charcoal' && w.furnace.temp >= tempBefore - 1, `${tempBefore} → ${w.furnace.temp}`)
+  check('continue: the curve carries on, not from zero', w.curve.length >= 3 && w.curve[w.curve.length - 1][0] > 1, JSON.stringify(w.curve.slice(-2)))
+  const fedParked = await page.evaluate(() => {
+    const s = window.__world.scene
+    const o = s.getObjectByName('scrap.a')
+    return o ? o.position.z < -6 : null
+  })
+  check('continue: a fed block is inside the furnace, not on the yard', fedParked === true || fedParked === null, String(fedParked))
+  check('the brief is not asked again once answered', (await page.getByTestId('brief').count().catch(() => 0)) === 0)
+  check('no console errors across the reload', errors.length === 0, errors.slice(0, 2).join(' | '))
+
+  // Start over: the save goes, the world resets to the Landing.
+  await page.reload({ waitUntil: 'load' })
+  await page.waitForFunction(() => !!window.__world, null, { timeout: 60000 })
+  await page.waitForTimeout(800)
+  await resilientClick(page.getByTestId('restart'), { label: 'Start over' })
+  await waitFor(page, () => window.__world.get().phase === 'play' && window.__world.get().zone === 'landing')
+  await page.waitForTimeout(1200)
+  const w2 = await world(page)
+  check('start over: back on the Landing with nothing kept', w2.zone === 'landing' && w2.step === 'arrive' && w2.lit.length === 0 && !w2.pipeFixed && w2.prediction === null, JSON.stringify({ zone: w2.zone, step: w2.step }))
+  check('start over: the save is gone', (await page.evaluate(() => localStorage.getItem('ploobia.world.v1'))) === null)
+  await ctx.close()
+}
+
+/* ------------------------------------------------------------------------ */
+/* Tablet + phone: layout, touch controls, hit sizes, portrait card          */
+/* ------------------------------------------------------------------------ */
+for (const [name, viewport, touch] of [
+  ['tablet', { width: 1180, height: 820 }, true],
+  ['phone', { width: 915, height: 412 }, true],
+  ['small-phone', { width: 740, height: 360 }, true],
+]) {
+  const { page, ctx, errors } = await open(viewport, { touch })
+  await resilientClick(page.getByTestId('play'), { label: 'Play' })
+  await waitFor(page, () => window.__world.get().phase === 'play')
+  await page.waitForTimeout(500)
+  if (touch) {
+    check(`${name}: the stick is on screen`, await page.getByTestId('stick').isVisible())
+    // Drag the stick up: the explorer should walk.
+    const box = await page.getByTestId('stick').boundingBox()
+    const cx = box.x + box.width / 2
+    const cy = box.y + box.height / 2
+    const p0 = await pos(page)
+    await page.touchscreen.tap(cx, cy)
+    await page.mouse.move(cx, cy)
+    await page.mouse.down()
+    await page.mouse.move(cx, cy - 40, { steps: 4 })
+    await page.waitForTimeout(800)
+    await page.mouse.up()
+    await page.waitForTimeout(200)
+    const p1 = await pos(page)
+    const moved = Math.hypot(p1[0] - p0[0], p1[2] - p0[2])
+    check(`${name}: the stick walks the explorer`, moved > 0.5, `${moved.toFixed(2)} m`)
+  }
+  // Every HUD button under the finger — audited in a touch context, where the
+  // platform's --hit applies (pointer mode keeps 32 px icons by design).
+  await page.touchscreen.tap(viewport.width / 2, 8)
+  await page.waitForTimeout(150)
+  const small = await page.evaluate(() => {
+    const min = 40
+    return [...document.querySelectorAll('.hud button:not([disabled]), .hud a')]
+      .map((el) => ({ label: el.getAttribute('aria-label') || el.textContent.trim().slice(0, 20), r: el.getBoundingClientRect() }))
+      .filter(({ r }) => r.width > 0 && (r.width < min || r.height < min))
+      .map((x) => x.label)
+  })
+  check(`${name}: every control is at least 40 px`, small.length === 0, small.join(', '))
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)
+  check(`${name}: nothing scrolls sideways`, !overflow)
+  const clear = await page.evaluate(() => {
+    const st = document.querySelector('[data-testid="stick"]')?.getBoundingClientRect()
+    if (!st) return null
+    const hits = []
+    const stick = document.querySelector('[data-testid="stick"]')
+    for (const id of ['coach', 'interact', 'toolbelt']) {
+      const el = document.querySelector(`[data-testid="${id}"]`)
+      if (!el || el.contains(stick)) continue
+      const r = el.getBoundingClientRect()
+      if (r.width > 0 && r.left < st.right && r.right > st.left && r.top < st.bottom && r.bottom > st.top) hits.push(id)
+    }
+    return hits
+  })
+  check(`${name}: nothing covers the stick`, clear !== null && clear.length === 0, JSON.stringify(clear))
+  await page.screenshot({ path: path.join(SHOTS, `world-${name}.png`) })
+  check(`${name}: no console errors`, errors.length === 0, errors.slice(0, 2).join(' | '))
+  await ctx.close()
+}
+
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true })
+  const page = await ctx.newPage()
+  await page.goto(`${BASE}?q=low#/world`, { waitUntil: 'load' })
+  await page.waitForTimeout(1500)
+  check('portrait: the turn card shows', (await page.getByTestId('turn-card').count()) === 1)
+  check('portrait: no canvas is mounted', (await page.locator('canvas').count()) === 0)
+  await ctx.close()
+}
+
+await browser.close()
+process.exit(tally())

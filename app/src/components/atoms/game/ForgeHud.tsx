@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ArrowRight, Check, ChevronDown, ChevronUp, Copy, Flag, FlaskConical, Grid2x2, Lock, Map, PanelBottom, PanelLeft, PanelRight, Play, RotateCcw, Send, Share2, Users, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronUp, Copy, Flag, FlaskConical, Grid2x2, Lock, Map, PanelBottom, PanelLeft, PanelRight, Play, RotateCcw, Send, Share2, Users, X } from 'lucide-react'
+import { Link } from 'react-router'
 import { Tile } from '@/components/ui/tile'
 import Ploob2 from '@/components/brand/Ploob2'
 import { cn } from '@/lib/utils'
@@ -9,6 +10,7 @@ import type { ChallengeScore, ResourceBudget } from '@/lib/challenge'
 import {
   DOORS,
   LEVELS,
+  DOOR_BY_ID,
   fmtCharge,
   gaugeFor,
   identityOf,
@@ -183,6 +185,7 @@ export function DoorMap({ onEnter, onShut }: { onEnter: (door: Door) => void; on
 export function ForgeWelcome({
   level,
   incoming,
+  from,
   onPlay,
   onExplore,
 }: {
@@ -190,11 +193,13 @@ export function ForgeWelcome({
   level: Level
   /** A challenge that arrived by link — offered first. */
   incoming: { by?: string; title: string } | null
+  /** Walked in through a door from the Archipelago: why they came, and the way back. */
+  from?: { eyebrow: string; line: string; back: string; to: string } | null
   onPlay: () => void
   onExplore: () => void
 }) {
   const [shutNote, setShutNote] = useState<string | null>(null)
-  const door = nextDoor()
+  const door = DOOR_BY_ID[level.door] ?? nextDoor()
   return (
     <div data-focus-layer="" className="fixed inset-0 z-40 flex items-center justify-center bg-[#F6F2E8]/82 p-4 backdrop-blur-[3px]">
       <div className="atlas-plate welcome-pop w-full max-w-[30rem] p-6 text-center">
@@ -209,6 +214,16 @@ export function ForgeWelcome({
           Five doors. Behind the second one is the salt in your jollof. Every door opens with one hand-in — and the bench is yours whenever you want it.
         </p>
 
+        {from && (
+          <div className="mt-3 rounded-[12px] border border-[#EAD3A6] bg-[#FBEBD2] px-3 py-2 text-left" data-testid="from-world">
+            <span className="atlas-eyebrow">{from.eyebrow}</span>
+            <p className="text-[12.5px] font-black text-[#2A2823]">{from.line}</p>
+            <Link to={from.to} aria-label={from.back} className="mt-1 inline-flex items-center gap-1 text-[11px] font-extrabold text-[#8A5A0E] underline-offset-2 hover:underline">
+              <ArrowLeft className="h-3 w-3" />
+              {from.back}
+            </Link>
+          </div>
+        )}
         {incoming && (
           <div className="mt-3 rounded-[12px] border border-[#C8DFC2] bg-[#E7F1E3] px-3 py-2 text-left" data-testid="incoming">
             <span className="atlas-eyebrow">{incoming.by ? `${incoming.by} sent you a challenge` : 'A challenge arrived'}</span>

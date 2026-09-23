@@ -1,0 +1,216 @@
+{
+  "note": "The Archipelago W2 batch 1 \u2014 six verb-bearing assets from the Higgsfield pipeline (style reference 5d52e1b7-07f0-4bc2-b312-3fc7ae27935e, stills on white, L/B/R turnarounds), repacked: gltf-transform optimize --compress meshopt --texture-compress webp --texture-size 768 --simplify. Loaded on demand by src/lib/worldassets.ts; every one has a procedural stand-in.",
+  "generated": "2026-09-19",
+  "assets": {
+    "furnace": {
+      "file": "furnace.glb",
+      "job": "da1f718b-4dea-4696-854b-7ade1641139b",
+      "model": "tripo_h3_1_multiview_to_3d",
+      "views": [
+        "c35435e0-c8b4-4eb0-ba2a-67bd7c3edc82",
+        "770976a3-1946-4a8e-b749-83f4112d814d",
+        "add0099a-419f-4abd-a810-fe33bc723eac",
+        "56f4a38e-2da7-4f8e-8d16-946cb8d7bcbf"
+      ],
+      "width_m": 5.2,
+      "front": "+x",
+      "verbs": [
+        "feed",
+        "enter"
+      ],
+      "states": [
+        "cold",
+        "lit"
+      ],
+      "tris": 11302
+    },
+    "crane": {
+      "file": "crane.glb",
+      "job": "1a0451f8-0463-4973-8d6b-87bb3cc453a4",
+      "model": "tripo_h3_1_multiview_to_3d",
+      "views": [
+        "a04580c5-9698-4676-b34f-af20e5d73a81",
+        "6a926253-7796-4b26-a4bc-0b6dcc966119",
+        "dd7b7fd3-c520-4cff-912f-5a5465049eac",
+        "596fd881-e421-4d4e-930e-d1afae7d2ea3"
+      ],
+      "height_m": 6.2,
+      "front": "+x",
+      "boom": "-z",
+      "edits": "baked chain cut; boom stretched \u00d71.38 to CRANE.reach; pivot moved to the mast axis",
+      "verbs": [
+        "drive",
+        "take",
+        "release"
+      ],
+      "tris": 10161
+    },
+    "crate": {
+      "file": "crate.glb",
+      "job": "40e0a701-67c4-4d17-87a2-434f342c8891",
+      "model": "tripo_h3_1_multiview_to_3d",
+      "views": [
+        "bd8a8cc3-f897-40df-a7fa-4c3fa121e516",
+        "e56f9c1a-a7bb-46d7-9c00-b61694698f05",
+        "de6beea8-af5f-4aff-99da-ca59a304520e",
+        "224c1d87-df62-4cb9-8def-1dcc44d41ac5"
+      ],
+      "width_m": 1.6,
+      "front": "+x",
+      "verbs": [
+        "probe"
+      ],
+      "states": [
+        "fill: procedural pile",
+        "lit: procedural flame"
+      ],
+      "tris": 7348
+    },
+    "ingot": {
+      "file": "ingot.glb",
+      "job": "cb31b954-cce3-4f60-b3b7-2e29e7abb8c2",
+      "model": "tripo_h3_1_multiview_to_3d",
+      "views": [
+        "4f920f1f-4939-410f-b138-39c41be405b6",
+        "d621b194-fb09-42b5-aab4-d1c3518308cc",
+        "ab837c87-c01c-4422-86a5-cc2757f24d8c",
+        "8a00a6dc-720f-4964-bc9c-38253a7b7a18"
+      ],
+      "width_m": 0.6,
+      "verbs": [
+        "grab",
+        "crane"
+      ],
+      "tris": 4276
+    },
+    "bellows": {
+      "file": "bellows.glb",
+      "job": "f3f8c983-fc46-44eb-b3d7-6909bd18bcba",
+      "model": "tripo_h3_1_multiview_to_3d",
+      "views": [
+        "571b25db-256e-4a80-abbe-01446daa4724",
+        "5bfdb192-118f-413d-a568-b4ad45aa298c",
+        "ea0846ef-2a9d-4921-b19d-7e2dd8f80e6a",
+        "4ac17513-d4fc-46cc-9da9-1c32aa66dd1e"
+      ],
+      "width_m": 1.9,
+      "front": "+x (nozzle)",
+      "verbs": [
+        "build"
+      ],
+      "states": [
+        "pipe split/whole: procedural"
+      ],
+      "tris": 7008
+    },
+    "explorer": {
+      "file": "explorer.glb",
+      "job": "1b50d77f-54fe-4d09-806b-f9e1edc23776",
+      "model": "multi_image_to_3d",
+      "views": [
+        "61b049a2-bc2b-420d-9be0-60a766deb4b5",
+        "a00c8e4a-8168-40fb-965c-1352cf4c5a96",
+        "98cf5b84-8be9-40b1-9b9c-0fd317eb3789",
+        "7020b60d-8e20-4b88-8753-94dba520e2a5"
+      ],
+      "height_m": 1.45,
+      "front": "+z",
+      "rig": "a-pose, rigging_height_meters 1.45",
+      "clips": [
+        "idle: explorer-idle.glb \u2014 Meshy idle through retarget-clip --lean 6 --chest 6 --headup 4 --damp shoulders/neck/Head 0.6",
+        "walk: explorer-walk.glb \u2014 Casual_Walk (id 30), job 99b81b57-fcc9-44b1-9626-a7beca5855c7; --lean 10 --chest 10 --headup 10 --damp Hips=0.2,knees 0.7,feet 0.8,spine 0.4,shoulders 0.4,neck/Head 0.3",
+        "jump: explorer-jump.glb \u2014 Regular_Jump (id 466), job eacf6b93-a92b-4b3d-99e8-d4bc2e028f11; --lean 8 --chest 6 --headup 6 --damp Hips=0.5,knees 0.75,spine 0.6,shoulders 0.5; hip lift stripped"
+      ],
+      "verbs": [
+        "walk",
+        "jump",
+        "carry"
+      ],
+      "tris": 16243,
+      "clip_note": "Each Meshy re-rig has its OWN bone frames (the jump rig's spine is rotated 180\u00b0 to the idle's), so clips cannot be copied by bone name \u2014 the waist folds. scripts/retarget-clip.mjs retargets in world space: per bone, the rotation delta the source clip applies to the source bind pose, applied to the idle rig's bind pose, expressed locally; the spine chain is matched by position (Hips > Spine02 > Spine01 > Spine > neck > Head); hip translation dropped (the body carries height). Clip files are skeleton + rotations only (20\u201330 KB). Loaded by lib/worldassets.ts loadWorldClips.",
+      "posture_note": "The mesh and the ORIGINAL job's rig stand upright (bind pose: pelvis over the feet, spine vertical). The crouch \u2014 pelvis tipped forward, knees bent, \"as if the pack were heavy\" (Selorm) \u2014 is in Meshy's 3d_rigging outputs: those re-rig a decimated proxy of the mesh and their canned walk/jump come out crouched on this child-proportioned skeleton even in Meshy's own render. retarget-clip.mjs therefore damps the pelvis and knee deltas (--damp) toward the upright bind while keeping the thigh swing, and adds a small pelvis-pivot lean. No pelvis offset any more; the waist front stays slimmed 32%.",
+      "mesh_edit": "scripts/slim-waist.mjs 0.68 0.64 1.0 0.08 \u2014 the front of the waist band (hoodie knot + belt pouches) sat 3 cm ahead of the chest; flattened 32% so the chest is the forward-most line of the torso ; scripts/narrow-pelvis.mjs 0.92 0.9 0.55 0.9 \u2014 the pelvis band narrowed 8% side-to-side and 10% front-to-back (Selorm: the pelvis dominates the front view)"
+    },
+    "foreman": {
+      "file": "foreman.glb",
+      "job": "b206178f-e23b-4226-b564-374f3c6104c8",
+      "model": "multi_image_to_3d (Meshy) \u2014 a-pose rig 1.8 m, idle animation id 0, pbr texture",
+      "views": [
+        "73d6ecbb-f047-4cff-8520-44ea5ee88eaa",
+        "5d33dfbb-78ea-40d3-bd7b-2627f58834c3",
+        "c045e25d-cd3b-4fe1-8ecd-af2ead7e00d1",
+        "84eb6148-ca00-4fbd-a548-411fffa94694"
+      ],
+      "views_note": "front \u00b7 3/4 left \u00b7 back \u00b7 right profile (the first 'left side' still came out 3/4; a strict-profile prompt fixed the right)",
+      "still_from": "Selorm's npc frame 12d704f5-5262-4fc8-a56d-0270a78ef369 + style variant 5d52e1b7; two stills fc5bb5c0 (tongs in hand) / 73d6ecbb (A-pose) \u2014 Selorm chose the A-pose one",
+      "name": "Sefu \u2014 Selorm 2026-09-22, the Swahili name (sefu, sword); lives in lib/worldtext.ts people.foreman",
+      "height_m": 1.8,
+      "front": "+z",
+      "verbs": [
+        "talk"
+      ],
+      "clips": [
+        "Armature|Idle|baselayer \u2014 plays in place via Prop animate"
+      ],
+      "repack": "gltf-transform optimize --compress meshopt --texture-compress webp --texture-size 1024 --simplify true --simplify-ratio 0.3 --simplify-error 0.01 (9.32 MB \u2192 441 KB)",
+      "credits": "~4 stills + ~8 turnarounds + 38 mesh"
+    }
+  },
+  "batch2": {
+    "note": "W2 batch 2 \u2014 the place around the things. No verbs, so no meshes: nano_banana_pro stills referenced to the style variant 5d52e1b7-07f0-4bc2-b312-3fc7ae27935e, keyed out in the container (flood fill from the white corners, 1.5 px feather), exported as WebP. Signage carries no lettering; src/lib/worldtext.ts draws the words at runtime. Loaded by loadWorldTexture(); every card keeps a procedural stand-in; the walls keep their flat colour until the tile lands.",
+    "generated": "2026-09-19",
+    "credits": "~10",
+    "textures": {
+      "wall": {
+        "file": "wall.webp",
+        "job": "302aeaba-8af7-4570-ab24-d72b74a0fe01",
+        "use": "mirror-repeat tile on the five courtyard walls, 2.6 m per tile",
+        "px": [
+          1024,
+          1024
+        ]
+      },
+      "banner": {
+        "file": "banner.webp",
+        "job": "f08760c7-5e9c-40d3-9717-5f4718bf4859",
+        "use": "red cloth card \u00d72 either side of the mouth; words drawn on the lower half",
+        "px": [
+          400,
+          768
+        ]
+      },
+      "rack": {
+        "file": "rack.webp",
+        "job": "92532e1c-76dd-4a65-8dd3-a24d459b5cd1",
+        "use": "relief card \u00d72 on the east wall",
+        "px": [
+          1024,
+          733
+        ]
+      },
+      "landing-card": {
+        "file": "landing-card.webp",
+        "job": "9f80ca6c-fb0d-4061-a42b-a4e8fecf3cfb",
+        "use": "34 m billboard card to the south-east, across the water",
+        "px": [
+          732,
+          1024
+        ]
+      },
+      "ancient-card": {
+        "file": "ancient-card.webp",
+        "job": "3d87495f-c697-49aa-81a4-5112ccdcb111",
+        "use": "34 m billboard card on the north-west skyline; bottom 40% faded; the mouth glows after the pour",
+        "px": [
+          1280,
+          681
+        ]
+      }
+    },
+    "procedural": [
+      "iron braces (instanced straps + rivets)",
+      "chalkboard",
+      "the rule on the lintel over the gate"
+    ]
+  }
+}
