@@ -69,7 +69,8 @@ async function hold(page, code, ms) {
   // This walk is the Explorer's: three written options at the whys.
   await page.evaluate(() => window.__world.setBand('explorer'))
   check('the wordmark names the zone', await page.getByTestId('wordmark').textContent().then((t) => /Landing/.test(t)))
-  check('the checklist is up with nothing ticked', (await page.locator('[data-testid=checklist] li').count()) === 5 && (await page.locator('[data-testid=checklist] li[data-done=true]').count()) === 0)
+  // At the Landing the plate carries the plot's quest (S0); the furnace's five lines take over across the water.
+  check('the checklist is up with nothing ticked', (await page.locator('[data-testid=checklist] li').count()) === 8 && (await page.locator('[data-testid=checklist] li[data-done=true]').count()) === 0)
   check('the toolbelt shows Lens · Probe · Measure · Journal', (await page.getByTestId('toolbelt').textContent()) .replace(/\s+/g, ' ').includes('Lens') && (await page.getByTestId('measure').isDisabled()))
   check('the minimap is up', (await page.getByTestId('minimap').count()) === 1)
 
@@ -581,11 +582,11 @@ async function hold(page, code, ms) {
 /* ------------------------------------------------------------------------ */
 {
   const { page, ctx, errors } = await open({ width: 1440, height: 900 })
-  check('a fresh visit has nothing saved', (await page.evaluate(() => localStorage.getItem('ploobia.world.v1'))) === null)
+  check('a fresh visit has nothing saved', (await page.evaluate(() => localStorage.getItem('ploobia.world.v2'))) === null)
   check('a fresh visit says Play, not Continue', await page.getByTestId('play').textContent().then((t) => /^Play$/.test(t.trim())).catch(() => false))
   await resilientClick(page.getByTestId('play'), { label: 'Play' })
   await waitFor(page, () => window.__world.get().phase === 'play')
-  check('the Landing alone is not worth a save', (await page.evaluate(() => localStorage.getItem('ploobia.world.v1'))) === null)
+  check('the Landing alone is not worth a save', (await page.evaluate(() => localStorage.getItem('ploobia.world.v2'))) === null)
   // Mid-quest: at the Foundry, the hearths lit, the pipe fixed, the furnace burning charcoal with a curve behind it.
   await page.evaluate(() => {
     window.__world.setBand('scientist')
@@ -600,8 +601,8 @@ async function hold(page, code, ms) {
   await waitFor(page, () => { const q = window.__world.live.pos; return Math.hypot(q.x + 4, q.z - 2) < 1 }, 8000).catch(() => {})
   await waitFor(page, () => window.__world.get().step === 'feed', 5000).catch(() => {})
   await page.waitForTimeout(6000)
-  const raw = await page.evaluate(() => localStorage.getItem('ploobia.world.v1'))
-  check('the save is written while the store is quiet', raw != null, raw == null ? 'nothing under ploobia.world.v1' : '')
+  const raw = await page.evaluate(() => localStorage.getItem('ploobia.world.v2'))
+  check('the save is written while the store is quiet', raw != null, raw == null ? 'nothing under ploobia.world.v2' : '')
   let saved = null
   try { saved = JSON.parse(raw) } catch {}
   check('the save keeps the quest, the fuels, the pipe and the spot', !!saved && saved.s.step === 'feed' && saved.s.lit.length === 3 && saved.s.pipeFixed === true && saved.pos && Math.hypot(saved.pos[0] + 4, saved.pos[2] - 2) < 1.5, JSON.stringify(saved && { step: saved.s.step, lit: saved.s.lit, pos: saved.pos }))
@@ -642,7 +643,7 @@ async function hold(page, code, ms) {
   await page.waitForTimeout(1200)
   const w2 = await world(page)
   check('start over: back on the Landing with nothing kept', w2.zone === 'landing' && w2.step === 'arrive' && w2.lit.length === 0 && !w2.pipeFixed && w2.prediction === null, JSON.stringify({ zone: w2.zone, step: w2.step }))
-  check('start over: the save is gone', (await page.evaluate(() => localStorage.getItem('ploobia.world.v1'))) === null)
+  check('start over: the save is gone', (await page.evaluate(() => localStorage.getItem('ploobia.world.v2'))) === null)
   await ctx.close()
 }
 
