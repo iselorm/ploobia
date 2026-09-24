@@ -13,9 +13,9 @@ function WebglFallback() {
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#C13B33]/10">
           <HeartCrack className="h-7 w-7 text-[#C13B33]" />
         </div>
-        <h2 className="text-xl font-black text-[#402222]">The ride hit a bump!</h2>
+        <h2 className="text-xl font-black text-[#402222]">The 3D scene could not start</h2>
         <p className="mt-2 text-sm leading-relaxed font-semibold text-[#7A5252]">
-          Your browser could not start the 3D bloodstream (WebGL is unavailable or crashed). Try
+          Your browser could not start the 3D scene (WebGL is unavailable or crashed). Try
           reloading, or use a browser with WebGL enabled.
         </p>
         <button
@@ -23,8 +23,9 @@ function WebglFallback() {
           className="mx-auto mt-5 flex items-center gap-2 rounded-full bg-[#C13B33] px-6 py-3 text-sm font-extrabold text-[#FBF5EA] shadow transition-all hover:bg-[#9E2B25] active:scale-95"
         >
           <RotateCcw className="h-4 w-4" />
-          Reload the ride
+          Try again
         </button>
+        <a href="#/" className="mt-4 inline-block font-bold text-[#402222] underline">Back to the hall</a>
       </div>
     </div>
   )
