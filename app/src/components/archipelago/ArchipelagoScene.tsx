@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect } from 'react'
 import * as THREE from 'three'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Physics } from '@react-three/rapier'
+import { WebglFallback } from '@/components/SceneErrorBoundary'
 import PerfProbe from '@/components/PerfProbe'
 import { getQualityCaps, useQualityCaps } from '@/lib/quality'
 import { getWorld, plotChoose, plotSay, probeBed, runBedId, setWorld, tickWorld, useWorld } from '@/lib/archipelago'
@@ -73,6 +74,7 @@ export default function ArchipelagoScene({ hudBottom = 0, onContextLost }: { hud
   const s = useWorld()
   return (
     <Canvas
+      fallback={<WebglFallback />}
       dpr={[1, quality.maxDpr]}
       camera={{ fov: 46, near: 0.1, far: 400, position: [0, 4, 10] }}
       gl={{ antialias: getQualityCaps().antialias, powerPreference: 'high-performance' }}

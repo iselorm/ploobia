@@ -350,5 +350,34 @@ check('the gate catches drown, air, oxygen, roots', ['It is drowning', 'Roots ne
 check('the gate lets testimony through', ["I gave this one more this morning. It looks worse.", 'Wet, is it. I thought so — it never looks dry.', "You gave it nothing. And look.", "Dry already? It doesn't look thirsty.", 'Shall we look first?', 'You gave it water and it drooped more. Hm.'].every((t) => !P.explainsCause(t)))
 check('the gate is not fooled by "airy" or "fair"', !P.explainsCause('a fair day, airy and bright'))
 
+/* ---- action-dependent feedback and record accounting regressions ---- */
+{
+  const play = (run, choose) => {
+    P.say(run, 3)
+    const announcements = []
+    while (run.phase === 'dawn') {
+      P.probe(run)
+      P.choose(run, choose(run))
+      if (P.advance(run, 6).includes('stand')) announcements.push(P.recoveryLine(run))
+    }
+    return { run, announcements }
+  }
+  const first = play(P.firstBed(), (r) => r.today.word === 'DRY' ? 'pour' : 'wait')
+  const far = play(P.secondBed(), (r) => r.today.word === 'DRY' ? 'pour' : 'wait')
+  const mistaken = play(P.firstBed(), (r) => r.day === 1 ? 'pour' : 'wait')
+  check('unwatered first recovery acknowledges no water', first.announcements[0].includes('gave it nothing'))
+  check('watered far-bed recovery acknowledges watering', far.announcements[0].includes('gave this bed water') && !far.announcements[0].includes('nothing'))
+  check('recovery after a mistaken pour does not claim no water', mistaken.announcements.length === 1 && !mistaken.announcements[0].includes('nothing'))
+  check('recovery testimony never reveals the gated explanation', [...first.announcements, ...far.announcements, ...mistaken.announcements].every((line) => !P.explainsCause(line)))
+  const m = P.methodSteps([first.run, far.run])
+  check('complete demonstrated method gets a confident reply', P.methodReply(m).includes('I can do that'))
+  check('incomplete method identifies the missing observation', P.methodReply({ ...m, checkAgain: false }).includes('checking again after watering') && !P.methodReply({ ...m, checkAgain: false }).includes('I can do that'))
+  const t = P.thriftOf(first.run)
+  const initial = M.storedOf(M.newBed('clay', first.run.start))
+  const remaining = M.storedOf(first.run.b) + first.run.b.pond
+  check('record separates initial water, additions, losses and remaining storage', Math.abs(initial + t.arrived - t.taken - first.run.b.drained - t.spilled - remaining) < 1e-8)
+  check('negative storage change is not negative remaining water', t.stored < 0 && remaining > 0 && Math.abs(t.stored - (remaining - initial)) < 1e-8)
+}
+
 console.log(`\n${passes} passed, ${fails} failed`)
 process.exit(fails ? 1 : 0)

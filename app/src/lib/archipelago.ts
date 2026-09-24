@@ -638,7 +638,7 @@ export const RELIGHT: Quest<StepId> = {
 export const PLOT: Quest<PlotStepId> = {
   id: 'landing.plot',
   title: "Why is Nara's cassava drooping?",
-  hook: 'A wet streak runs up the harbour path to a cassava that droops however much it is watered. Find out what it needs.',
+  hook: 'A wet streak runs up the harbour path to a cassava that droops however much it is watered. Find out what it needs. Each simulated day takes about six seconds, then pauses for your next decision.',
   predict: { ask: 'How many cans will it take to get her standing — and keep her standing for a fortnight?', unit: 'cans' },
   steps: [
     { id: 'trail', label: 'Follow the wet streak', coach: 'Something has been spilling water up the path. Follow it.', target: 'talk.nara', until: { type: 'state', source: 'plot.met', equals: true } },
@@ -653,7 +653,7 @@ export const PLOT: Quest<PlotStepId> = {
     { id: 'plant', label: 'Plant your cutting', coach: 'Your plot, your cutting. Put it in.', target: 'bed.mine', until: { type: 'state', source: 'plot.planted', equals: true } },
     { id: 'done', label: 'Sela at the jetty', coach: 'Sela is waiting at the jetty.', target: 'talk.sela', until: { type: 'never' } },
   ],
-  whys: ['What happened to the first plant while nobody watered it?'],
+  whys: ['Why could the first plant droop while its soil was wet?'],
   hidden: ['trail', 'lens', 'done'],
 }
 
@@ -1011,9 +1011,9 @@ export function sendAcross(): void {
 
 /** The plot's one why, for the first play: three options; the world disproves two. */
 export const PLOT_WHY: Why = {
-  ask: 'What happened to the first plant while nobody watered it?',
+  ask: 'Why could the first plant droop while its soil was wet?',
   options: [
-    { key: 'thirsty', text: 'It was thirsty and finally found water.', right: false, line: 'Nobody gave it any — and a can every morning would have finished it. You watched that.' },
+    { key: 'thirsty', text: 'It was thirsty and finally found water.', right: false, line: 'The probe showed water was already there. A can every morning would keep this bed too wet. Compare the two watering histories next.' },
     { key: 'right', text: 'The soil was full of water and short of air, so the roots stopped taking water up.', right: true, line: 'That is it. Full of water, no air in the pores — the roots could not work. When the bed drained, they could.' },
     { key: 'bad_soil', text: 'The soil was bad and the plant got used to it.', right: false, line: 'Same soil, same plant. It came back on its own once the bed drained — the soil did not change, the water in it did.' },
   ],

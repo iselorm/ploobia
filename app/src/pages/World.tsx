@@ -3,7 +3,7 @@ import { useLayoutTier, usePortraitPhone } from '@/hooks/use-layout'
 import { getWorld, resetWorld, returnFromCabinet } from '@/lib/archipelago'
 import { loadSave, restoreWorld, watchWorld } from '@/lib/worldsave'
 import { installWorldAudio } from '@/lib/worldaudio'
-import SceneErrorBoundary from '@/components/SceneErrorBoundary'
+import SceneErrorBoundary, { WebglFallback } from '@/components/SceneErrorBoundary'
 import TurnCard from '@/components/game/TurnCard'
 import ArchipelagoScene from '@/components/archipelago/ArchipelagoScene'
 import WorldHud from '@/components/archipelago/hud/WorldHud'
@@ -19,6 +19,20 @@ export default function World() {
   const tier = useLayoutTier()
   const portrait = usePortraitPhone()
   const [lost, setLost] = useState(false)
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    // Canvas renderer creation can reject asynchronously, outside React's boundary.
+    // Check the required context before mounting the scene or its gameplay HUD.
+    const canvas = document.createElement('canvas')
+    try {
+      const gl = canvas.getContext('webgl2')
+      if (!gl) { setLost(true); return }
+      gl.getExtension('WEBGL_lose_context')?.loseContext()
+      setReady(true)
+    } catch {
+      setLost(true)
+    }
+  }, [])
   // Back through a door from a cabinet: the world resumes where it stood.
   // Otherwise a save, if there is one, is restored behind the welcome card
   // (Continue / Start over); any other arrival is a fresh start. Decided at
@@ -52,14 +66,16 @@ export default function World() {
   useEffect(() => installWorldKeys(), [])
   useEffect(() => watchWorld(() => ({ pos: [live.pos.x, live.pos.y, live.pos.z], facing: live.facing, cam: [live.camYaw, live.camPitch] })), [])
   useEffect(() => installWorldAudio(() => ({ speed: live.speed, grounded: live.grounded })), [])
+  if (lost) return <WebglFallback />
+  if (!ready) return <div role="status" className="fixed inset-0 grid place-items-center bg-[#F6F2E8]">Opening the Archipelago…</div>
   if (portrait) return <TurnCard line="The Archipelago is explored the wide way round." />
   const compact = tier === 'phone'
   return (
     <div className="fixed inset-0 bg-[#F6F2E8]" data-cabinet="world">
-      <SceneErrorBoundary key={lost ? 'lost' : 'ok'}>
+      <SceneErrorBoundary>
         <ArchipelagoScene hudBottom={compact ? 72 : 0} onContextLost={() => setLost(true)} />
+        <WorldHud compact={compact} />
       </SceneErrorBoundary>
-      <WorldHud compact={compact} />
     </div>
   )
 }

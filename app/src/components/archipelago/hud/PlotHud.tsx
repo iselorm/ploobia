@@ -23,8 +23,8 @@ import {
   type PlotState,
   type WorldState,
 } from '@/lib/archipelago'
-import { CARE_FIRM, RESCUE_FIRM, cansUsed, everyMorning, methodSteps, plateUp, recordOf, rootsBelowHalfOn, saidNow, secondsToDawn, steadyHands, type PlotRecord, type PlotRun } from '@/lib/plot'
-import { ROOTS_CONSTANTS, SOIL, airOf, storedOf } from '@/lib/roots'
+import { CARE_FIRM, RESCUE_FIRM, cansUsed, everyMorning, methodSteps, methodReply, plateUp, recordOf, saidNow, secondsToDawn, steadyHands, type PlotRecord, type PlotRun } from '@/lib/plot'
+import { ROOTS_CONSTANTS, SOIL, airOf, newBed, storedOf } from '@/lib/roots'
 import { judgeWhyOf, TRUST } from '@/lib/whyjudge'
 import { WORLD_TEXT } from '@/lib/worldtext'
 import { interactables } from '@/lib/archipelago'
@@ -484,7 +484,7 @@ export function MethodCard({ p }: { p: PlotState }) {
         <p className="mt-2 text-[11.5px] font-semibold text-[#5F5A4E]">Never “stop when firm” — the leaves lag the soil by days, both ways.</p>
         <div className="mt-2 flex items-start gap-2">
           <span className="atlas-eyebrow">Nara</span>
-          <p className="text-[12px] leading-snug font-semibold text-[#2A2823]">“Probe. Soaked, wait. Dry, one can. Look again tomorrow. — I can do that.”</p>
+          <p className="text-[12px] leading-snug font-semibold text-[#2A2823]">“{methodReply(m)}”</p>
         </div>
         <Tile data-testid="method-handin" className="mt-3 rounded-full bg-[#E8A33D] px-4 py-2 text-[12.5px] font-extrabold text-[#2A2823]" onClick={teachNara}>
           Hand it to Nara
@@ -507,7 +507,7 @@ export function RecordCard({ p, compact }: { p: PlotState; compact: boolean }) {
   const rec = useMemo(() => (first ? recordOf(first) : null), [first])
   const farRec = useMemo(() => (far ? recordOf(far) : null), [far])
   const [step, setStep] = useState<'score' | 'why' | 'split'>('score')
-  if (!rec) return null
+  if (!rec || !first) return null
   const thrift = rec.thrift
   return (
     <div className={cn('pointer-events-auto absolute inset-x-0 flex justify-center px-3', compact ? 'top-2' : 'top-14')}>
@@ -520,15 +520,19 @@ export function RecordCard({ p, compact }: { p: PlotState; compact: boolean }) {
             </p>
             <div className="mt-2 grid grid-cols-3 gap-1.5 text-center">
               <Score label="Accuracy" word={rec.accuracy ? ACCURACY_WORDS[rec.accuracy] : '—'} num={caps.quantitative && rec.accuracy && rec.said.length ? `${Math.abs(rec.said[rec.said.length - 1] - rec.cans)} off` : null} testid="record-accuracy" />
-              <Score label="Economy" word={ECONOMY_WORDS[rec.economy]} num={caps.quantitative ? `${rec.cans} of ${rec.fewest ?? '?'}` : null} testid="record-economy" />
+              <Score label="Care" word={rec.steadyHands ? 'Steady hands' : 'Plant rescued'} num={null} testid="record-care" />
               <Score label="Thrift" word={thrift.drained + thrift.spilled < 1 ? 'nothing wasted' : `${Math.round(thrift.drained + thrift.spilled)} mm lost`} num={caps.quantitative ? `${Math.round(thrift.arrived)} mm in` : null} testid="record-thrift" />
             </div>
             {caps.quantitative && (
               <p className="mt-1.5 text-[11px] font-semibold text-[#5F5A4E]" data-testid="record-water">
-                Of your {Math.round(thrift.arrived)} mm: {Math.round(thrift.taken)} taken up, {Math.round(thrift.drained)} drained past the roots, {Math.round(thrift.spilled)} over the edging, {Math.round(thrift.stored)} still in the bed. The bed drained {thrift.inherited.toFixed(1)} mm of its own.
+                The bed began with {storedOf(newBed(first.b.texture, first.start)).toFixed(1)} mm of water. You added {thrift.arrived.toFixed(1)} mm. Total uptake: {thrift.taken.toFixed(1)} mm; drainage: {first.b.drained.toFixed(1)} mm; overflow: {thrift.spilled.toFixed(1)} mm. Water remaining: {(storedOf(first.b) + first.b.pond).toFixed(1)} mm. Storage change: {thrift.stored > 0 ? '+' : ''}{thrift.stored.toFixed(1)} mm. Uptake includes water already in the bed.
                 {caps.vocab === 'technical' ? ` Ions leached: ${thrift.leached.toFixed(1)} (game units).` : ''}
               </p>
             )}
+            <details className="mt-2 text-[11.5px] text-[#5F5A4E]">
+              <summary className="cursor-pointer font-bold">Optional challenge: use less water</summary>
+              <p data-testid="record-economy">Your {rec.cans} cans: {rec.steadyHands ? ECONOMY_WORDS[rec.economy] : 'try steady care before optimising water'}. The model’s minimum for rescue with steady care is {rec.fewest ?? 'unknown'}. A reliable probe-and-check routine can use more than this minimum and still be successful care.</p>
+            </details>
             {rec.steadyHands ? (
               <p className="mt-1.5 text-[11.5px] font-extrabold text-[#2F7F7A]">Steady hands.</p>
             ) : (
@@ -699,7 +703,8 @@ function Counterfactual({ run, onNext }: { run: PlotRun; onNext: () => void }) {
   const d = every.daily[Math.max(0, Math.min(total - 1, day - 1))]
   const finished = day >= total
   const you = recordOf(run)
-  const gone = rootsBelowHalfOn(every)
+  const deathIndex = every.daily.findIndex((d) => d.health <= 0.001)
+  const gone = deathIndex < 0 ? null : deathIndex + 1
   return (
     <div data-testid="counterfactual" data-day={day} data-finished={finished}>
       <span className="atlas-eyebrow block">The same bed · a can every morning</span>
@@ -729,7 +734,7 @@ function Counterfactual({ run, onNext }: { run: PlotRun; onNext: () => void }) {
           <div className="rounded-[12px] bg-[#F6DEDC] px-2 py-2" data-testid="cf-every">
             <span className="block text-[9px] font-extrabold tracking-wide text-[#A23B2E] uppercase">Every morning</span>
             <span className="block text-[13px] font-extrabold text-[#2A2823]">
-              {every.cans} cans · gone{gone ? ` by day ${gone + 1}` : ''}
+              {every.cans} cans · gone{gone ? ` by day ${gone}` : ''}
             </span>
           </div>
         </div>
@@ -761,7 +766,7 @@ export function PageCard({ p, onClose }: { p: PlotState; onClose: () => void }) 
           </p>
           {rec && (
             <p className="mt-0.5 text-[11px] font-semibold text-[#5F5A4E]">
-              Standing on day {rec.stood ?? '—'} with nothing; {rec.cans} {rec.cans === 1 ? 'can' : 'cans'} kept it there.
+              First stood on day {rec.stood ?? '—'}; {rec.cans} {rec.cans === 1 ? 'can' : 'cans'} used in total. {rec.steadyHands ? 'Steady care after day one.' : 'Recovered by the final day.'}
             </p>
           )}
         </div>
@@ -869,7 +874,7 @@ export function PlotJournal({ p, onClose }: { p: PlotState; onClose: () => void 
     <div className="pointer-events-auto absolute inset-0 grid place-items-center bg-[#2A2823]/35 p-4" data-focus-layer="">
       <div className="atlas-plate w-full max-w-[28rem] rounded-[22px] px-5 py-4" data-testid="plot-journal">
         <span className="atlas-eyebrow block">Journal · The Drooping Cassava</span>
-        {rows.length === 0 && <p className="mt-2 text-[12.5px] font-semibold text-[#5F5A4E]">Nothing yet. Each morning you play goes in here — read at one o’clock, the hardest hour.</p>}
+        {rows.length === 0 && <p className="mt-2 text-[12.5px] font-semibold text-[#5F5A4E]">Nothing yet. Each simulated day takes about six seconds, then pauses for your decision. The journal records the leaves at one o’clock.</p>}
         <div className="mt-2 grid max-h-[60vh] gap-2 overflow-y-auto">
           {rows.map((r, i) => (
             <JournalRow key={i} r={r} current={!!live && i === rows.length - 1} />

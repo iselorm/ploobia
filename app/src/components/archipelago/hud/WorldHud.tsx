@@ -424,8 +424,10 @@ function Swirl() {
 function Checklist({ s }: { s: WorldState }) {
   const q = activeQuest(s)
   const cur = currentStepId(s)
-  const steps = q.steps.filter((st) => !(q.hidden as string[]).includes(st.id))
   const idx = q.steps.findIndex((st) => st.id === cur)
+  const steps = q.id === 'landing.plot'
+    ? q.steps.filter((_, i) => i === idx)
+    : q.steps.filter((st) => !(q.hidden as string[]).includes(st.id))
   return (
     <ul className="mt-1.5 grid gap-1" data-testid="checklist">
       {steps.map((st) => {

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
+import { recoveryLine } from '@/lib/plot'
 import { lapChime } from '@/lib/audio'
-import { plotNudge, useWorld } from '@/lib/archipelago'
+import { getWorld, plotNudge, useWorld } from '@/lib/archipelago'
 
 /**
  * Ploob's one-off lines for the plot, said over the coach line: the first
@@ -15,7 +16,8 @@ export function usePlotMoments(say: (text: string, ms?: number) => void) {
   useEffect(() => {
     const onStand = () => {
       lapChime()
-      say('It came up. You gave it nothing and it came up.', 5000)
+      const current = getWorld().plot.run
+      if (current) say(recoveryLine(current), 5000)
     }
     const notYet = () => say('Let the day run first.', 2500)
     window.addEventListener('ploobia:stand', onStand)

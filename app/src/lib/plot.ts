@@ -561,3 +561,19 @@ export const EXPLAINS = /\b(drown\w*|air|airless|oxygen|roots?)\b/i
 export function explainsCause(text: string): boolean {
   return EXPLAINS.test(text)
 }
+
+/** Recovery testimony follows the actions taken up to the first stand. */
+export function recoveryLine(run: PlotRun): string {
+  const day = run.stood ?? run.day
+  const poured = run.days.some((d) => d.day <= day && d.cans > 0)
+    || (run.today.day <= day && run.today.cans > 0)
+  if (!poured) return 'It came up. You gave it nothing and it came up.'
+  if (run.bed === 'second') return 'You gave this bed water, and it came up. Let’s keep checking it.'
+  return 'It came up. Let’s look back at what changed each morning.'
+}
+
+export function methodReply(steps: MethodSteps): string {
+  if (Object.values(steps).every(Boolean)) return 'Probe. Soaked, wait. Dry, one can. Look again tomorrow. — I can do that.'
+  const missing = [!steps.probe && 'probing before deciding', !steps.soakedWait && 'waiting when the bed is soaked', !steps.dryCan && 'watering when the bed is dry', !steps.checkAgain && 'checking again after watering'].filter(Boolean)
+  return `Both beds are standing. We still need to test ${missing.join(', ')} together before I can rely on the whole method.`
+}
