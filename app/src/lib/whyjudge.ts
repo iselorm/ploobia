@@ -10,7 +10,7 @@
  * asks a TypeSafe System One model. `VITE_WHY_URL` overrides the path for a
  * hosted world served from another origin; unset → same-origin `/api/why`.
  */
-import { WHYS, whyFacts, getWorld } from './archipelago'
+import { WHYS, whyFacts, getWorld, type Why } from './archipelago'
 
 export type Verdict = 'right' | 'partial' | 'misconception' | 'off'
 
@@ -27,17 +27,21 @@ const TIMEOUT_MS = 9000
 export const TRUST = 0.55
 
 export async function judgeWhy(index: number, answer: string): Promise<Judgement | null> {
-  const why = WHYS[index]
+  return judgeWhyOf(WHYS[index], answer, whyFacts(getWorld()), 'foundry.relight', index)
+}
+
+/** Any quest's why, judged the same way: the question, the target, the named misconceptions, the facts the learner could have seen. */
+export async function judgeWhyOf(why: Why, answer: string, facts: Record<string, string | number | boolean>, quest: string, index = 0): Promise<Judgement | null> {
   const right = why.options.find((o) => o.right)
   if (!right) return null
   const body = {
-    quest: 'foundry.relight',
+    quest,
     index,
     ask: why.ask,
     answer: answer.trim().slice(0, 600),
     target: right.text,
     misconceptions: why.options.filter((o) => !o.right).map((o) => ({ key: o.key, text: o.text })),
-    facts: whyFacts(getWorld()),
+    facts,
   }
   const ctl = new AbortController()
   const timer = window.setTimeout(() => ctl.abort(), TIMEOUT_MS)

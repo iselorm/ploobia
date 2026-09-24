@@ -31,7 +31,8 @@ import {
   type WorldState,
 } from './archipelago'
 
-export const SAVE_KEY = 'ploobia.world.v1'
+/** v2 (S0): the plot rides in the save — the stage, the run in progress, the attempts. A v1 save is a fresh start. */
+export const SAVE_KEY = 'ploobia.world.v2'
 
 /** A store write schedules a save this long later; writes in between do not push it. */
 const SETTLE_MS = 700
@@ -54,6 +55,7 @@ type SavedKeys =
   | 'curve'
   | 'whys'
   | 'journal'
+  | 'plot'
 
 /** Where the explorer stood and looked — the scene's, handed in and out by the page. */
 export interface Spot {
@@ -65,7 +67,7 @@ export interface Spot {
 }
 
 export interface WorldSave {
-  v: 1
+  v: 2
   /** Wall-clock ms when written. */
   at: number
   /** Where the explorer stood; null if unknown. */
@@ -77,9 +79,9 @@ export interface WorldSave {
 
 const FUEL_IDS: FuelId[] = ['wetwood', 'drywood', 'charcoal']
 
-/** Is there anything worth keeping yet? The quest begins at the Foundry gate. */
+/** Is there anything worth keeping yet? The plot begins when Nara has been met; the furnace at the gate. */
 export function worthSaving(s: WorldState): boolean {
-  return s.phase === 'play' && (s.zone === 'foundry' || s.crossings > 0)
+  return s.phase === 'play' && (s.zone === 'foundry' || s.crossings > 0 || s.plot.met)
 }
 
 export function snapshot(s: WorldState, spot: Spot | null): WorldSave {
@@ -87,7 +89,7 @@ export function snapshot(s: WorldState, spot: Spot | null): WorldSave {
   const drops: Crane['drops'] = {}
   for (const [id, d] of Object.entries(s.crane.drops)) if (d.t1 != null) drops[id] = d
   return {
-    v: 1,
+    v: 2,
     at: Date.now(),
     // Through a door, the spot is the door's own; the cabinet's page never moves the explorer.
     pos: s.cabinet ? s.returnPos : (spot?.pos ?? null),
@@ -110,6 +112,9 @@ export function snapshot(s: WorldState, spot: Spot | null): WorldSave {
       curve: s.curve,
       whys: s.whys,
       journal: s.journal,
+      // The run is a plain object (the bed's numbers, the days); the ticker's in-place
+      // mutation is on the live copy, so a save mid-day carries the day so far.
+      plot: s.plot,
       drops,
     },
   }
@@ -123,7 +128,7 @@ const isStrArr = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) 
 export function validSave(x: unknown): x is WorldSave {
   if (!x || typeof x !== 'object') return false
   const o = x as Record<string, unknown>
-  if (o.v !== 1 || !isNum(o.at)) return false
+  if (o.v !== 2 || !isNum(o.at)) return false
   if (o.pos != null && !(Array.isArray(o.pos) && o.pos.length === 3 && o.pos.every(isNum))) return false
   if (o.look != null) {
     const l = o.look as Record<string, unknown>
@@ -154,6 +159,40 @@ export function validSave(x: unknown): x is WorldSave {
     const dd = v as Record<string, unknown>
     if (!dd || !isNum(dd.from) || !isNum(dd.t0) || !isNum(dd.t1)) return false
   }
+  if (!validPlot(s.plot)) return false
+  return true
+}
+
+const PLOT_STAGES = ['arrive', 'met', 'first', 'second', 'method', 'pause', 'record', 'page', 'reward', 'done']
+
+function validRun(x: unknown): boolean {
+  if (x == null) return true
+  const r = x as Record<string, unknown>
+  if (typeof r !== 'object') return false
+  if (r.bed !== 'first' && r.bed !== 'second') return false
+  if (!isNum(r.seed) || !isNum(r.length) || !isNum(r.attempt) || !isNum(r.day) || !isNum(r.hour) || !isNum(r.acc)) return false
+  if (!['dawn', 'running', 'done', 'dead'].includes(r.phase as string)) return false
+  if (!Array.isArray(r.days) || !Array.isArray(r.said) || !r.said.every(isNum)) return false
+  const b = r.b as Record<string, unknown> | undefined
+  if (!b || typeof b !== 'object' || b.texture !== 'clay') return false
+  for (const k of ['theta', 'pond', 'o2', 'anox', 'health', 'firm', 'drained', 'spilled', 'taken', 'arrived', 'minFirm', 'pool', 'leached']) if (!isNum(b[k])) return false
+  const t = r.today as Record<string, unknown> | undefined
+  if (!t || typeof t !== 'object' || !isNum(t.day) || !isBool(t.probed) || typeof t.word !== 'string') return false
+  return true
+}
+
+/** The plot's shape, loosely: the stage, the flags, the runs. Anything odd is a fresh start. */
+function validPlot(x: unknown): boolean {
+  if (!x || typeof x !== 'object') return false
+  const p = x as Record<string, unknown>
+  if (!PLOT_STAGES.includes(p.stage as string) || typeof p.step !== 'string') return false
+  if (p.name != null && typeof p.name !== 'string') return false
+  for (const k of ['naming', 'met', 'lensSeen', 'stood', 'dryRead', 'rescuedFirst', 'rescuedSecond', 'taught', 'recorded', 'pageRead', 'planted', 'sent']) if (!isBool(p[k])) return false
+  if (!isNum(p.probes) || !isNum(p.why) || !isNum(p.seed)) return false
+  if (p.whyText != null && typeof p.whyText !== 'string') return false
+  if (p.competence != null && p.competence !== 'runs' && p.competence !== 'copies') return false
+  if (!Array.isArray(p.attempts)) return false
+  if (!validRun(p.run) || !validRun(p.first)) return false
   return true
 }
 
@@ -174,8 +213,11 @@ export function restoreWorld(save: WorldSave): Spot | null {
   resetWorld()
   const { drops, ...kept } = save.s
   const base = getWorld()
+  // A save taken mid-pause resumes at the record; a naming card is never saved open.
+  const plot = { ...kept.plot, naming: false, stage: kept.plot.stage === 'pause' ? ('record' as const) : kept.plot.stage }
   setWorld({
     ...kept,
+    plot,
     phase: 'welcome',
     resumed: true,
     crane: { ...base.crane, drops: { ...drops } },
@@ -188,6 +230,10 @@ export function restoreWorld(save: WorldSave): Spot | null {
 /** A one-line account of a save for the welcome card. */
 export function describeSave(s: WorldState): string {
   if (s.poured) return s.whys[2] >= 0 ? 'The furnace is relit and the stamp is yours.' : 'The furnace is relit — the whys are waiting.'
+  const run = s.plot.run
+  if (s.zone === 'landing' && !s.plot.sent && run && (s.plot.stage === 'first' || s.plot.stage === 'second') && run.phase !== 'done' && run.phase !== 'dead') {
+    return `Day ${run.day} of ${run.length} on ${run.bed === 'first' ? "Nara's bed" : 'the far bed'} · ${currentStep(s).label}.`
+  }
   return `Next: ${currentStep(s).label}.`
 }
 

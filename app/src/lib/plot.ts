@@ -169,6 +169,10 @@ function dawnOf(b: Bed, day: number, said: number | null): Dawn {
 
 export function newRun(bed: BedId, start: Start, length: number, seed: number, attempt = 1): PlotRun {
   const b = newBed('clay', start)
+  // The plant as found: the leaf shows what yesterday's one o'clock would have read on this bed
+  // (0.49 soaked, 0.65 on the far bed), so the droop is there before the first dawn and nothing
+  // pops upright when the marker goes in. By the first noon the model has forgotten the value.
+  b.firm = runDays('clay', [0], start).daily[0].firm13
   return {
     bed,
     seed,
@@ -311,6 +315,11 @@ export function advance(run: PlotRun, dt: number): PlotEvent[] {
 /* ----------------------------------------------------------------------------
  * Verdicts
  * ------------------------------------------------------------------------- */
+
+/** Is the plate up at all: a run in play on the first or the far bed. */
+export function plateUp(p: { run: PlotRun | null; stage: string }): boolean {
+  return !!p.run && (p.stage === 'first' || p.stage === 'second')
+}
 
 /** Standing at the last noon. Only a finished run can have rescued. */
 export function rescued(run: PlotRun): boolean {

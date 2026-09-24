@@ -25,6 +25,25 @@
 
 import { createStore } from 'zustand/vanilla'
 import { useStore } from 'zustand'
+import {
+  advance as advancePlot,
+  choose as choosePlot,
+  competence as competenceOf,
+  firstBed,
+  freshBed,
+  probe as probePlot,
+  raiseCompetence,
+  recordOf,
+  replay as replayPlot,
+  rescued,
+  say as sayPlot,
+  secondBed,
+  takeNudge,
+  type Competence,
+  type DawnChoice,
+  type PlotRecord,
+  type PlotRun,
+} from './plot'
 
 /* ----------------------------------------------------------------------------
  * Zones and rings
@@ -175,11 +194,110 @@ export interface Journal {
   explanation: string | null
 }
 
+/* ----------------------------------------------------------------------------
+ * The plot — S0, "The Drooping Cassava" (storyboard v4). The trial itself is
+ * `lib/plot.ts`; this is where it sits in the world: the stage the round has
+ * reached, the run in progress, and the flags the quest's predicates read.
+ * ------------------------------------------------------------------------- */
+
+export type PlotStage =
+  /** Off the boat; the wet streak; Nara not yet met. */
+  | 'arrive'
+  /** Nara's testimony heard; the empty plot on offer. */
+  | 'met'
+  /** The marker is in and named; the fortnight can begin. */
+  | 'first'
+  /** The first bed rescued; the far bed droops. */
+  | 'second'
+  /** The far bed held; the method assembles. */
+  | 'method'
+  /** The filmable moment: Nara picks up the can, stops, probes first. No card. */
+  | 'pause'
+  /** The closing record, the why, the counterfactual. */
+  | 'record'
+  /** The page by the well. */
+  | 'page'
+  /** The rails, the cutting. */
+  | 'reward'
+  /** Sela's request; the Foundry is next. */
+  | 'done'
+
+export type PlotStepId = 'trail' | 'claim' | 'probe' | 'lens' | 'say' | 'fortnight' | 'far' | 'teach' | 'page' | 'plant' | 'done'
+
+export interface PlotState {
+  stage: PlotStage
+  step: PlotStepId
+  /** The nickname on the marker, cleaned; null until the plot is claimed. */
+  name: string | null
+  /** The naming card is open (the marker has been pushed in). */
+  naming: boolean
+  /** Nara's testimony has been heard. */
+  met: boolean
+  /** The run in progress: the first bed, then the far bed. Null before the marker. Mutated by the ticker; replaced to publish. */
+  run: PlotRun | null
+  /** The first bed's rescued run, kept for the record and the hand-in. */
+  first: PlotRun | null
+  /** Every finished attempt, in order — the journal keeps the failed ones too. */
+  attempts: PlotRecord[]
+  /** Probes pushed into any bed. */
+  probes: number
+  /** The Lens raised at the Landing once the plot is claimed. */
+  lensSeen: boolean
+  /** The first stand has fired (chime, glyph, Nara's line). */
+  stood: boolean
+  /** The child has read DRY. Opens the rule line, with `stood`. */
+  dryRead: boolean
+  rescuedFirst: boolean
+  rescuedSecond: boolean
+  /** The method card has been handed in; Nara's competence is set. */
+  taught: boolean
+  competence: Competence | null
+  /** The closing record has been read. */
+  recorded: boolean
+  /** The plot's why: -1 unanswered, else the option index. Own words kept beside it. */
+  why: number
+  whyText: string | null
+  pageRead: boolean
+  planted: boolean
+  /** Sela's line has been heard; the world's quest is the Foundry's from here. */
+  sent: boolean
+  /** The seed of the first bed in play — the retry's "same seed". */
+  seed: number
+}
+
+export const initialPlot = (): PlotState => ({
+  stage: 'arrive',
+  step: 'trail',
+  name: null,
+  naming: false,
+  met: false,
+  run: null,
+  first: null,
+  attempts: [],
+  probes: 0,
+  lensSeen: false,
+  stood: false,
+  dryRead: false,
+  rescuedFirst: false,
+  rescuedSecond: false,
+  taught: false,
+  competence: null,
+  recorded: false,
+  why: -1,
+  whyText: null,
+  pageRead: false,
+  planted: false,
+  sent: false,
+  seed: 1,
+})
+
 export interface WorldState {
   zone: ZoneId
   ring: LensRing
   phase: 'welcome' | 'play'
   step: StepId
+  /** S0 — the Landing plot. */
+  plot: PlotState
   /** The id of the block in hand, if any. */
   held: string | null
   /** Ids of copper scrap the conveyor has carried into the furnace mouth. */
@@ -285,6 +403,7 @@ const initial = (): WorldState => ({
   resumed: false,
   talk: null,
   journal: { prediction: null, action: null, observed: null, explanation: null },
+  plot: initialPlot(),
 })
 
 export const worldStore = createStore<WorldState>(initial)
@@ -306,6 +425,7 @@ export function resetWorld(): void {
   wroteHearths = null
   wroteFurnace = null
   litAt = null
+  sincePlotFlush = 0
 }
 
 export function useWorld(): WorldState {
@@ -319,7 +439,7 @@ export function useWorld(): WorldState {
  * list. `near` is decided once per frame by the explorer from this map.
  * ------------------------------------------------------------------------- */
 
-export type Verb = 'grab' | 'probe' | 'build' | 'feed' | 'portal' | 'talk' | 'crane' | 'door'
+export type Verb = 'grab' | 'probe' | 'build' | 'feed' | 'portal' | 'talk' | 'crane' | 'door' | 'marker' | 'read' | 'plant'
 
 export interface Interactable {
   id: string
@@ -373,10 +493,12 @@ export type Predicate =
   | { type: 'state'; source: string; equals: string | number | boolean }
   | { type: 'threshold'; source: string; op: '>=' | '<=' | '>' | '<'; value: number }
   | { type: 'count'; source: string; op: '>=' | '<=' | '>' | '<'; value: number }
+  /** The path holds something: not null, not false, not empty. */
+  | { type: 'set'; source: string }
   | { type: 'never' }
 
-export interface QuestStep {
-  id: StepId
+export interface QuestStep<Id extends string = string> {
+  id: Id
   /** The checklist line — what the learner reads as the job. */
   label: string
   /** The coach line: the single next action, in Ploob's words. */
@@ -386,14 +508,16 @@ export interface QuestStep {
   until: Predicate
 }
 
-export interface Quest {
+export interface Quest<Id extends string = string> {
   id: string
   title: string
   hook: string
   predict: { ask: string; unit: string }
-  steps: QuestStep[]
-  /** The three whys, growing — asked after the hand-in, never during. */
-  whys: [string, string, string]
+  steps: QuestStep<Id>[]
+  /** The whys, growing — asked after the hand-in, never during. */
+  whys: string[]
+  /** Step ids the checklist leaves out (the walk in, the epilogue). */
+  hidden: Id[]
 }
 
 function readPath(s: WorldState, path: string): unknown {
@@ -430,12 +554,16 @@ export function evalPredicate(p: Predicate, s: WorldState): boolean {
       const v = readPath(s, p.source)
       return Array.isArray(v) && compare(v.length, p.op, p.value)
     }
+    case 'set': {
+      const v = readPath(s, p.source)
+      return v != null && v !== false && v !== ''
+    }
     case 'never':
       return false
   }
 }
 
-export const RELIGHT: Quest = {
+export const RELIGHT: Quest<StepId> = {
   id: 'foundry.relight',
   title: 'Relight the furnace',
   hook: 'The furnace went cold in the night and the Landing is dark. Find out why.',
@@ -496,6 +624,47 @@ export const RELIGHT: Quest = {
     'The wet wood was heavier than the charcoal. Why did the furnace get less useful heat from it?',
     'Three days later Sefu asks for bronze. What would you add, and why would you need the bench?',
   ],
+  hidden: ['arrive', 'done'],
+}
+
+/**
+ * S0 — the Landing plot. The title on the Play card is the question; the
+ * internal name (Too much water) never shows. Coach lines are Ploob's and
+ * pass the explanation gate: none names the cause before the world has.
+ */
+export const PLOT: Quest<PlotStepId> = {
+  id: 'landing.plot',
+  title: "Why is Nara's cassava drooping?",
+  hook: 'A wet streak runs up the harbour path to a cassava that droops however much it is watered. Find out what it needs.',
+  predict: { ask: 'How many cans will it take to get her standing — and keep her standing for a fortnight?', unit: 'cans' },
+  steps: [
+    { id: 'trail', label: 'Follow the wet streak', coach: 'Something has been spilling water up the path. Follow it.', target: 'talk.nara', until: { type: 'state', source: 'plot.met', equals: true } },
+    { id: 'claim', label: 'Take the plot', coach: 'The empty plot is yours if you want it. Push the marker in.', target: 'marker.plot', until: { type: 'set', source: 'plot.name' } },
+    { id: 'probe', label: "Probe Nara's bed", coach: 'Before anything — push the probe into her bed and read it.', target: 'bed.nara', until: { type: 'threshold', source: 'plot.probes', op: '>=', value: 1 } },
+    { id: 'lens', label: 'Look inside with the Lens', coach: 'Raise the Lens by the bed. See what the soil is like under the plant.', target: 'bed.nara', until: { type: 'state', source: 'plot.lensSeen', equals: true } },
+    { id: 'say', label: 'Say how many cans', coach: 'Say your number first. Then each morning: probe, and pour or wait.', target: 'bed.nara', until: { type: 'count', source: 'plot.run.said', op: '>=', value: 1 } },
+    { id: 'fortnight', label: 'Keep it standing for a fortnight', coach: 'Each dawn: probe first, then the can or the wait. Watch the leaves at one o\u2019clock.', target: 'bed.nara', until: { type: 'state', source: 'plot.rescuedFirst', equals: true } },
+    { id: 'far', label: 'The far bed', coach: 'Nara ran off toward the far bed. Follow her — and probe before you do anything.', target: 'bed.far', until: { type: 'state', source: 'plot.rescuedSecond', equals: true } },
+    { id: 'teach', label: 'Teach Nara', coach: 'Both beds standing. Tell Nara what you did each morning.', target: 'talk.nara', until: { type: 'state', source: 'plot.taught', equals: true } },
+    { id: 'page', label: 'The page by the well', coach: 'Ploob has found something in the mud by the well.', target: 'page.well', until: { type: 'state', source: 'plot.pageRead', equals: true } },
+    { id: 'plant', label: 'Plant your cutting', coach: 'Your plot, your cutting. Put it in.', target: 'bed.mine', until: { type: 'state', source: 'plot.planted', equals: true } },
+    { id: 'done', label: 'Sela at the jetty', coach: 'Sela is waiting at the jetty.', target: 'talk.sela', until: { type: 'never' } },
+  ],
+  whys: ['What happened to the first plant while nobody watered it?'],
+  hidden: ['trail', 'lens', 'done'],
+}
+
+/** The plot holds the Landing until Sela sends the child across the water. */
+export function plotActive(s: WorldState): boolean {
+  return s.zone === 'landing' && !s.plot.sent
+}
+
+export function activeQuest(s: WorldState): Quest {
+  return plotActive(s) ? PLOT : RELIGHT
+}
+
+export function currentStepId(s: WorldState): string {
+  return plotActive(s) ? s.plot.step : s.step
 }
 
 /**
@@ -521,24 +690,38 @@ export function questTarget(s: WorldState, from: [number, number]): [number, num
   return target
 }
 
+/** The active quest's current step — the plot's at the Landing, the furnace's across the water. */
 export function currentStep(s: WorldState): QuestStep {
-  return RELIGHT.steps.find((st) => st.id === s.step) ?? RELIGHT.steps[0]
+  const q = activeQuest(s)
+  const id = currentStepId(s)
+  return q.steps.find((st) => st.id === id) ?? q.steps[0]
 }
 
-/**
- * Advance the quest as far as the state allows. Called by the ticker once per
- * frame; a step that is already satisfied is skipped, so a learner who fixes
- * the pipe before probing is not sent back to probe.
- */
-export function advanceQuest(): void {
-  const state = getWorld()
-  let i = RELIGHT.steps.findIndex((st) => st.id === state.step)
+function advanced<Id extends string>(q: Quest<Id>, current: Id, state: WorldState): Id | null {
+  let i = q.steps.findIndex((st) => st.id === current)
   let changed = false
-  while (i < RELIGHT.steps.length - 1 && evalPredicate(RELIGHT.steps[i].until, state)) {
+  while (i < q.steps.length - 1 && evalPredicate(q.steps[i].until, state)) {
     i++
     changed = true
   }
-  if (changed) setWorld({ step: RELIGHT.steps[i].id })
+  return changed ? q.steps[i].id : null
+}
+
+/**
+ * Advance both quests as far as the state allows. Called by the ticker once
+ * per frame; a step that is already satisfied is skipped, so a learner who
+ * fixes the pipe before probing is not sent back to probe.
+ */
+export function advanceQuest(): void {
+  const state = getWorld()
+  const step = advanced(RELIGHT, state.step, state)
+  const plotStep = advanced(PLOT, state.plot.step, state)
+  if (step || plotStep) {
+    setWorld({
+      ...(step ? { step } : {}),
+      ...(plotStep ? { plot: { ...getWorld().plot, step: plotStep } } : {}),
+    })
+  }
 }
 
 /* ----------------------------------------------------------------------------
@@ -644,7 +827,188 @@ export function tickWorld(dtRaw: number): void {
     wroteFurnace = nextFurnace.temp
     setWorld({ hearths: nextHearths, furnace: nextFurnace, poured, curve, journal, time: simTime })
   }
+  tickPlot(dt)
   advanceQuest()
+}
+
+/* ----------------------------------------------------------------------------
+ * The plot's day — the run steps in place, the store is told at a cadence
+ * ------------------------------------------------------------------------- */
+
+let sincePlotFlush = 0
+
+function tickPlot(dt: number): void {
+  const s = getWorld()
+  const run = s.plot.run
+  if (!run || run.phase !== 'running' || s.phase !== 'play') return
+  const events = advancePlot(run, dt)
+  sincePlotFlush += dt
+  const stood = events.includes('stand')
+  const ended = events.includes('done') || events.includes('dead')
+  if (!stood && !ended && sincePlotFlush < FLUSH_EVERY) return
+  sincePlotFlush = 0
+  const plot: PlotState = { ...s.plot, run: { ...run } }
+  if (stood) {
+    plot.stood = true
+    window.dispatchEvent(new CustomEvent('ploobia:stand', { detail: run.bed }))
+  }
+  if (ended) {
+    const rec = recordOf(run)
+    plot.attempts = [...plot.attempts, rec]
+    if (rescued(run)) {
+      if (run.bed === 'first') {
+        plot.rescuedFirst = true
+        plot.first = { ...run }
+      } else {
+        plot.rescuedSecond = true
+      }
+    }
+  }
+  setWorld({ plot })
+}
+
+/* ----------------------------------------------------------------------------
+ * The plot's verbs
+ * ------------------------------------------------------------------------- */
+
+/** Nara's testimony is heard when her card opens; the plot is on offer from then. */
+export function meetNara(): void {
+  setWorld((s) => (s.plot.met ? {} : { plot: { ...s.plot, met: true, stage: s.plot.stage === 'arrive' ? 'met' : s.plot.stage } }))
+}
+
+/** The marker pushed in: the naming card opens. */
+export function pushMarker(): void {
+  setWorld((s) => (s.plot.name ? {} : { plot: { ...s.plot, naming: true } }))
+}
+
+/** The plot named and claimed; the first bed's fortnight is set up on the seed. */
+export function namePlot(name: string): void {
+  setWorld((s) => {
+    const clean = name.trim()
+    if (!clean) return { plot: { ...s.plot, naming: false } }
+    return { plot: { ...s.plot, name: clean, naming: false, stage: 'first', run: s.plot.run ?? firstBed(s.plot.seed, 1) } }
+  })
+}
+
+/** Which bed the run in progress is on, as an interactable id. */
+export function runBedId(s: WorldState): string | null {
+  const run = s.plot.run
+  if (!run) return null
+  return run.bed === 'first' ? 'bed.nara' : 'bed.far'
+}
+
+/** The probe pushed into a bed. Free, every dawn; the reading sits on the plate. */
+export function probeBed(id: string): boolean {
+  const s = getWorld()
+  const run = s.plot.run
+  if (!run || id !== runBedId(s)) return false
+  const did = probePlot(run)
+  const dryRead = s.plot.dryRead || run.today.word === 'DRY'
+  setWorld({ plot: { ...s.plot, run: { ...run }, probes: s.plot.probes + 1, dryRead } })
+  return did
+}
+
+/** The number typed, or revised. Every revision is kept. */
+export function plotSay(n: number): boolean {
+  const s = getWorld()
+  const run = s.plot.run
+  if (!run) return false
+  const ok = sayPlot(run, n)
+  if (ok) setWorld({ plot: { ...s.plot, run: { ...run } } })
+  return ok
+}
+
+/** Pour or wait: the dawn ends and the day runs. Refused before a number is said. */
+export function plotChoose(choice: DawnChoice): boolean {
+  const s = getWorld()
+  const run = s.plot.run
+  // The first bed wants the number said first; the far bed is the changed case, no new brief.
+  if (!run || run.phase !== 'dawn' || (run.bed === 'first' && run.said.length === 0)) return false
+  const ok = choosePlot(run, choice)
+  if (ok) setWorld({ plot: { ...s.plot, run: { ...run } } })
+  return ok
+}
+
+/** Ploob's "Shall we look first?" — owed after three unprobed dawns, said once a run. */
+export function plotNudge(): boolean {
+  const s = getWorld()
+  const run = s.plot.run
+  if (!run || !takeNudge(run)) return false
+  setWorld({ plot: { ...s.plot, run: { ...run } } })
+  return true
+}
+
+/** Replay this fortnight (same bed, same seed) or A new bed (a fresh start from the range). */
+export function plotRetry(kind: 'replay' | 'fresh'): void {
+  setWorld((s) => {
+    const run = s.plot.run
+    if (!run || (run.phase !== 'dead' && run.phase !== 'done')) return {}
+    const next = kind === 'fresh' ? freshBed(run) : replayPlot(run)
+    return { plot: { ...s.plot, run: next, stood: false, seed: next.seed } }
+  })
+}
+
+/** The first bed's closing line stepped out of: the far bed's week begins. */
+export function plotToFarBed(): void {
+  setWorld((s) => {
+    if (!s.plot.rescuedFirst || s.plot.stage !== 'first') return {}
+    return { plot: { ...s.plot, stage: 'second', run: secondBed(s.plot.seed, 1), stood: false } }
+  })
+}
+
+/** The far bed held: the method assembles. */
+export function plotToMethod(): void {
+  setWorld((s) => (s.plot.rescuedSecond && s.plot.stage === 'second' ? { plot: { ...s.plot, stage: 'method' } } : {}))
+}
+
+/** The method handed in: Nara's competence is what the child demonstrated. */
+export function teachNara(): void {
+  setWorld((s) => {
+    if (s.plot.taught || !s.plot.first) return {}
+    const c = competenceOf(s.plot.first, s.plot.run?.bed === 'second' ? s.plot.run : null)
+    return { plot: { ...s.plot, taught: true, competence: c, stage: 'pause' } }
+  })
+}
+
+/** Nara's pause has played: the closing record. */
+export function pauseDone(): void {
+  setWorld((s) => (s.plot.stage === 'pause' ? { plot: { ...s.plot, stage: 'record' } } : {}))
+}
+
+/** The plot's why answered by option; the judge may only raise Nara from copies to runs. */
+export function plotAnswerWhy(choice: number, text: string | null): void {
+  setWorld((s) => {
+    const right = PLOT_WHY.options[choice]?.right === true
+    return { plot: { ...s.plot, why: choice, whyText: text, competence: s.plot.competence ? raiseCompetence(s.plot.competence, right) : s.plot.competence } }
+  })
+}
+
+/** The record read, the counterfactual watched: the page is in the mud by the well. */
+export function plotRecorded(): void {
+  setWorld((s) => (s.plot.stage === 'record' ? { plot: { ...s.plot, recorded: true, stage: 'page' } } : {}))
+}
+
+export function readPage(): void {
+  setWorld((s) => (s.plot.stage === 'page' ? { plot: { ...s.plot, pageRead: true, stage: 'reward' } } : {}))
+}
+
+export function plantCutting(): void {
+  setWorld((s) => (s.plot.stage === 'reward' ? { plot: { ...s.plot, planted: true, stage: 'done' } } : {}))
+}
+
+/** Sela's line heard: the Foundry's quest takes the Landing from here. */
+export function sendAcross(): void {
+  setWorld((s) => (s.plot.stage === 'done' ? { plot: { ...s.plot, sent: true } } : {}))
+}
+
+/** The plot's one why, for the first play: three options; the world disproves two. */
+export const PLOT_WHY: Why = {
+  ask: 'What happened to the first plant while nobody watered it?',
+  options: [
+    { key: 'thirsty', text: 'It was thirsty and finally found water.', right: false, line: 'Nobody gave it any — and a can every morning would have finished it. You watched that.' },
+    { key: 'right', text: 'The soil was full of water and short of air, so the roots stopped taking water up.', right: true, line: 'That is it. Full of water, no air in the pores — the roots could not work. When the bed drained, they could.' },
+    { key: 'bad_soil', text: 'The soil was bad and the plant got used to it.', right: false, line: 'Same soil, same plant. It came back on its own once the bed drained — the soil did not change, the water in it did.' },
+  ],
 }
 
 /* ----------------------------------------------------------------------------
@@ -674,6 +1038,7 @@ export function returnFromCabinet(): [number, number, number] | null {
 
 export function talkTo(id: string | null): void {
   setWorld({ talk: id })
+  if (id === 'talk.nara') meetNara()
 }
 
 export function crossPortal(to: ZoneId): void {
@@ -687,7 +1052,12 @@ export function lightHearth(fuel: FuelId): void {
 export function toggleLens(): void {
   setWorld((s) => {
     const ring: LensRing = s.ring === 'world' ? 'system' : 'world'
-    return { ring, bellowsSeen: s.bellowsSeen || (ring === 'system' && s.zone === 'foundry') }
+    const lensSeen = s.plot.lensSeen || (ring === 'system' && s.zone === 'landing' && s.plot.run != null)
+    return {
+      ring,
+      bellowsSeen: s.bellowsSeen || (ring === 'system' && s.zone === 'foundry'),
+      ...(lensSeen !== s.plot.lensSeen ? { plot: { ...s.plot, lensSeen } } : {}),
+    }
   })
 }
 
