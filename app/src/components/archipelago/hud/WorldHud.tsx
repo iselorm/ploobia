@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { BookOpen, Eye, Hand, Moon, Ruler, Sun, Sunset, Thermometer, Volume2, VolumeX } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -6,6 +6,11 @@ import { isCoarse, useInputMode } from '@/lib/input'
 import { useBandCaps } from '@/lib/bands'
 import { clearSave, describeSave } from '@/lib/worldsave'
 import { sefuLines } from '@/lib/sefu'
+import { SELA_LINES, naraLines } from '@/lib/nara'
+import { portraitUrl } from '@/lib/worldassets'
+import { plateUp, rescued } from '@/lib/plot'
+import { BedScope, Brief as PlotBrief, MethodCard, Naming, PageCard, PlotBody, PlotJournal, PlotPlate, RecordCard, RescueLine, Retry } from './PlotHud'
+import { usePlotMoments } from './plotMoments'
 import { LOOK_PRESETS, nearestLook, setSun, useSun } from '@/lib/looks'
 import { isMuted, onMuteChange, setMuted, startAudio } from '@/lib/audio'
 import {
@@ -14,6 +19,10 @@ import {
   FUEL_ORDER,
   RELIGHT,
   WHYS,
+  activeQuest,
+  currentStepId,
+  plotActive,
+  sendAcross,
   answerWhy,
   answerWhyText,
   commitPrediction,
@@ -74,13 +83,24 @@ export default function WorldHud({ compact }: { compact: boolean }) {
     return open < 0 ? 4 : open
   })
   const [journalOpen, setJournalOpen] = useState(false)
+  const [revising, setRevising] = useState(false)
+  const [pageOpen, setPageOpen] = useState(false)
+  /** Phone: the plate's body opens in the coach's slot. */
+  const [plateOpen, setPlateOpen] = useState(false)
 
   // Ploob's one-off lines, spoken over the coach line for a moment.
+  const say = useCallback((text: string, ms = 3600) => {
+    setNote(text)
+    window.setTimeout(() => setNote((n) => (n === text ? null : n)), ms)
+  }, [])
+  usePlotMoments(say)
+  // The page read in the world opens its card once (derived during render, no effect).
+  const [seenPageRead, setSeenPageRead] = useState(s.plot.pageRead)
+  if (s.plot.pageRead !== seenPageRead) {
+    setSeenPageRead(s.plot.pageRead)
+    if (s.plot.pageRead) setPageOpen(true)
+  }
   useEffect(() => {
-    const say = (text: string, ms = 3600) => {
-      setNote(text)
-      window.setTimeout(() => setNote((n) => (n === text ? null : n)), ms)
-    }
     const heavy = () => say('Too heavy for you. The crane over the belt can lift it — the post beside the mast drives it.')
     const look = () => say('Look first. Raise the Lens by the furnace and follow the air.')
     const shut = (e: Event) => say(DOORS[(e as CustomEvent<string>).detail]?.locked ?? 'That door is shut.')
@@ -116,7 +136,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       window.removeEventListener('ploobia:doorshut', shut)
       unsub()
     }
-  }, [])
+  }, [say])
 
   // J opens the journal anywhere.
   useEffect(() => {
@@ -155,6 +175,15 @@ export default function WorldHud({ compact }: { compact: boolean }) {
         : near && near.verb !== 'portal'
           ? near.label
           : null
+  const quest = activeQuest(s)
+  const plot = s.plot
+  const run = plot.run
+  const onPlot = plotActive(s)
+  const cinematic = onPlot && plot.stage === 'pause'
+  const runEnded = !!run && (run.phase === 'dead' || run.phase === 'done')
+  const retry = onPlot && !!run && runEnded && !rescued(run)
+  const rescueLine = onPlot && !!run && run.phase === 'done' && rescued(run) && ((run.bed === 'first' && plot.stage === 'first') || (run.bed === 'second' && plot.stage === 'second'))
+  const plotBrief = onPlot && !!run && run.bed === 'first' && run.phase === 'dawn' && run.said.length === 0 && plot.probes >= 1 && !plot.naming
   const showGauge = s.zone === 'foundry' && (s.lit.length > 0 || s.furnace.lit)
   const brief = s.zone === 'foundry' && s.prediction == null && !briefed && s.phase === 'play'
   const inRoom = s.room === 'furnace'
@@ -162,6 +191,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
   const afterPour = s.poured && seenPour && after < 4
   const playing = s.phase === 'play'
   const hintText = note ?? step.coach
+  const talkingTo = s.talk === 'talk.nara' ? 'nara' : s.talk === 'talk.sela' ? 'sela' : s.talk === 'talk.foreman' ? 'foreman' : null
 
   return (
     <div className="hud pointer-events-none fixed inset-0 z-20 select-none">
@@ -187,10 +217,11 @@ export default function WorldHud({ compact }: { compact: boolean }) {
           <div className="glass pointer-events-auto w-[16rem] max-w-[calc(100vw-1.5rem)] px-3 py-2" data-testid="quest-plate">
             <p className="flex items-center gap-2 text-[13px] leading-tight font-extrabold text-[#F6F2E8]">
               <span className="grid h-4 w-4 place-items-center rounded-full bg-[#E8A33D] text-[9px] text-[#2A2823]">!</span>
-              {RELIGHT.title}
+              {quest.title}
             </p>
-            {!compact && <Checklist s={s} />}
+            {!compact && !cinematic && <Checklist s={s} />}
             {showGauge && <Gauge fuel={s.furnace.fuel} temp={s.furnace.temp} hearths={s.hearths} lit={s.lit} compact={compact} />}
+            {onPlot && !cinematic && <PlotPlate compact={compact} open={plateOpen} onToggle={() => setPlateOpen((o) => !o)} onRevise={() => setRevising(true)} />}
           </div>
         )}
       </div>
@@ -199,12 +230,12 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       {playing && !compact && <Minimap s={s} />}
 
       {/* bottom-left: the toolbelt — on a phone it moves to the top-right, and the stick has the bottom-left corner to itself */}
-      {playing && !inRoom && !driving && (
+      {playing && !inRoom && !driving && !cinematic && (
         <div className={cn('absolute flex items-end gap-1.5', compact ? 'top-3 right-3' : 'bottom-3 left-3')} data-testid="toolbelt">
           <Tool label="Lens" keyHint={coarse ? undefined : 'Q'} active={s.ring === 'system'} testid="lens" onClick={() => (control.lens = true)}>
             <Eye size={18} />
           </Tool>
-          <Tool label="Probe" keyHint={coarse ? undefined : 'E'} dim={s.zone !== 'foundry'} testid="probe" onClick={() => (control.interact = true)}>
+          <Tool label="Probe" keyHint={coarse ? undefined : 'E'} dim={s.zone === 'landing' && near?.verb !== 'probe'} testid="probe" onClick={() => (control.interact = true)}>
             <Thermometer size={18} />
           </Tool>
           <Tool label="Measure" locked testid="measure">
@@ -216,14 +247,14 @@ export default function WorldHud({ compact }: { compact: boolean }) {
           {coarse && !compact && <Stick />}
         </div>
       )}
-      {playing && !inRoom && !driving && coarse && compact && (
+      {playing && !inRoom && !driving && !cinematic && coarse && compact && (
         <div className="absolute bottom-3 left-3 flex">
           <Stick />
         </div>
       )}
 
       {/* low-centre: the one verb, near the thing — on a phone, the right thumb's corner */}
-      {playing && !inRoom && !driving && (
+      {playing && !inRoom && !driving && !cinematic && (
         <div className={cn('absolute flex', compact ? 'right-3 bottom-3 justify-end' : 'inset-x-0 justify-center')} style={{ bottom: compact ? 12 : 22 }}>
           <Tile
             aria-label={verbLabel ?? 'Nothing near'}
@@ -252,8 +283,15 @@ export default function WorldHud({ compact }: { compact: boolean }) {
         </div>
       )}
 
+      {/* phone: the plate's body, opened from its one line, in the coach's slot — off both thumbs */}
+      {playing && compact && onPlot && plateOpen && plateUp(plot) && !cinematic && (
+        <div className="glass pointer-events-auto absolute bottom-3 left-[9rem] right-[13.5rem] max-h-[calc(100vh-4.5rem)] overflow-y-auto px-3 py-2" data-testid="plot-sheet">
+          <PlotBody onRevise={() => setRevising(true)} />
+        </div>
+      )}
+
       {/* bottom-right: Ploob's hint — on a phone it sits between the stick and the verb, off both thumbs */}
-      {playing && !brief && !inRoom && !afterPour && (
+      {playing && !brief && !inRoom && !afterPour && !cinematic && !plotBrief && !(compact && plateOpen && onPlot && plateUp(plot)) && (
         <div className={cn('absolute bottom-3', compact ? 'left-[9rem] right-[13.5rem]' : 'right-3 max-w-[min(24rem,calc(100vw-1.5rem))]')}>
           <button
             type="button"
@@ -287,9 +325,9 @@ export default function WorldHud({ compact }: { compact: boolean }) {
               <Ploob2 size={56} />
             </div>
             <span className="atlas-eyebrow mt-3 block">{s.resumed ? 'The Ploobia Archipelago · saved' : 'The Ploobia Archipelago · previz'}</span>
-            <h1 className="atlas-serif mt-1 text-[26px] leading-tight font-semibold text-[#2A2823]">{RELIGHT.title}</h1>
+            <h1 className="atlas-serif mt-1 text-[26px] leading-tight font-semibold text-[#2A2823]">{quest.title}</h1>
             <p className="mt-2 text-[13px] leading-relaxed font-semibold text-[#5F5A4E]" data-testid="welcome-line">
-              {s.resumed ? describeSave(s) : RELIGHT.hook}
+              {s.resumed ? describeSave(s) : quest.hook}
             </p>
             <p className="mt-2 text-[11px] leading-relaxed text-[#8B8471]">
               {coarse ? 'Stick to walk · drag to look · the prompt to act' : 'WASD to walk · drag to look · E to act · Q for the Lens · J for the journal · Space to jump'}
@@ -326,9 +364,34 @@ export default function WorldHud({ compact }: { compact: boolean }) {
 
       {/* the Lens up in the courtyard: the scope of the air system, the split marked */}
       {playing && !inRoom && !driving && s.zone === 'foundry' && s.ring === 'system' && <Scope pipeFixed={s.pipeFixed} compact={compact} />}
+      {/* the Lens up at a bed: the bed in section — evidence, no sentence */}
+      {playing && s.zone === 'landing' && s.ring === 'system' && !!run && <BedScope compact={compact} />}
 
-      {/* talking — Sefu's account of the stall, one line at a time */}
-      {playing && !brief && s.talk === 'talk.foreman' && <TalkCard lines={sefuLines(s)} compact={compact} onClose={() => talkTo(null)} />}
+      {/* talking — Sefu's account of the stall, Nara's of the droop, Sela's ask; one line at a time */}
+      {playing && !brief && talkingTo === 'foreman' && <TalkCard who={WORLD_TEXT.people.foreman} lines={sefuLines(s)} compact={compact} onClose={() => talkTo(null)} />}
+      {playing && talkingTo === 'nara' && <TalkCard who={WORLD_TEXT.people.nara} portrait={portraitUrl('nara')} lines={naraLines(s)} compact={compact} onClose={() => talkTo(null)} />}
+      {playing && talkingTo === 'sela' && (
+        <TalkCard
+          who={WORLD_TEXT.people.sela}
+          portrait={portraitUrl('sela')}
+          lines={SELA_LINES}
+          compact={compact}
+          onClose={() => {
+            talkTo(null)
+            sendAcross()
+          }}
+        />
+      )}
+
+      {/* the plot's cards — S0 */}
+      {playing && onPlot && plot.naming && <Naming />}
+      {playing && plotBrief && !s.talk && <PlotBrief />}
+      {playing && onPlot && revising && !!run && <PlotBrief revise onDone={() => setRevising(false)} />}
+      {playing && retry && !!run && !s.talk && <Retry run={run} p={plot} />}
+      {playing && rescueLine && !!run && !s.talk && <RescueLine run={run} p={plot} />}
+      {playing && onPlot && plot.stage === 'method' && !s.talk && <MethodCard p={plot} />}
+      {playing && onPlot && plot.stage === 'record' && !s.talk && <RecordCard p={plot} compact={compact} />}
+      {playing && pageOpen && <PageCard p={plot} onClose={() => setPageOpen(false)} />}
 
       {/* the furnace room — a cabinet interior, entered by a cut */}
       {inRoom && !s.poured && <Room lit={s.lit} hearths={s.hearths} fuel={s.furnace.fuel} air={s.air} pipeFixed={s.pipeFixed} compact={compact} />}
@@ -344,7 +407,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       )}
       {afterPour && after < 3 && <WhyCard index={after} onNext={() => setAfter(after + 1)} />}
       {afterPour && after === 3 && <Stamp journal={s.journal} onClose={() => setAfter(4)} />}
-      {journalOpen && !afterPour && <Stamp journal={s.journal} onClose={() => setJournalOpen(false)} />}
+      {journalOpen && !afterPour && (onPlot ? <PlotJournal p={plot} onClose={() => setJournalOpen(false)} /> : <Stamp journal={s.journal} onClose={() => setJournalOpen(false)} />)}
     </div>
   )
 }
@@ -359,14 +422,16 @@ function Swirl() {
 }
 
 function Checklist({ s }: { s: WorldState }) {
-  const steps = RELIGHT.steps.filter((st) => st.id !== 'arrive' && st.id !== 'done')
-  const idx = RELIGHT.steps.findIndex((st) => st.id === s.step)
+  const q = activeQuest(s)
+  const cur = currentStepId(s)
+  const steps = q.steps.filter((st) => !(q.hidden as string[]).includes(st.id))
+  const idx = q.steps.findIndex((st) => st.id === cur)
   return (
     <ul className="mt-1.5 grid gap-1" data-testid="checklist">
       {steps.map((st) => {
-        const i = RELIGHT.steps.findIndex((x) => x.id === st.id)
+        const i = q.steps.findIndex((x) => x.id === st.id)
         const done = i < idx || evalPredicate(st.until, s)
-        const current = st.id === s.step
+        const current = st.id === cur
         return (
           <li
             key={st.id}
@@ -719,7 +784,7 @@ function LooksChip() {
  * goes on; the last line's button steps back to work. Escape closes (the
  * explorer's exit key). Nothing here is instruction — that is Ploob's.
  */
-function TalkCard({ lines, compact, onClose }: { lines: readonly string[]; compact: boolean; onClose: () => void }) {
+function TalkCard({ who, portrait, lines, compact, onClose }: { who: { name: string; title: string }; portrait?: string; lines: readonly string[]; compact: boolean; onClose: () => void }) {
   const [i, setI] = useState(0)
   const last = i >= lines.length - 1
   const next = () => (last ? onClose() : setI(i + 1))
@@ -735,13 +800,18 @@ function TalkCard({ lines, compact, onClose }: { lines: readonly string[]; compa
   })
   return (
     <div className={cn('pointer-events-auto absolute inset-x-0 flex justify-center px-4', compact ? 'top-16' : 'bottom-24 sm:bottom-28')} data-focus-layer="">
-      <div className="atlas-plate w-full max-w-[26rem] rounded-[22px] px-6 py-5" data-testid="talk">
-        <span className="atlas-eyebrow block">
-          {WORLD_TEXT.people.foreman.name} · {WORLD_TEXT.people.foreman.title}
-        </span>
-        <p className="mt-1 text-[15px] leading-snug font-semibold text-[#2A2823]" data-testid="talk-line">
-          “{lines[i]}”
-        </p>
+      <div className="atlas-plate w-full max-w-[26rem] rounded-[22px] px-6 py-5" data-testid="talk" data-who={who.name}>
+        <div className="flex items-start gap-3">
+          {portrait && <img src={portrait} alt="" width={56} height={56} className="h-14 w-14 shrink-0 rounded-full bg-[#EEE7D8] object-cover" data-testid="talk-portrait" />}
+          <div className="min-w-0 flex-1">
+            <span className="atlas-eyebrow block">
+              {who.name} · {who.title}
+            </span>
+            <p className="mt-1 text-[15px] leading-snug font-semibold text-[#2A2823]" data-testid="talk-line">
+              “{lines[i]}”
+            </p>
+          </div>
+        </div>
         <div className="mt-3 flex items-center justify-between gap-3">
           <span className="text-[11px] text-[#8B8471]">
             {i + 1} / {lines.length}
