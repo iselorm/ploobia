@@ -175,7 +175,7 @@ export function PlotBody({ onRevise }: { onRevise: () => void }) {
               className={cn(
                 'h-9 rounded-full bg-[#F6F2E8]/15 text-[11px] font-extrabold text-[#F6F2E8]',
                 (!dawn || !near || run.today.probed) && 'opacity-40',
-                dawn && near && !run.today.probed && 'animate-pulse ring-2 ring-[#F0B354]',
+                dawn && near && !run.today.probed && 'bg-[#F0B354]/35 ring-2 ring-[#F0B354]',
               )}
               onClick={() => probeBed(runBedId(s) ?? '')}
             >
