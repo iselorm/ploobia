@@ -23,7 +23,7 @@ import {
   type PlotState,
   type WorldState,
 } from '@/lib/archipelago'
-import { CARE_FIRM, RESCUE_FIRM, cansUsed, everyMorning, methodSteps, plateUp, recordOf, rootsBelowHalfOn, saidNow, steadyHands, type PlotRecord, type PlotRun } from '@/lib/plot'
+import { CARE_FIRM, RESCUE_FIRM, cansUsed, everyMorning, methodSteps, plateUp, recordOf, rootsBelowHalfOn, saidNow, secondsToDawn, steadyHands, type PlotRecord, type PlotRun } from '@/lib/plot'
 import { ROOTS_CONSTANTS, SOIL, airOf, storedOf } from '@/lib/roots'
 import { judgeWhyOf, TRUST } from '@/lib/whyjudge'
 import { WORLD_TEXT } from '@/lib/worldtext'
@@ -65,8 +65,13 @@ export function PlotPlate({ compact, open, onToggle, onRevise }: { compact: bool
   if (!run || !plateUp(p)) return null
   const said = saidNow(run)
   const used = cansUsed(run)
-  const dayLine = `Day ${Math.min(run.day, run.length)} of ${run.length}`
-  const one = `${dayLine} · firm ${run.firm13.toFixed(2)} · cans ${used}${said != null ? ` of ${said} said` : ''}`
+  const day = Math.min(run.day, run.length)
+  const one =
+    run.phase === 'running'
+      ? `Day ${day} of ${run.length} · ${secondsToDawn(run)} s to dawn`
+      : run.phase === 'dawn' && !run.today.probed
+        ? `Dawn ${day} of ${run.length} · probe first`
+        : `Dawn ${day} of ${run.length} · ${run.today.word} · cans ${used}${said != null ? ` of ${said}` : ''}`
   return (
     <div className="mt-2 border-t border-[#F6F2E8]/15 pt-2" data-testid="plot-plate" data-day={run.day} data-phase={run.phase}>
       {compact ? (
@@ -102,8 +107,12 @@ export function PlotBody({ onRevise }: { onRevise: () => void }) {
   const canAct = run.bed !== 'first' || said != null
   const reading = run.today.probed ? run.today : null
   const title = run.bed === 'first' ? (p.name ? `${p.name} · Nara's bed` : "Nara's bed") : 'The far bed'
-  const dayLine = `Day ${Math.min(run.day, run.length)} of ${run.length}`
+  const day = Math.min(run.day, run.length)
   const ruleOpen = p.stood && p.dryRead
+  const running = run.phase === 'running'
+  // The last probe's reading, for the water and air bars: today's if probed, else yesterday's, greyed until the probe goes in again.
+  const lastProbed = reading ?? [...run.days].reverse().find((d) => d.probed) ?? null
+  const stale = !reading
   return (
     <div data-testid="plot-body">
       {(
@@ -111,36 +120,25 @@ export function PlotBody({ onRevise }: { onRevise: () => void }) {
           <div className="flex items-baseline justify-between">
             <span className="glass-eyebrow">{title}</span>
             <span className="text-[11px] font-extrabold text-[#F6F2E8]/80" data-testid="plot-day">
-              {dayLine}
+              {running ? `Day ${day} of ${run.length}` : `Dawn ${day} of ${run.length}`}
             </span>
           </div>
-          <div className="mt-1 flex items-center gap-3">
-            <LeafGauge firm={firm} stood={p.stood} />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline justify-between">
-                <span className="text-[10px] font-extrabold tracking-wide text-[#F0B354] uppercase">Firm</span>
-                <span className="text-[15px] font-extrabold tabular-nums text-[#F6F2E8]" data-testid="plot-firm">
-                  {firm.toFixed(2)}
-                </span>
-              </div>
-              <Band firm={firm} worst={run.worst13} />
-              <div className="mt-1 flex items-baseline justify-between">
-                <span className="text-[10px] font-extrabold tracking-wide text-[#F0B354] uppercase">Cans</span>
-                <span className="text-[12px] font-extrabold tabular-nums text-[#F6F2E8]">
-                  <span data-testid="plot-used">{used}</span> used · <span data-testid="plot-said">{said ?? '—'}</span> said
-                  {said != null && dawn && run.bed === 'first' && (
-                    <button type="button" className="ml-1.5 inline-flex min-h-[36px] items-center rounded-full px-2 text-[10px] font-bold text-[#F0B354] underline-offset-2 hover:underline" data-testid="plot-revise" onClick={onRevise}>
-                      change my number
-                    </button>
-                  )}
-                </span>
-              </div>
-            </div>
-          </div>
-          {/* the probe's reading sits here until the next dawn */}
-          <div className="mt-1.5 rounded-md bg-[#F6F2E8]/10 px-2 py-1 text-[11px] font-bold text-[#F6F2E8]" data-testid="plot-word">
-            {reading ? (
+          {/* the clock: the day running down to the next dawn, or the dawn waiting on the probe */}
+          <div className="mt-1" data-testid="plot-clock" data-state={running ? 'running' : reading ? 'read' : 'unprobed'}>
+            {running ? (
               <>
+                <div className="flex items-baseline justify-between text-[11px] font-extrabold text-[#F6F2E8]">
+                  <span>{dayPhase(run.hour + run.acc)}</span>
+                  <span className="tabular-nums" data-testid="plot-countdown">
+                    {secondsToDawn(run)} s to dawn
+                  </span>
+                </div>
+                <div className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-[#F6F2E8]/15">
+                  <div className="h-full rounded-full bg-[#F0B354] transition-[width] duration-150" style={{ width: `${((run.hour + run.acc) / 24) * 100}%` }} />
+                </div>
+              </>
+            ) : reading ? (
+              <p className="text-[11px] font-extrabold text-[#F6F2E8]" data-testid="plot-word">
                 <span className="text-[#F0B354]">Probe</span> · {reading.word}
                 {caps.quantitative && (
                   <span className="text-[#F6F2E8]/75">
@@ -149,16 +147,36 @@ export function PlotBody({ onRevise }: { onRevise: () => void }) {
                   </span>
                 )}
                 {caps.vocab === 'technical' && <span className="text-[#F6F2E8]/75"> · O₂ {reading.o2.toFixed(2)}</span>}
-              </>
+                <span className="text-[#F6F2E8]/60"> · now pour, or wait</span>
+              </p>
             ) : (
-              <span className="text-[#F6F2E8]/60">{dawn ? 'Not probed this morning' : 'The day is running…'}</span>
+              <p className="text-[11px] font-extrabold text-[#F0B354]" data-testid="plot-word">
+                A new morning · probe first{!near ? ' — walk to the bed' : ''}
+              </p>
             )}
+          </div>
+          {/* the equaliser: water and air from the last probe, the leaf live, the goal on it */}
+          <Equalizer theta={lastProbed?.theta ?? null} air={lastProbed?.air ?? null} stale={stale} firm={firm} worst={run.worst13} stood={p.stood} numbers={caps.quantitative} />
+          <div className="mt-1 flex items-baseline justify-between">
+            <span className="text-[10px] font-extrabold tracking-wide text-[#F0B354] uppercase">Cans</span>
+            <span className="text-[12px] font-extrabold tabular-nums text-[#F6F2E8]">
+              <span data-testid="plot-used">{used}</span> used · <span data-testid="plot-said">{said ?? '—'}</span> said
+              {said != null && dawn && run.bed === 'first' && (
+                <button type="button" className="ml-1.5 inline-flex min-h-[36px] items-center rounded-full px-2 text-[10px] font-bold text-[#F0B354] underline-offset-2 hover:underline" data-testid="plot-revise" onClick={onRevise}>
+                  change my number
+                </button>
+              )}
+            </span>
           </div>
           <div className="mt-1.5 grid grid-cols-3 gap-1">
             <Tile
               data-testid="plot-probe"
               disabled={!dawn || !near || run.today.probed}
-              className={cn('h-9 rounded-full bg-[#F6F2E8]/15 text-[11px] font-extrabold text-[#F6F2E8]', (!dawn || !near || run.today.probed) && 'opacity-40')}
+              className={cn(
+                'h-9 rounded-full bg-[#F6F2E8]/15 text-[11px] font-extrabold text-[#F6F2E8]',
+                (!dawn || !near || run.today.probed) && 'opacity-40',
+                dawn && near && !run.today.probed && 'animate-pulse ring-2 ring-[#F0B354]',
+              )}
               onClick={() => probeBed(runBedId(s) ?? '')}
             >
               Probe
@@ -180,7 +198,7 @@ export function PlotBody({ onRevise }: { onRevise: () => void }) {
               Wait
             </Tile>
           </div>
-          {!near && dawn && <p className="mt-1 text-[10px] text-[#F6F2E8]/60">Walk to the bed to probe or pour.</p>}
+          {!near && dawn && reading && <p className="mt-1 text-[10px] text-[#F6F2E8]/60">Walk to the bed to pour; you can wait from anywhere.</p>}
           {ruleOpen && (
             <p className="mt-1.5 text-[11px] font-extrabold text-[#F0B354]" data-testid="plot-rule">
               Roots need air as well as water.
@@ -193,11 +211,12 @@ export function PlotBody({ onRevise }: { onRevise: () => void }) {
 }
 
 /** The leaf: droops with the value, green at the first stand. */
-function LeafGauge({ firm, stood }: { firm: number; stood: boolean }) {
+function LeafGauge({ firm, stood, small = false }: { firm: number; stood: boolean; small?: boolean }) {
   const angle = (1 - Math.max(0, Math.min(1, firm))) * 70
   const hue = 40 + 60 * firm
+  const size = small ? 26 : 44
   return (
-    <svg viewBox="0 0 44 44" width={44} height={44} role="img" aria-label={`Leaf firmness ${firm.toFixed(2)}`} data-testid="plot-leaf" data-stood={stood}>
+    <svg viewBox="0 0 44 44" width={size} height={size} role="img" aria-label={`Leaf firmness ${firm.toFixed(2)}`} data-testid="plot-leaf" data-stood={stood}>
       <line x1={22} y1={40} x2={22} y2={18} stroke="#8A6A45" strokeWidth={3} strokeLinecap="round" />
       <g transform={`rotate(${angle} 22 18)`}>
         <path d="M22 18 C 22 8, 36 6, 40 2 C 38 12, 30 20, 22 18 Z" fill={`hsl(${hue} 55% ${38 + 12 * firm}%)`} stroke={stood ? '#7BD389' : 'none'} strokeWidth={1.5} />
@@ -207,14 +226,80 @@ function LeafGauge({ firm, stood }: { firm: number; stood: boolean }) {
   )
 }
 
-/** The target band ≥ 0.8 and the floor tick at 0.6, on a bar. */
-function Band({ firm, worst }: { firm: number; worst: number }) {
+/** The hour of the running day, in words a child reads at a glance. */
+function dayPhase(hour: number): string {
+  const h = ((hour % 24) + 24) % 24
+  if (h < 2) return 'Sunrise'
+  if (h < 11) return 'Morning'
+  if (h < 15) return 'Afternoon'
+  if (h < 19.5) return 'Sunset'
+  if (h < 22) return 'Night'
+  return 'Before dawn'
+}
+
+/**
+ * The equaliser (Selorm, after the first test): three bars that rise and
+ * fall as the fortnight goes — WATER and AIR from the last probe (greyed
+ * until the probe goes in again), the LEAF live with the goal drawn on it.
+ * No good/bad zone on water or air: those are readings; the goal is on the
+ * leaf, where the goal is. The bars move together, and that is the lesson
+ * arriving without a sentence.
+ */
+function Equalizer({ theta, air, stale, firm, worst, stood, numbers }: { theta: number | null; air: number | null; stale: boolean; firm: number; worst: number; stood: boolean; numbers: boolean }) {
+  const clay = SOIL.clay
+  // water: wilting point → porosity across the bar; the probe's words at their thresholds
+  const water = theta == null ? null : Math.max(0, Math.min(1, (theta - clay.wp) / (clay.phi - clay.wp)))
+  const soakedAt = (clay.phi - 0.1 - clay.wp) / (clay.phi - clay.wp)
+  const dryAt = (clay.fc - 0.35 * (clay.fc - clay.wp) - clay.wp) / (clay.phi - clay.wp)
+  const airBar = air == null ? null : Math.max(0, Math.min(1, air / 0.25))
   return (
-    <div className="relative mt-1 h-2 w-full overflow-hidden rounded-full bg-[#F6F2E8]/15" data-testid="plot-band">
-      <div className="absolute top-0 h-full bg-[#7BD389]/30" style={{ left: `${RESCUE_FIRM * 100}%`, right: 0 }} title="standing" />
-      <div className="absolute top-0 h-full w-0.5 bg-[#FF8A5C]" style={{ left: `${CARE_FIRM * 100}%` }} title="steady hands" />
-      <div className="h-full rounded-full bg-[#E8A33D]" style={{ width: `${firm * 100}%` }} />
-      {worst < 1 && <div className="absolute top-0 h-full w-0.5 bg-[#F6F2E8]/70" style={{ left: `${worst * 100}%` }} title="lowest since day 1" />}
+    <div className="mt-1.5 grid grid-cols-3 gap-2" data-testid="plot-eq" data-stale={stale}>
+      <Column label="Water" testid="eq-water" value={water} text={theta == null ? 'probe' : numbers ? `θ ${theta.toFixed(2)}` : wordFor(water, soakedAt, dryAt)} color="#4F8AA8" stale={stale} marks={[{ at: soakedAt, label: 'soaked' }, { at: dryAt, label: 'dry' }]} />
+      <Column label="Air" testid="eq-air" value={airBar} text={air == null ? 'probe' : numbers ? `${Math.round(air * 100)} %` : air < 0.1 ? 'little' : air < 0.16 ? 'some' : 'plenty'} color="#F6F2E8" stale={stale} />
+      <Column
+        label="Leaf"
+        testid="eq-firm"
+        value={firm}
+        text={firm.toFixed(2)}
+        color={stood ? '#7BD389' : '#E8A33D'}
+        stale={false}
+        goal={{ from: RESCUE_FIRM, label: 'standing' }}
+        floor={CARE_FIRM}
+        worst={worst}
+        icon={<LeafGauge firm={firm} stood={stood} small />}
+        valueTestid="plot-firm"
+      />
+    </div>
+  )
+}
+
+function wordFor(water: number | null, soakedAt: number, dryAt: number): string {
+  if (water == null) return 'probe'
+  return water >= soakedAt ? 'soaked' : water <= dryAt ? 'dry' : 'damp'
+}
+
+function Column({ label, testid, value, text, color, stale, marks = [], goal, floor, worst, icon, valueTestid }: { label: string; testid: string; value: number | null; text: string; color: string; stale: boolean; marks?: { at: number; label: string }[]; goal?: { from: number; label: string }; floor?: number; worst?: number; icon?: React.ReactNode; valueTestid?: string }) {
+  const h = 60
+  const v = value ?? 0
+  return (
+    <div className="flex flex-col items-center" data-testid={testid} data-value={value == null ? '' : v.toFixed(3)} data-stale={stale}>
+      <span className="text-[9px] font-extrabold tracking-wide text-[#F0B354] uppercase">{label}</span>
+      <div className="relative mt-0.5 w-full overflow-hidden rounded-md bg-[#F6F2E8]/12" style={{ height: h }}>
+        {goal && <div className="absolute inset-x-0 top-0 bg-[#7BD389]/25" style={{ height: `${(1 - goal.from) * 100}%` }} title={goal.label} />}
+        {goal && <span className="absolute right-1 top-0.5 text-[8px] font-extrabold uppercase text-[#7BD389]">{goal.label}</span>}
+        {floor != null && <div className="absolute inset-x-0 h-px bg-[#FF8A5C]" style={{ bottom: `${floor * 100}%` }} title="steady hands" />}
+        {marks.map((m) => (
+          <div key={m.label} className="absolute inset-x-0 h-px bg-[#F6F2E8]/35" style={{ bottom: `${m.at * 100}%` }} title={m.label} />
+        ))}
+        {value != null && (
+          <div className={cn('absolute inset-x-0 bottom-0 rounded-md transition-[height] duration-300', stale && 'opacity-35')} style={{ height: `${v * 100}%`, background: color }} />
+        )}
+        {worst != null && worst < 1 && <div className="absolute inset-x-0 h-px bg-[#F6F2E8]/80" style={{ bottom: `${worst * 100}%` }} title="lowest since day 1" />}
+        {icon && <div className="absolute left-0.5 bottom-0.5">{icon}</div>}
+      </div>
+      <span className={cn('mt-0.5 text-[11px] font-extrabold tabular-nums', stale ? 'text-[#F6F2E8]/50' : 'text-[#F6F2E8]')} data-testid={valueTestid}>
+        {text}
+      </span>
     </div>
   )
 }

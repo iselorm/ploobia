@@ -312,6 +312,29 @@ export function advance(run: PlotRun, dt: number): PlotEvent[] {
   return events
 }
 
+/**
+ * The sky as the day runs, on the Looks scale (1 day · 0.42 evening · 0
+ * night): the dawn pause glows at 0.45, the morning brightens, the afternoon
+ * holds, dusk falls through evening into night, and the small hours lift
+ * toward the next dawn. `hour` is the model's, 0–24, fractional.
+ */
+export function skyForHour(hour: number): number {
+  const h = ((hour % 24) + 24) % 24
+  const lerp = (a: number, b: number, t: number) => a + (b - a) * Math.max(0, Math.min(1, t))
+  if (h < 2) return lerp(0.45, 1, h / 2)
+  if (h < 15) return 1
+  if (h < 17.5) return lerp(1, 0.42, (h - 15) / 2.5)
+  if (h < 19.5) return lerp(0.42, 0, (h - 17.5) / 2)
+  if (h < 22) return 0
+  return lerp(0, 0.45, (h - 22) / 2)
+}
+
+/** Whole seconds until the next dawn, for the plate's countdown. */
+export function secondsToDawn(run: PlotRun): number {
+  if (run.phase !== 'running') return 0
+  return Math.max(1, Math.ceil((24 - run.hour - run.acc) / HOURS_PER_SECOND))
+}
+
 /* ----------------------------------------------------------------------------
  * Verdicts
  * ------------------------------------------------------------------------- */

@@ -25,6 +25,7 @@
 
 import { createStore } from 'zustand/vanilla'
 import { useStore } from 'zustand'
+import { setSkyOverride } from './looks'
 import {
   advance as advancePlot,
   choose as choosePlot,
@@ -38,6 +39,7 @@ import {
   rescued,
   say as sayPlot,
   secondBed,
+  skyForHour,
   takeNudge,
   type Competence,
   type DawnChoice,
@@ -418,6 +420,7 @@ export function setWorld(patch: Partial<WorldState> | ((s: WorldState) => Partia
 
 export function resetWorld(): void {
   worldStore.setState(initial(), true)
+  setSkyOverride(null)
   simTime = 0
   sinceFlush = 0
   pendingHearths = null
@@ -840,6 +843,11 @@ let sincePlotFlush = 0
 function tickPlot(dt: number): void {
   const s = getWorld()
   const run = s.plot.run
+  // The sky is the trial's while a bed is in play: dawn at the pause, the day
+  // sweeping as it runs; the child's own Look comes back when the run ends.
+  if (run && s.phase === 'play' && s.zone === 'landing' && (run.phase === 'dawn' || run.phase === 'running')) {
+    setSkyOverride(run.phase === 'dawn' ? skyForHour(0) : skyForHour(run.hour + run.acc))
+  } else setSkyOverride(null)
   if (!run || run.phase !== 'running' || s.phase !== 'play') return
   const events = advancePlot(run, dt)
   sincePlotFlush += dt

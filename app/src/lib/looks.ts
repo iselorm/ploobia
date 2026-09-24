@@ -41,7 +41,19 @@ let looks: Looks = (() => {
 })()
 const listeners = new Set<() => void>()
 
+/**
+ * A transient sky, owned by whatever is running the clock (the plot's day
+ * sweeps dawn → noon → dusk → night in six seconds). Never persisted; the
+ * child's own Look comes back the moment it is cleared.
+ */
+let override: number | null = null
+
 export function getSun(): number {
+  return override ?? looks.sun
+}
+
+/** The child's own setting, whatever the sky is doing right now. */
+export function getOwnSun(): number {
   return looks.sun
 }
 
@@ -51,6 +63,18 @@ export function setSun(v: number): void {
   looks = { sun }
   write(KEY, looks)
   listeners.forEach((l) => l())
+}
+
+/** Quantised so a sweeping day notifies a few times a second, not every frame. */
+export function setSkyOverride(v: number | null): void {
+  const next = v == null ? null : Math.round(clamp01(v) * 50) / 50
+  if (next === override) return
+  override = next
+  listeners.forEach((l) => l())
+}
+
+export function getSkyOverride(): number | null {
+  return override
 }
 
 function subscribe(l: () => void): () => void {
