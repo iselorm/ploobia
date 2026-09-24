@@ -17,7 +17,7 @@ import * as THREE from 'three'
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 
-export type WorldMeshId = 'furnace' | 'crane' | 'crate' | 'ingot' | 'bellows' | 'explorer' | 'foreman'
+export type WorldMeshId = 'furnace' | 'crane' | 'crate' | 'ingot' | 'bellows' | 'explorer' | 'foreman' | 'nara'
 
 const MODELS = 'models/world/'
 
@@ -35,6 +35,8 @@ export type WorldMeshSpec = {
   /** False keeps the file's own x/z pivot (the crane's mast axis is baked at the origin). */
   center?: boolean
   copy: string
+  /** The file is not in the folder yet: never fetched, the stand-in stays. Drop the flag when it lands. */
+  missing?: boolean
 }
 
 export const WORLD_MESHES: Record<WorldMeshId, WorldMeshSpec> = {
@@ -46,6 +48,8 @@ export const WORLD_MESHES: Record<WorldMeshId, WorldMeshSpec> = {
   explorer: { file: 'explorer.glb', heightM: 1.45, copy: 'Lacing the boots…' },
   /** Sefu — the same Meshy route as the explorer; his idle rides in the file. */
   foreman: { file: 'foreman.glb', heightM: 1.8, copy: 'Tying the apron…' },
+  /** Nara — the Meshy route on her four-view turnaround, when the S0 spend is made (storyboard §10). */
+  nara: { file: 'nara.glb', heightM: 1.7, copy: 'Tying the head-wrap…', missing: true },
 }
 
 function base(): string {
@@ -165,7 +169,7 @@ export function loadWorldClips(name: keyof typeof WORLD_CLIPS): Promise<THREE.An
  * scene's `Prop` does that for static props.
  */
 export function loadWorldMesh(id: WorldMeshId): Promise<LoadedMesh | null> {
-  if (disabled) return Promise.resolve(null)
+  if (disabled || WORLD_MESHES[id].missing) return Promise.resolve(null)
   const cached = cache.get(id)
   if (cached) return cached
   const p = withTimeout(
@@ -186,7 +190,23 @@ export function loadWorldMesh(id: WorldMeshId): Promise<LoadedMesh | null> {
  * `lib/worldtext.ts`, the language file's slot.
  * ------------------------------------------------------------------------ */
 
-export type WorldTextureId = 'wall' | 'banner' | 'rack' | 'landing-card' | 'ancient-card'
+export type WorldTextureId =
+  | 'wall'
+  | 'banner'
+  | 'rack'
+  | 'landing-card'
+  | 'ancient-card'
+  // batch 3 — S0, the Landing plot (Selorm's generator, 2026-09-23)
+  | 'landing-cutout'
+  | 'landing-cutout-lit'
+  | 'store-card'
+  | 'codex-page'
+  | 'cassava-up'
+  | 'cassava-down'
+  | 'soil-dry'
+  | 'soil-wet'
+  | 'path'
+  | 'water'
 
 export type WorldTextureSpec = {
   file: string
@@ -202,6 +222,26 @@ export const WORLD_TEXTURES: Record<WorldTextureId, WorldTextureSpec> = {
   rack: { file: 'rack.webp', aspect: 1024 / 733 },
   'landing-card': { file: 'landing-card.webp', aspect: 732 / 1024 },
   'ancient-card': { file: 'ancient-card.webp', aspect: 1280 / 681 },
+  'landing-cutout': { file: 'landing-cutout.webp', aspect: 1280 / 720 },
+  'landing-cutout-lit': { file: 'landing-cutout-lit.webp', aspect: 1280 / 720 },
+  'store-card': { file: 'store-card.webp', aspect: 1024 / 683 },
+  'codex-page': { file: 'codex-page.webp', aspect: 1 },
+  'cassava-up': { file: 'cassava-up.webp', aspect: 1 },
+  'cassava-down': { file: 'cassava-down.webp', aspect: 1 },
+  'soil-dry': { file: 'soil-dry.webp', aspect: 1, metres: 1.2 },
+  'soil-wet': { file: 'soil-wet.webp', aspect: 1, metres: 1.2 },
+  path: { file: 'path.webp', aspect: 1, metres: 2.2 },
+  water: { file: 'water.webp', aspect: 1, metres: 9 },
+}
+
+/** Portraits for the HUD's talk cards — plain image URLs, beside the textures. */
+export const PORTRAITS = {
+  nara: 'nara.webp',
+  sela: 'sela.webp',
+} as const
+
+export function portraitUrl(who: keyof typeof PORTRAITS): string {
+  return `${base()}${MODELS}${PORTRAITS[who]}`
 }
 
 const texCache = new Map<WorldTextureId, Promise<THREE.Texture | null>>()
