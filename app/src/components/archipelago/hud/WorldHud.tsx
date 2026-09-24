@@ -183,7 +183,8 @@ export default function WorldHud({ compact }: { compact: boolean }) {
   const runEnded = !!run && (run.phase === 'dead' || run.phase === 'done')
   const retry = onPlot && !!run && runEnded && !rescued(run)
   const rescueLine = onPlot && !!run && run.phase === 'done' && rescued(run) && ((run.bed === 'first' && plot.stage === 'first') || (run.bed === 'second' && plot.stage === 'second'))
-  const plotBrief = onPlot && !!run && run.bed === 'first' && run.phase === 'dawn' && run.said.length === 0 && plot.probes >= 1 && !plot.naming
+  // Each bed's brief opens after its first probe and stays until a number is said.
+  const plotBrief = onPlot && !!run && run.phase === 'dawn' && run.said.length === 0 && (run.bed === 'first' ? plot.probes >= 1 : run.today.probed || run.days.some((d) => d.probed)) && !plot.naming
   const showGauge = s.zone === 'foundry' && (s.lit.length > 0 || s.furnace.lit)
   const brief = s.zone === 'foundry' && s.prediction == null && !briefed && s.phase === 'play'
   const inRoom = s.room === 'furnace'

@@ -100,6 +100,8 @@ async function toTrial(page, { name = 'Leafy 7', said = 3 } = {}) {
   await page.getByTestId('plot-cans').fill(String(said))
   await resilientClick(page.getByTestId('plot-say'), { label: 'Say it' })
   await waitFor(page, () => (window.__world.plot.run()?.said.length ?? 0) >= 1)
+  await page.waitForTimeout(200)
+  check('a child who never raises the Lens is not held at it: the number said, the step is the fortnight', (await plot(page)).step === 'fortnight', (await plot(page)).step)
 }
 
 /* ------------------------------------------------------------------------ */
@@ -313,6 +315,14 @@ async function toTrial(page, { name = 'Leafy 7', said = 3 } = {}) {
   check("Nara's over-correction, in her mouth", await page.getByTestId('talk-line').textContent().then((t) => /gone the same way/.test(t) && /Both of them/.test(t)))
   await page.keyboard.press('Escape')
   await waitFor(page, () => window.__world.get().talk === null)
+  check('the far bed has no brief before its first probe', (await page.getByTestId('plot-brief').count()) === 0)
+  await page.evaluate(() => window.__world.plot.probe())
+  await waitFor(page, () => document.querySelector('[data-testid=plot-brief]')?.getAttribute('data-bed') === 'second')
+  check('the far bed asks for its own number after the first probe', await page.getByTestId('plot-brief').textContent().then((t) => /this bed take to stay standing for the week/.test(t)))
+  check('Pour and Wait are shut until it is said', await page.getByTestId('plot-wait').isDisabled())
+  await page.getByTestId('plot-cans').fill('3')
+  await resilientClick(page.getByTestId('plot-say'), { label: 'Say it' })
+  await waitFor(page, () => (window.__world.plot.run()?.said.length ?? 0) === 1)
   await dawn(page, 'pour')
   await dawn(page, 'wait')
   const f2 = await run(page)
@@ -343,7 +353,7 @@ async function toTrial(page, { name = 'Leafy 7', said = 3 } = {}) {
   await waitFor(page, () => window.__world.get().plot.stage === 'record', 12000)
   await waitFor(page, () => !!document.querySelector('[data-testid=record]'))
   const said = await page.getByTestId('record-said').textContent()
-  check('the record: you said 2 · hers took 2 · the far bed took 3', /You said 2 · hers took 2 · the far bed took 3/.test(said), said)
+  check('the record: you said 2 · hers took 2 · the far bed took 3 (you said 3)', /You said 2 · hers took 2 · the far bed took 3 \(you said 3\)/.test(said), said)
   check('Explorer sees care first and optional economy detail', (await page.getByTestId('record-care').textContent()).includes('Steady hands') && (await page.getByTestId('record-accuracy').textContent()).includes('spot on') && (await page.getByTestId('record-economy').textContent()).includes('fewest'))
   check('the record precedes the fence', (await page.evaluate(() => { let v = false; window.__world.scene.traverse((o) => { if (o.name === 'fence' && o.visible) v = true }); return v })) === false)
   await resilientClick(page.getByTestId('record-next'), { label: 'One question' })

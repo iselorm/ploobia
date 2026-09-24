@@ -516,6 +516,8 @@ export interface Quest<Id extends string = string> {
   title: string
   hook: string
   predict: { ask: string; unit: string }
+  /** A second brief for a quest with a changed case (the plot's far bed). */
+  predictFar?: { ask: string; unit: string }
   steps: QuestStep<Id>[]
   /** The whys, growing — asked after the hand-in, never during. */
   whys: string[]
@@ -640,11 +642,15 @@ export const PLOT: Quest<PlotStepId> = {
   title: "Why is Nara's cassava drooping?",
   hook: 'A wet streak runs up the harbour path to a cassava that droops however much it is watered. Find out what it needs. Each simulated day takes about six seconds, then pauses for your next decision.',
   predict: { ask: 'How many cans will it take to get her standing — and keep her standing for a fortnight?', unit: 'cans' },
+  /** The far bed's brief — the changed case gets its own number. */
+  predictFar: { ask: 'How many cans will this bed take to stay standing for the week?', unit: 'cans' },
   steps: [
     { id: 'trail', label: 'Follow the wet streak', coach: 'Something has been spilling water up the path. Follow it.', target: 'talk.nara', until: { type: 'state', source: 'plot.met', equals: true } },
     { id: 'claim', label: 'Take the plot', coach: 'The empty plot is yours if you want it. Push the marker in.', target: 'marker.plot', until: { type: 'set', source: 'plot.name' } },
     { id: 'probe', label: "Probe Nara's bed", coach: 'Before anything — push the probe into her bed and read it.', target: 'bed.nara', until: { type: 'threshold', source: 'plot.probes', op: '>=', value: 1 } },
-    { id: 'lens', label: 'Look inside with the Lens', coach: 'Raise the Lens by the bed. See what the soil is like under the plant.', target: 'bed.nara', until: { type: 'state', source: 'plot.lensSeen', equals: true } },
+    // Encouraged, never required: the Lens step is satisfied by the Lens OR by the number being said, so a child who
+    // skips the Lens is not held at it (Selorm's test, 24 Sep: "the hint kept sending me to the first bed").
+    { id: 'lens', label: 'Look inside with the Lens', coach: 'Raise the Lens by the bed. See what the soil is like under the plant.', target: 'bed.nara', until: { type: 'count', source: 'plot.run.said', op: '>=', value: 1 } },
     { id: 'say', label: 'Say how many cans', coach: 'Say your number first. Then each morning: probe, and pour or wait.', target: 'bed.nara', until: { type: 'count', source: 'plot.run.said', op: '>=', value: 1 } },
     { id: 'fortnight', label: 'Keep it standing for a fortnight', coach: 'Each dawn: probe first, then the can or the wait. Watch the leaves at one o\u2019clock.', target: 'bed.nara', until: { type: 'state', source: 'plot.rescuedFirst', equals: true } },
     { id: 'far', label: 'The far bed', coach: 'Nara ran off toward the far bed. Follow her — and probe before you do anything.', target: 'bed.far', until: { type: 'state', source: 'plot.rescuedSecond', equals: true } },
@@ -930,8 +936,8 @@ export function plotSay(n: number): boolean {
 export function plotChoose(choice: DawnChoice): boolean {
   const s = getWorld()
   const run = s.plot.run
-  // The first bed wants the number said first; the far bed is the changed case, no new brief.
-  if (!run || run.phase !== 'dawn' || (run.bed === 'first' && run.said.length === 0)) return false
+  // Both beds want their number said first — the far bed is the changed case and gets its own brief.
+  if (!run || run.phase !== 'dawn' || run.said.length === 0) return false
   const ok = choosePlot(run, choice)
   if (ok) setWorld({ plot: { ...s.plot, run: { ...run } } })
   return ok

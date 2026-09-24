@@ -103,8 +103,8 @@ export function PlotBody({ onRevise }: { onRevise: () => void }) {
   const used = cansUsed(run)
   const firm = run.firm13
   const dawn = run.phase === 'dawn'
-  // the first bed wants the number first; the far bed is the changed case
-  const canAct = run.bed !== 'first' || said != null
+  // each bed wants its number first
+  const canAct = said != null
   const reading = run.today.probed ? run.today : null
   const title = run.bed === 'first' ? (p.name ? `${p.name} · Nara's bed` : "Nara's bed") : 'The far bed'
   const day = Math.min(run.day, run.length)
@@ -161,7 +161,7 @@ export function PlotBody({ onRevise }: { onRevise: () => void }) {
             <span className="text-[10px] font-extrabold tracking-wide text-[#F0B354] uppercase">Cans</span>
             <span className="text-[12px] font-extrabold tabular-nums text-[#F6F2E8]">
               <span data-testid="plot-used">{used}</span> used · <span data-testid="plot-said">{said ?? '—'}</span> said
-              {said != null && dawn && run.bed === 'first' && (
+              {said != null && dawn && (
                 <button type="button" className="ml-1.5 inline-flex min-h-[36px] items-center rounded-full px-2 text-[10px] font-bold text-[#F0B354] underline-offset-2 hover:underline" data-testid="plot-revise" onClick={onRevise}>
                   change my number
                 </button>
@@ -314,6 +314,7 @@ export function Brief({ revise = false, onDone }: { revise?: boolean; onDone?: (
   const n = Number(v)
   const ok = v.trim() !== '' && Number.isFinite(n) && n >= 0 && n <= 99
   if (!run) return null
+  const ask = run.bed === 'second' && PLOT.predictFar ? PLOT.predictFar : PLOT.predict
   const commit = () => {
     if (!ok) return
     plotSay(n)
@@ -321,9 +322,9 @@ export function Brief({ revise = false, onDone }: { revise?: boolean; onDone?: (
   }
   return (
     <div className={cn('pointer-events-auto absolute inset-x-0 flex justify-center px-4', revise ? 'top-14' : 'bottom-24 sm:bottom-28')} data-focus-layer="">
-      <div className="atlas-plate w-full max-w-[24rem] rounded-[22px] px-6 py-5" data-testid="plot-brief">
-        <span className="atlas-eyebrow block">{revise ? 'Change my number' : 'Say it first'}</span>
-        <p className="mt-1 text-[13.5px] leading-snug font-extrabold text-[#2A2823]">{PLOT.predict.ask}</p>
+      <div className="atlas-plate w-full max-w-[24rem] rounded-[22px] px-6 py-5" data-testid="plot-brief" data-bed={run.bed}>
+        <span className="atlas-eyebrow block">{revise ? 'Change my number' : run.bed === 'second' ? 'The far bed · say it first' : 'Say it first'}</span>
+        <p className="mt-1 text-[13.5px] leading-snug font-extrabold text-[#2A2823]">{ask.ask}</p>
         {run.today.probed && (
           <p className="mt-1 text-[12px] font-semibold text-[#5F5A4E]">
             The probe says <span className="font-extrabold">{run.today.word}</span>.
@@ -342,9 +343,9 @@ export function Brief({ revise = false, onDone }: { revise?: boolean; onDone?: (
             }}
             className="w-24 rounded-xl border border-[#D9CFBC] bg-white px-3 py-2 text-[18px] font-extrabold tabular-nums text-[#2A2823] outline-none focus:border-[#E8A33D]"
             placeholder="?"
-            aria-label={PLOT.predict.ask}
+            aria-label={ask.ask}
           />
-          <span className="text-[14px] font-bold text-[#5F5A4E]">{PLOT.predict.unit}</span>
+          <span className="text-[14px] font-bold text-[#5F5A4E]">{ask.unit}</span>
           <Tile data-testid="plot-say" disabled={!ok} className={cn('ml-auto rounded-full bg-[#E8A33D] px-4 py-2 text-[13px] font-extrabold text-[#2A2823]', !ok && 'opacity-40')} onClick={commit}>
             Say it
           </Tile>
@@ -517,6 +518,7 @@ export function RecordCard({ p, compact }: { p: PlotState; compact: boolean }) {
             <span className="atlas-eyebrow block">The record · {p.name ?? 'your plot'}</span>
             <p className="mt-1 text-[14px] leading-snug font-extrabold text-[#2A2823]" data-testid="record-said">
               {rec.said.length ? `You said ${rec.said.join(', then ')}` : 'You said nothing'} · hers took {rec.cans} · the far bed took {farRec?.cans ?? '—'}
+              {farRec?.said.length ? ` (you said ${farRec.said.join(', then ')})` : ''}
             </p>
             <div className="mt-2 grid grid-cols-3 gap-1.5 text-center">
               <Score label="Accuracy" word={rec.accuracy ? ACCURACY_WORDS[rec.accuracy] : '—'} num={caps.quantitative && rec.accuracy && rec.said.length ? `${Math.abs(rec.said[rec.said.length - 1] - rec.cans)} off` : null} testid="record-accuracy" />
