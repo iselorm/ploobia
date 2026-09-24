@@ -70,7 +70,8 @@ async function hold(page, code, ms) {
   await page.evaluate(() => window.__world.setBand('explorer'))
   check('the wordmark names the zone', await page.getByTestId('wordmark').textContent().then((t) => /Landing/.test(t)))
   // At the Landing the plate carries the plot's quest (S0); the furnace's five lines take over across the water.
-  check('the checklist is up with nothing ticked', (await page.locator('[data-testid=checklist] li').count()) === 8 && (await page.locator('[data-testid=checklist] li[data-done=true]').count()) === 0)
+  // At the Landing the plate carries the plot's quest (S0) one objective at a time; the furnace's five lines take over across the water.
+  check('the checklist is up with nothing ticked', (await page.locator('[data-testid=checklist] li').count()) === 1 && (await page.locator('[data-testid=checklist] li[data-done=true]').count()) === 0)
   check('the toolbelt shows Lens · Probe · Measure · Journal', (await page.getByTestId('toolbelt').textContent()) .replace(/\s+/g, ' ').includes('Lens') && (await page.getByTestId('measure').isDisabled()))
   check('the minimap is up', (await page.getByTestId('minimap').count()) === 1)
 

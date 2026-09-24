@@ -562,14 +562,24 @@ export function explainsCause(text: string): boolean {
   return EXPLAINS.test(text)
 }
 
-/** Recovery testimony follows the actions taken up to the first stand. */
-export function recoveryLine(run: PlotRun): string {
+/**
+ * The first stand, said back in the words that fit what the child actually
+ * did (Selorm, 24 Sep): "you gave it nothing" only when nothing was given;
+ * a mistaken pour gets a line that looks back instead; the far bed was
+ * watered, and both of them say so. Ploob's voice and Nara's are separate —
+ * she is the client, he is the coach — and neither names the cause.
+ */
+export function recoveryLine(run: PlotRun, voice: 'ploob' | 'nara' = 'ploob'): string {
   const day = run.stood ?? run.day
-  const poured = run.days.some((d) => d.day <= day && d.cans > 0)
-    || (run.today.day <= day && run.today.cans > 0)
+  const poured = run.days.some((d) => d.day <= day && d.cans > 0) || (run.today.day <= day && run.today.cans > 0)
+  if (voice === 'nara') {
+    if (run.bed === 'second') return 'You watered this one and it came up. Mine got worse with water.'
+    if (!poured) return 'You gave it nothing. And look.'
+    return 'It came up. I would have kept pouring.'
+  }
+  if (run.bed === 'second') return 'You gave this bed water, and it came up. Keep checking it.'
   if (!poured) return 'It came up. You gave it nothing and it came up.'
-  if (run.bed === 'second') return 'You gave this bed water, and it came up. Let’s keep checking it.'
-  return 'It came up. Let’s look back at what changed each morning.'
+  return 'It came up. Look back at what changed each morning.'
 }
 
 export function methodReply(steps: MethodSteps): string {

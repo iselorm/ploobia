@@ -19,20 +19,18 @@ export default function World() {
   const tier = useLayoutTier()
   const portrait = usePortraitPhone()
   const [lost, setLost] = useState(false)
-  const [ready, setReady] = useState(false)
-  useEffect(() => {
-    // Canvas renderer creation can reject asynchronously, outside React's boundary.
-    // Check the required context before mounting the scene or its gameplay HUD.
-    const canvas = document.createElement('canvas')
+  // Canvas renderer creation can reject asynchronously, outside React's boundary,
+  // so the required context is checked once, before the scene or its HUD mounts.
+  const [webgl] = useState(() => {
     try {
-      const gl = canvas.getContext('webgl2')
-      if (!gl) { setLost(true); return }
+      const gl = document.createElement('canvas').getContext('webgl2')
+      if (!gl) return false
       gl.getExtension('WEBGL_lose_context')?.loseContext()
-      setReady(true)
+      return true
     } catch {
-      setLost(true)
+      return false
     }
-  }, [])
+  })
   // Back through a door from a cabinet: the world resumes where it stood.
   // Otherwise a save, if there is one, is restored behind the welcome card
   // (Continue / Start over); any other arrival is a fresh start. Decided at
@@ -66,8 +64,7 @@ export default function World() {
   useEffect(() => installWorldKeys(), [])
   useEffect(() => watchWorld(() => ({ pos: [live.pos.x, live.pos.y, live.pos.z], facing: live.facing, cam: [live.camYaw, live.camPitch] })), [])
   useEffect(() => installWorldAudio(() => ({ speed: live.speed, grounded: live.grounded })), [])
-  if (lost) return <WebglFallback />
-  if (!ready) return <div role="status" className="fixed inset-0 grid place-items-center bg-[#F6F2E8]">Opening the Archipelago…</div>
+  if (lost || !webgl) return <WebglFallback />
   if (portrait) return <TurnCard line="The Archipelago is explored the wide way round." />
   const compact = tier === 'phone'
   return (

@@ -91,7 +91,7 @@ export function naraMood(s: WorldState): NaraMood {
 export function naraLines(s: WorldState): readonly string[] {
   const mood = naraMood(s)
   const lines = NARA_LINES[mood]
-  if (mood === 'stood' && s.plot.run) return [recoveryLine(s.plot.run)]
+  if (mood === 'stood' && s.plot.run) return [recoveryLine(s.plot.run, 'nara')]
   if (mood === 'taught') return [methodReply(methodSteps([s.plot.first, s.plot.run].filter((r): r is PlotRun => !!r)))]
   if (mood !== 'fortnight') return lines
   const run = s.plot.first ?? s.plot.run

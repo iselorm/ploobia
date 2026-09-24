@@ -369,6 +369,7 @@ check('the gate is not fooled by "airy" or "fair"', !P.explainsCause('a fair day
   check('watered far-bed recovery acknowledges watering', far.announcements[0].includes('gave this bed water') && !far.announcements[0].includes('nothing'))
   check('recovery after a mistaken pour does not claim no water', mistaken.announcements.length === 1 && !mistaken.announcements[0].includes('nothing'))
   check('recovery testimony never reveals the gated explanation', [...first.announcements, ...far.announcements, ...mistaken.announcements].every((line) => !P.explainsCause(line)))
+  check("Nara's own voice at the stand: nothing given → 'And look'; a pour → she would have kept pouring; the far bed → hers got worse with water", P.recoveryLine(first.run, 'nara').includes('And look') && P.recoveryLine(mistaken.run, 'nara').includes('kept pouring') && P.recoveryLine(far.run, 'nara').includes('worse with water') && [first.run, mistaken.run, far.run].every((r) => !P.explainsCause(P.recoveryLine(r, 'nara'))))
   const m = P.methodSteps([first.run, far.run])
   check('complete demonstrated method gets a confident reply', P.methodReply(m).includes('I can do that'))
   check('incomplete method identifies the missing observation', P.methodReply({ ...m, checkAgain: false }).includes('checking again after watering') && !P.methodReply({ ...m, checkAgain: false }).includes('I can do that'))
