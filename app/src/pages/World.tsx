@@ -42,6 +42,10 @@ export default function World() {
       }
     } else {
       resetWorld()
+      // A fresh arrival: off the boat at the jetty's end, the camera looking straight up it.
+      live.facing = Math.PI
+      live.camYaw = Math.PI
+      live.camPitch = 0.42
     }
     return null
   })

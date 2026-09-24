@@ -15,6 +15,10 @@ import {
   interactables,
   lightHearth,
   nearestInteractable,
+  plantCutting,
+  probeBed,
+  pushMarker,
+  readPage,
   setWorld,
   talkTo,
   toggleLens,
@@ -23,6 +27,7 @@ import {
   enterDoor,
 } from '@/lib/archipelago'
 import { SPAWNS, control, live } from './live'
+import { LANDING_SPAWN } from './landingLayout'
 import { bodies } from './bodies'
 import { craneGrabOrRelease } from './crane'
 import { useWorldMesh } from './useWorldMesh'
@@ -185,7 +190,11 @@ export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void
   useFrame((_, dtRaw) => {
     const b = body.current
     if (!b) return
-    const dt = Math.min(0.05, dtRaw)
+    // Real time, clamped against a hitch, not against a slow frame: on a weak
+    // machine at 10 fps the walk must still cover the ground it would at 60.
+    // The character controller shape-casts the whole move, so a long step
+    // stops at the first wall like a short one.
+    const dt = Math.min(0.25, dtRaw)
     const s = getWorld()
     // Step out of a mode on Escape.
     if (control.exit) {
@@ -280,8 +289,8 @@ export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void
     if (live.grounded && vy.current < 0) vy.current = 0
     live.pos.set(nx, ny, nz)
 
-    // Fell off the island: back to the spawn, no fuss.
-    if (ny < -12) {
+    // Fell off the island — into the sea, or off the world: back to the spawn, no fuss.
+    if (ny < -1.5) {
       b.setNextKinematicTranslation({ x: live.spawn.x, y: live.spawn.y, z: live.spawn.z })
       vy.current = 0
     }
@@ -331,7 +340,7 @@ export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void
 
   return (
     <>
-      <RigidBody ref={body} type="kinematicPosition" colliders={false} position={[0, 0.6, 4]} name="explorer">
+      <RigidBody ref={body} type="kinematicPosition" colliders={false} position={LANDING_SPAWN} name="explorer">
         <CapsuleCollider args={[0.28, 0.24]} />
       </RigidBody>
       <group ref={mesh} name="explorer-mesh">
@@ -368,7 +377,19 @@ export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void
         return
       }
       case 'probe':
-        lightHearth(id.slice('hearth.'.length) as FuelId)
+        // A hearth is lit with the probe; a bed is read with it (the plate keeps the reading).
+        if (id.startsWith('bed.')) {
+          if (!probeBed(id)) window.dispatchEvent(new CustomEvent('ploobia:notyet', { detail: id }))
+        } else lightHearth(id.slice('hearth.'.length) as FuelId)
+        return
+      case 'marker':
+        pushMarker()
+        return
+      case 'read':
+        readPage()
+        return
+      case 'plant':
+        plantCutting()
         return
       case 'build':
         if (getWorld().bellowsSeen) fixPipe()

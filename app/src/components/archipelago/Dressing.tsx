@@ -100,7 +100,7 @@ function drawText(canvas: HTMLCanvasElement, lines: readonly string[], opts: { c
 }
 
 /** A transparent text plane. Redraws once Nunito is in, so the words match the HUD. */
-function TextPlane({ lines, width, height, color, px = 64, weight, shadow, position, rotation }: { lines: readonly string[]; width: number; height: number; color: string; px?: number; weight?: number; shadow?: string; position?: [number, number, number]; rotation?: [number, number, number] }) {
+export function TextPlane({ lines, width, height, color, px = 64, weight, shadow, position, rotation }: { lines: readonly string[]; width: number; height: number; color: string; px?: number; weight?: number; shadow?: string; position?: [number, number, number]; rotation?: [number, number, number] }) {
   const w = 512
   const h = Math.max(64, Math.round((w * height) / width))
   const tex = useMemo(() => {

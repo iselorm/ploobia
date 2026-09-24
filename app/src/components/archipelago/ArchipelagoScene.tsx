@@ -4,7 +4,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Physics } from '@react-three/rapier'
 import PerfProbe from '@/components/PerfProbe'
 import { getQualityCaps, useQualityCaps } from '@/lib/quality'
-import { getWorld, setWorld, tickWorld, useWorld } from '@/lib/archipelago'
+import { getWorld, plotChoose, plotSay, probeBed, runBedId, setWorld, tickWorld, useWorld } from '@/lib/archipelago'
 import { setBand } from '@/lib/bands'
 import { getSun, setSun } from '@/lib/looks'
 import { bedLevel } from '@/lib/worldaudio'
@@ -50,6 +50,16 @@ function Expose() {
       setSun,
       sun: getSun,
       bed: bedLevel,
+      // S0, suites only: the plot's verbs without the walk, and a day run in one call.
+      plot: {
+        probe: () => probeBed(runBedId(getWorld()) ?? ''),
+        say: plotSay,
+        choose: plotChoose,
+        run: () => getWorld().plot.run,
+        runDay: () => {
+          for (let i = 0; i < 40 && getWorld().plot.run?.phase === 'running'; i += 1) tickWorld(0.25)
+        },
+      },
     }
     return () => {
       delete w.__world

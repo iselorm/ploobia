@@ -5,6 +5,7 @@
  */
 import * as THREE from 'three'
 import { getWorld } from '@/lib/archipelago'
+import { LANDING_SPAWN } from './landingLayout'
 
 export const control = {
   /** Stick / WASD, −1..1 in the camera's frame (x right, y forward). */
@@ -37,13 +38,14 @@ export const live = {
   ploobTarget: new THREE.Vector3(1.2, 0, 1.2),
   ploob: new THREE.Vector3(1.2, 0, 1.2),
   /** Where the explorer stands on arrival, per zone. */
-  spawn: new THREE.Vector3(0, 0.6, 4),
+  spawn: new THREE.Vector3(...LANDING_SPAWN),
   /** A requested teleport (suites, and later the lift); applied next frame. */
   requestPos: null as [number, number, number] | null,
 }
 
+/** The Landing's spawn is the jetty's end (`landingLayout.ts`); the Foundry's the courtyard gate. */
 export const SPAWNS: Record<string, [number, number, number]> = {
-  landing: [0, 0.6, 4],
+  landing: LANDING_SPAWN,
   foundry: [0, 0.6, 9.5],
 }
 

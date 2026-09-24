@@ -6,16 +6,25 @@ import { registerInteractable, useWorld } from '@/lib/archipelago'
 import { registerBody } from './bodies'
 import Lighting, { Lamp } from './Lighting'
 import { lightingFor, useSun } from '@/lib/looks'
+import { Card } from './Dressing'
+import { useWorldTexture } from './useWorldMesh'
+import Plot from './Plot'
+import Nara from './Nara'
+import { JETTY_X, PORTAL, WELL } from './landingLayout'
 
 /**
- * The Landing — the hub island. Previz: a plaza on a floating rock, a lift
- * pad where you arrive, the portal gate to the Foundry, and the Foundry's own
- * island visible across the water with its stack cold. When the furnace
- * pours, that island lights (the store's `poured`), which is the whole point
- * of a hub you can see the zones from.
+ * The Landing — the hub island, and from S0 a place: the jetty the child
+ * steps off, the harbour path up from it, the well half-way, and the three
+ * raised beds (`Plot.tsx`) with Nara beside them (`Nara.tsx`). The
+ * settlement stands behind as a painted cut-out with its beacon dark; the
+ * Foundry's own island is across the water with its stack cold, and lights
+ * when the furnace pours. The gate to the Foundry stays where it was — the
+ * crossing is S2's, but the harbour can be explored on its own.
+ *
+ * Coordinates: the plaza is a disc of radius 14 at y = 0; the gate is at
+ * z = −11.5 with a clear walk to it down x = 0; the jetty runs out over the
+ * water to the south-east.
  */
-
-const PORTAL: [number, number, number] = [0, 0, -11.5]
 
 export default function Landing() {
   const s = useWorld()
@@ -29,7 +38,10 @@ export default function Landing() {
       <Lighting zone="landing" />
       <Lamp position={[PORTAL[0] - 1.6, 3, PORTAL[2] + 0.4]} up={lamps} />
       <Lamp position={[PORTAL[0] + 1.6, 3, PORTAL[2] + 0.4]} up={lamps} />
-      <Lamp position={[0, 3.2, 4.8]} up={lamps} distance={12} power={7} />
+      <LampPost position={[JETTY_X + 1.5, 0, 12.2]} up={lamps} />
+
+      {/* the sea */}
+      <Water />
 
       {/* the island: plaza disc on a rock */}
       <RigidBody type="fixed" colliders={false} name="landing-island">
@@ -47,24 +59,78 @@ export default function Landing() {
           <ringGeometry args={[9.5, 14, 48]} />
           <meshStandardMaterial color="#6FA55A" roughness={1} />
         </mesh>
-        {/* arrival pad */}
-        <mesh position={[0, 0.06, 4]} receiveShadow>
-          <cylinderGeometry args={[1.6, 1.6, 0.12, 24]} />
-          <meshStandardMaterial color="#E8A33D" roughness={0.6} emissive="#E8A33D" emissiveIntensity={0.15} />
-        </mesh>
-        {/* the gate: two pillars and a lintel */}
         <Gate />
+        <Jetty />
+        <HarbourPath />
+        <Well />
       </RigidBody>
 
-      {/* a few blocks on the plaza — the Grab tool's first minute */}
-      <PlazaBlock id="crate.1" position={[3, 1, -2]} color="#B97D10" />
-      <PlazaBlock id="crate.2" position={[-3.4, 1, -3]} color="#2F7F7A" />
-      <PlazaBlock id="crate.3" position={[4.2, 1, 1.5]} color="#4A5E7A" size={0.45} />
+      {/* the beds, the marker, the fence, the page */}
+      <Plot />
+      <Nara />
+
+      {/* a few crates off the path — the Grab tool's first minute */}
+      <PlazaBlock id="crate.1" position={[7, 1, -6]} color="#B97D10" />
+      <PlazaBlock id="crate.2" position={[-6, 1, -7.5]} color="#2F7F7A" />
+      <PlazaBlock id="crate.3" position={[8.5, 1, -1]} color="#4A5E7A" size={0.45} />
+
+      {/* the settlement behind, beacon dark until the pour lights the water */}
+      <Settlement lit={s.poured} />
+      {/* the store platform down the path, past the far bed */}
+      <Card id="store-card" height={3.6} position={[-8.6, 1.7, -6.2]} rotation={[0, 0.55, 0]} lit>
+        <group>
+          <mesh position={[0, -0.9, 0]} castShadow>
+            <boxGeometry args={[4.2, 0.5, 2.6]} />
+            <meshStandardMaterial color="#8A6A45" roughness={0.9} />
+          </mesh>
+          <mesh position={[0, 0.9, 0]}>
+            <boxGeometry args={[4.6, 0.12, 3]} />
+            <meshStandardMaterial color="#E9DCC0" roughness={0.9} />
+          </mesh>
+        </group>
+      </Card>
 
       {/* the Foundry across the water */}
       <FarIsland lit={s.poured} />
       <FloatingRocks />
     </>
+  )
+}
+
+/** A lamp on a post at the jetty's landward end. */
+function LampPost({ position, up }: { position: [number, number, number]; up: number }) {
+  return (
+    <group position={position}>
+      <mesh position={[0, 1.5, 0]} castShadow>
+        <cylinderGeometry args={[0.05, 0.07, 3, 8]} />
+        <meshStandardMaterial color="#3A2E24" roughness={0.8} />
+      </mesh>
+      <Lamp position={[0, 3.05, 0]} up={up} distance={12} power={7} />
+    </group>
+  )
+}
+
+/** The sea: one big tile, drifting slowly. Flat teal until the texture lands. */
+function Water() {
+  const tex = useWorldTexture('water')
+  const mat = useRef<THREE.MeshStandardMaterial>(null)
+  useEffect(() => {
+    if (!tex) return
+    tex.repeat.set(240 / 9, 240 / 9)
+  }, [tex])
+  useFrame((st) => {
+    if (!tex) return
+    tex.offset.set((st.clock.elapsedTime * 0.006) % 1, (st.clock.elapsedTime * 0.004) % 1)
+  })
+  return (
+    <mesh position={[0, -1.1, 0]} rotation={[-Math.PI / 2, 0, 0]} name="water" receiveShadow>
+      <planeGeometry args={[240, 240]} />
+      {tex ? (
+        <meshStandardMaterial key="tiled" ref={mat} map={tex} color="#ffffff" roughness={0.35} metalness={0.05} />
+      ) : (
+        <meshStandardMaterial key="flat" color="#3FA7A4" roughness={0.4} />
+      )}
+    </mesh>
   )
 }
 
@@ -90,6 +156,127 @@ function Gate() {
       </mesh>
       <CuboidCollider args={[0.25, 1.6, 0.25]} position={[-1.4, 1.6, 0]} />
       <CuboidCollider args={[0.25, 1.6, 0.25]} position={[1.4, 1.6, 0]} />
+    </group>
+  )
+}
+
+/** The jetty: planks on posts from the island's edge out over the water, and the boat that brought them. */
+function Jetty() {
+  const posts = useMemo(() => {
+    const p: [number, number][] = []
+    for (let z = 13; z <= 20; z += 1.75) {
+      p.push([JETTY_X - 1.1, z])
+      p.push([JETTY_X + 1.1, z])
+    }
+    return p
+  }, [])
+  return (
+    <group name="jetty">
+      <CuboidCollider args={[1.3, 0.12, 4.2]} position={[JETTY_X, -0.12, 16.6]} />
+      <mesh position={[JETTY_X, -0.12, 16.6]} receiveShadow castShadow>
+        <boxGeometry args={[2.6, 0.22, 8.4]} />
+        <meshStandardMaterial color="#9C7A50" roughness={0.9} />
+      </mesh>
+      {/* plank lines */}
+      {Array.from({ length: 12 }, (_, i) => (
+        <mesh key={i} position={[JETTY_X, 0, 12.8 + i * 0.7]}>
+          <boxGeometry args={[2.62, 0.02, 0.05]} />
+          <meshStandardMaterial color="#6E5232" roughness={1} />
+        </mesh>
+      ))}
+      {posts.map(([x, z], i) => (
+        <mesh key={i} position={[x, -0.9, z]} castShadow>
+          <cylinderGeometry args={[0.12, 0.14, 1.9, 8]} />
+          <meshStandardMaterial color="#6E5232" roughness={1} />
+        </mesh>
+      ))}
+      {/* the boat, moored on the far side */}
+      <group position={[JETTY_X + 3.1, -0.85, 18.6]} rotation={[0, 0.1, 0]}>
+        <mesh castShadow>
+          <boxGeometry args={[1.8, 0.7, 4.6]} />
+          <meshStandardMaterial color="#A8552E" roughness={0.8} />
+        </mesh>
+        <mesh position={[0, 0.4, 0]}>
+          <boxGeometry args={[1.4, 0.1, 4.2]} />
+          <meshStandardMaterial color="#E0C79A" roughness={0.9} />
+        </mesh>
+        <mesh position={[0, 2.1, -0.4]}>
+          <cylinderGeometry args={[0.05, 0.07, 3.6, 6]} />
+          <meshStandardMaterial color="#5A3E24" roughness={1} />
+        </mesh>
+      </group>
+    </group>
+  )
+}
+
+/** The harbour path: two tiled strips, jetty → well → plaza, laid a hair above the plaza. */
+function HarbourPath() {
+  const tex = useWorldTexture('path')
+  const strips = useMemo(
+    () => [
+      { from: [JETTY_X, 12.6], to: [WELL[0] + 0.4, WELL[2] + 1.2], w: 2.3 },
+      { from: [WELL[0] - 0.8, WELL[2] - 0.2], to: [0.4, -8.6], w: 2.1 },
+    ],
+    [],
+  )
+  return (
+    <group name="harbour-path">
+      {strips.map((st, i) => {
+        const dx = st.to[0] - st.from[0]
+        const dz = st.to[1] - st.from[1]
+        const len = Math.hypot(dx, dz)
+        const yaw = Math.atan2(dx, dz)
+        return (
+          <mesh key={i} position={[(st.from[0] + st.to[0]) / 2, 0.012, (st.from[1] + st.to[1]) / 2]} rotation={[-Math.PI / 2, 0, yaw]} receiveShadow>
+            <planeGeometry args={[st.w, len]} />
+            {tex ? (
+              <meshStandardMaterial key="tiled" map={tex} color="#ffffff" roughness={0.95} polygonOffset polygonOffsetFactor={-1} />
+            ) : (
+              <meshStandardMaterial key="flat" color="#C9A070" roughness={1} polygonOffset polygonOffsetFactor={-1} />
+            )}
+          </mesh>
+        )
+      })}
+    </group>
+  )
+}
+
+/** The well half-way up the path: a stone ring, a frame, a bucket. */
+function Well() {
+  return (
+    <group position={WELL} name="well">
+      <CylinderCollider args={[0.4, 0.62]} position={[0, 0.4, 0]} />
+      <mesh position={[0, 0.4, 0]} castShadow receiveShadow>
+        <cylinderGeometry args={[0.58, 0.62, 0.8, 16, 1, true]} />
+        <meshStandardMaterial color="#B9A98A" roughness={1} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh position={[0, 0.8, 0]}>
+        <torusGeometry args={[0.58, 0.08, 8, 18]} />
+        <meshStandardMaterial color="#8E7E60" roughness={1} />
+      </mesh>
+      <mesh position={[0, 0.3, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[0.5, 16]} />
+        <meshStandardMaterial color="#1F3A44" roughness={0.2} metalness={0.2} />
+      </mesh>
+      {[-0.5, 0.5].map((x) => (
+        <mesh key={x} position={[x, 1.2, 0]} castShadow>
+          <boxGeometry args={[0.1, 1.6, 0.1]} />
+          <meshStandardMaterial color="#6E5232" roughness={1} />
+        </mesh>
+      ))}
+      <mesh position={[0, 2.0, 0]} castShadow>
+        <boxGeometry args={[1.3, 0.08, 0.4]} />
+        <meshStandardMaterial color="#C8552E" roughness={0.8} />
+      </mesh>
+      <mesh position={[0, 1.65, 0]} rotation={[0, 0, Math.PI / 2]}>
+        <cylinderGeometry args={[0.04, 0.04, 1.1, 6]} />
+        <meshStandardMaterial color="#5A3E24" roughness={1} />
+      </mesh>
+      {/* the bucket, resting on the rim */}
+      <mesh position={[0.42, 0.92, 0.28]} castShadow>
+        <cylinderGeometry args={[0.13, 0.11, 0.24, 10]} />
+        <meshStandardMaterial color="#7A5A3C" roughness={0.9} />
+      </mesh>
     </group>
   )
 }
@@ -123,6 +310,30 @@ function PlazaBlock({ id, position, color, size = 0.6 }: { id: string; position:
   )
 }
 
+/** The settlement, a painted cut-out on the rock behind the beds; the lit one takes over with the pour. */
+function Settlement({ lit }: { lit: boolean }) {
+  return (
+    <group position={[15, 5.6, -21]} rotation={[0, -0.42, 0]} name="settlement">
+      <Card id={lit ? 'landing-cutout-lit' : 'landing-cutout'} height={12.5} position={[0, 0, 0]}>
+        <group>
+          <mesh position={[0, -3.5, 0]}>
+            <boxGeometry args={[12, 5, 4]} />
+            <meshStandardMaterial color="#C9B58E" roughness={1} />
+          </mesh>
+          <mesh position={[-3, 1, 0]}>
+            <boxGeometry args={[4, 4, 3.5]} />
+            <meshStandardMaterial color="#D9A26A" roughness={1} />
+          </mesh>
+          <mesh position={[5.5, 2, 0]}>
+            <cylinderGeometry args={[0.9, 1.1, 8, 10]} />
+            <meshStandardMaterial color="#B98A5A" roughness={1} />
+          </mesh>
+        </group>
+      </Card>
+    </group>
+  )
+}
+
 function FarIsland({ lit }: { lit: boolean }) {
   const smoke = useRef<THREE.Group>(null)
   useFrame((st) => {
@@ -138,7 +349,7 @@ function FarIsland({ lit }: { lit: boolean }) {
     })
   })
   return (
-    <group position={[-38, -6, -52]}>
+    <group position={[-38, -2.5, -52]}>
       <mesh>
         <cylinderGeometry args={[11, 10, 1.4, 20]} />
         <meshStandardMaterial color="#C9B58E" roughness={1} />
@@ -171,10 +382,10 @@ function FarIsland({ lit }: { lit: boolean }) {
 function FloatingRocks() {
   const rocks = useMemo(
     () => [
-      [22, -3, -8, 1.6],
-      [-19, 2, 6, 1.1],
-      [12, 5, -30, 2.2],
-      [-8, -8, 24, 1.4],
+      [26, 0.4, -6, 1.6],
+      [-21, 1.2, 8, 1.1],
+      [-17, 2.5, -34, 2.2],
+      [-10, 0.6, 26, 1.4],
     ],
     [],
   )
@@ -183,7 +394,7 @@ function FloatingRocks() {
     const grp = g.current
     if (!grp) return
     grp.children.forEach((c, i) => {
-      c.position.y = rocks[i][1] + Math.sin(st.clock.elapsedTime * 0.5 + i) * 0.35
+      c.position.y = rocks[i][1] + Math.sin(st.clock.elapsedTime * 0.5 + i) * 0.2
       c.rotation.y += 0.0015
     })
   })
