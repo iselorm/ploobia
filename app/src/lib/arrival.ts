@@ -6,8 +6,6 @@ export const ARRIVAL_SEEN = 'ploobia.arrival.v1'
 export const flight = { seconds: 0, paused: false }
 export type Point = [number, number, number]
 export const PLANE_DOCK: Point = [1, -0.1, 20]
-const ease = (t: number) => t * t * (3 - 2 * t)
-const mix = (a: Point, b: Point, t: number): Point => a.map((v, i) => v + (b[i] - v) * t) as Point
 export function dockCamera(): { camera: Point; look: Point } {
   const [x, y, z] = LANDING_SPAWN
   return { camera: [x, y + 0.6 + 2.9 * Math.sin(0.42) * 1.6, z + 6.2 * Math.cos(0.42)], look: [x, y + 0.6, z] }
@@ -20,12 +18,33 @@ const ROUTE: { t: number; plane: Point; camera: Point; look: Point }[] = [
   { t: 26, plane: PLANE_DOCK, camera: [8, 3, 28], look: [3, 0.7, 18] },
   { t: ARRIVAL_SECONDS, plane: PLANE_DOCK, ...dockCamera() },
 ]
-export function arrivalPose(seconds: number) {
+type Pose = { plane: Point; camera: Point; look: Point }
+const keys = ['plane', 'camera', 'look'] as const
+/** Monotone Hermite tangents retain momentum without overshooting the waterline. */
+const tangents = ROUTE.map((p, i) => {
+  const result: Pose = { plane: [0, 0, 0], camera: [0, 0, 0], look: [0, 0, 0] }
+  for (const key of keys) for (let axis = 0; axis < 3; axis++) {
+    if (i === ROUTE.length - 1) continue
+    const next = ROUTE[i + 1]
+    const right = (next[key][axis] - p[key][axis]) / (next.t - p.t)
+    if (i === 0) { result[key][axis] = right; continue }
+    const prev = ROUTE[i - 1]
+    const left = (p[key][axis] - prev[key][axis]) / (p.t - prev.t)
+    result[key][axis] = left * right > 0 ? 2 * left * right / (left + right) : 0
+  }
+  return result
+})
+/** Supply an output object in frame loops to avoid garbage collection during the flight. */
+export function arrivalPose(seconds: number, out: Pose = { plane: [0, 0, 0], camera: [0, 0, 0], look: [0, 0, 0] }) {
   const t = Math.max(0, Math.min(ARRIVAL_SECONDS, seconds))
   const index = Math.max(0, ROUTE.findIndex((p) => p.t >= t) - 1)
-  const a = ROUTE[index], b = ROUTE[index + 1]
-  const u = ease((t - a.t) / (b.t - a.t))
-  return { plane: mix(a.plane, b.plane, u), camera: mix(a.camera, b.camera, u), look: mix(a.look, b.look, u) }
+  const a = ROUTE[index], b = ROUTE[index + 1], span = b.t - a.t
+  const u = (t - a.t) / span, u2 = u * u, u3 = u2 * u
+  for (const key of keys) for (let axis = 0; axis < 3; axis++) {
+    out[key][axis] = (2 * u3 - 3 * u2 + 1) * a[key][axis] + (u3 - 2 * u2 + u) * span * tangents[index][key][axis]
+      + (-2 * u3 + 3 * u2) * b[key][axis] + (u3 - u2) * span * tangents[index + 1][key][axis]
+  }
+  return out
 }
 export function arrivalBeat(t: number) {
   if (t < 5) return { title: 'Through the clouds', line: 'Wait… I can see something!' }

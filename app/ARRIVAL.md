@@ -29,3 +29,17 @@ Prototype limitations: simple procedural aircraft and regional landmarks; Ploob'
 reactions are captions, with synthesized engine audio. A rendered GPU playthrough
 is still required for visual timing and collision review. Arrival progress itself
 is not saved; leaving mid-flight restarts it unless it was completed or skipped.
+
+## Arrival polish
+
+The route now preserves velocity through the island reveal and eases into the
+waterline without overshooting. Frame samples reuse their buffers. The clock uses
+visible elapsed time; pausing and switching tabs do not skip the arrival.
+The aircraft has wing tips, a nose hub, cabin stripes and rear float struts, with
+subtle banking during the flyover. Tropical canopies and sandy shore rims clarify
+the distant islands. Sixteen moving spray particles spread behind the floats at
+touchdown, accompanied by filtered water noise that fades during taxiing. All
+sound still uses the existing gesture-started, mute-controlled audio graph.
+
+Velocity continuity, waterline bounds and the exact final camera pose are covered
+by the arrival model checks. Visual framing and audio balance need device review.

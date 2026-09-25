@@ -17,6 +17,21 @@ try {
     const a = arrivalPose(t - 0.001), b = arrivalPose(t + 0.001)
     for (const key of ['plane', 'camera', 'look']) assert.ok(Math.hypot(...a[key].map((v, i) => v - b[key][i])) < 0.01, `continuous ${key} at ${t}s`)
   }
+  for (const t of [5, 12, 20, 26]) {
+    const h = 0.0001, before = arrivalPose(t - h), at = arrivalPose(t), after = arrivalPose(t + h)
+    for (const key of ['plane', 'camera', 'look']) for (let axis = 0; axis < 3; axis++) {
+      const incoming = (at[key][axis] - before[key][axis]) / h
+      const outgoing = (after[key][axis] - at[key][axis]) / h
+      assert.ok(Math.abs(incoming - outgoing) < 0.001, `continuous velocity: ${key}, ${axis}, ${t}s`)
+    }
+  }
+  for (const t of [5, 12]) {
+    const a = arrivalPose(t - 0.001).plane, b = arrivalPose(t + 0.001).plane
+    assert.ok(Math.hypot(...a.map((v, i) => v - b[i])) / 0.002 > 1, 'aircraft keeps moving through reveal waypoints')
+  }
+  const output = arrivalPose(0)
+  assert.equal(arrivalPose(12, output), output, 'frame-loop output can be reused')
+  assert.deepEqual(output, arrivalPose(12))
   assert.deepEqual(arrivalPose(30).plane, PLANE_DOCK)
   assert.deepEqual(arrivalPose(30).camera, dockCamera().camera)
   assert.deepEqual(arrivalPose(30).look, dockCamera().look)
