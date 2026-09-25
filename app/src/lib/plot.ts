@@ -27,7 +27,7 @@
  */
 
 import { rngFor } from './challenge'
-import { CAN, airOf, asFound, newBed, probeWord, runDays, stepHour, storedOf, type Bed, type ProbeWord, type RunResult, type Start } from './roots'
+import { AIR_OK, CAN, P_DEPLETION, SOIL, airOf, asFound, newBed, probeWord, runDays, stepHour, storedOf, type Bed, type ProbeWord, type RunResult, type Start } from './roots'
 
 /* ----------------------------------------------------------------------------
  * Constants
@@ -333,6 +333,53 @@ export function skyForHour(hour: number): number {
 export function secondsToDawn(run: PlotRun): number {
   if (run.phase !== 'running') return 0
   return Math.max(1, Math.ceil((24 - run.hour - run.acc) / HOURS_PER_SECOND))
+}
+
+/** The hour of the running day, in words a child reads at a glance — the plate and the day ring say the same. */
+export const DAY_PHASES = ['Sunrise', 'Morning', 'Afternoon', 'Sunset', 'Night', 'Before dawn'] as const
+export type DayPhase = (typeof DAY_PHASES)[number]
+
+export function dayPhaseIndex(hour: number): number {
+  const h = ((hour % 24) + 24) % 24
+  if (h < 2) return 0
+  if (h < 11) return 1
+  if (h < 15) return 2
+  if (h < 19.5) return 3
+  if (h < 22) return 4
+  return 5
+}
+
+export function dayPhase(hour: number): DayPhase {
+  return DAY_PHASES[dayPhaseIndex(hour)]
+}
+
+/**
+ * The gauges' scales, from the model's own thresholds (Selorm, 25 Sep: the
+ * dials and the ring). Water runs wilting point → porosity, and the probe's
+ * words sit where the probe reads them: SOAKED when the air in the pores is
+ * under AIR_OK, DRY when more than P_DEPLETION of the available water is
+ * gone. Air runs 0 → a quarter of the soil's volume. The leaf is firmness,
+ * with the floor (steady hands) and the standing line (rescue) on it.
+ */
+export const GAUGE = (() => {
+  const c = SOIL.clay
+  const span = c.phi - c.wp
+  return {
+    water: (theta: number) => Math.max(0, Math.min(1, (theta - c.wp) / span)),
+    soakedAt: (c.phi - AIR_OK - c.wp) / span,
+    dryAt: (c.fc - P_DEPLETION * (c.fc - c.wp) - c.wp) / span,
+    air: (air: number) => Math.max(0, Math.min(1, air / 0.25)),
+    /** Air words at the bar's scale: little under AIR_OK, some to 0.16, plenty above. */
+    airLittleAt: AIR_OK / 0.25,
+    airSomeAt: 0.16 / 0.25,
+    floor: CARE_FIRM,
+    standing: RESCUE_FIRM,
+  }
+})()
+
+export type AirWord = 'little' | 'some' | 'plenty'
+export function airWord(air: number): AirWord {
+  return air < AIR_OK ? 'little' : air < 0.16 ? 'some' : 'plenty'
 }
 
 /* ----------------------------------------------------------------------------

@@ -49,6 +49,14 @@ async function open(viewport, { touch = false } = {}) {
 const world = (page) => page.evaluate(() => window.__world.get())
 const plot = (page) => page.evaluate(() => window.__world.get().plot)
 const run = (page) => page.evaluate(() => window.__world.plot.run())
+/** The day ring in the scene (DayRing.tsx): its state as the scene last drew it. */
+const ring = (page) =>
+  page.evaluate(() => {
+    const g = window.__world.scene.getObjectByName('day-ring')
+    if (!g) return null
+    const cam = window.__world.cam()
+    return { visible: g.visible, mode: g.userData.mode, label: g.userData.label, bed: g.userData.bed, pos: [g.position.x, g.position.y, g.position.z], cam }
+  })
 const waitFor = (page, fn, ms = 15000) => page.waitForFunction(fn, null, { timeout: ms })
 const goto = async (page, x, z) => {
   await page.evaluate(([x, z]) => window.__world.setPos(x, 0.6, z), [x, z])
@@ -180,6 +188,10 @@ async function toTrial(page, { name = 'Leafy 7', said = 3 } = {}) {
   check('the brief opens after the first probe', await page.getByTestId('plot-brief').isVisible())
   check('and refuses to proceed without a number', await page.getByTestId('plot-say').isDisabled())
   check('the brief carries the probe\'s word back, not a cause', await page.getByTestId('plot-brief').textContent().then((t) => /The probe says SOAKED/.test(t) && !GATE.test(t)))
+  await page.waitForTimeout(300)
+  const rg0 = await ring(page)
+  check('the day ring stands at Nara\'s bed with the probe\'s word in it', !!rg0 && rg0.visible && rg0.mode === 'word' && rg0.label === 'SOAKED' && rg0.bed === 'first' && Math.hypot(rg0.pos[0] - 0.5, rg0.pos[2] - 1.2) < 0.9, JSON.stringify(rg0))
+  check('… a step in front of the bed, toward the camera', !!rg0 && Math.hypot(rg0.pos[0] - rg0.cam[0], rg0.pos[2] - rg0.cam[2]) < Math.hypot(0.5 - rg0.cam[0], 1.2 - rg0.cam[2]))
 
   // the Lens: evidence, no sentence (the toolbelt button — the brief's input holds the keys)
   await resilientClick(page.getByTestId('lens'), { label: 'Lens' })
@@ -207,6 +219,9 @@ async function toTrial(page, { name = 'Leafy 7', said = 3 } = {}) {
   await waitFor(page, () => window.__world.plot.run()?.phase === 'running')
   check('the plate says the day is running', await page.getByTestId('plot-plate').getAttribute('data-phase').then((v) => v === 'running'))
   check('… with a countdown to the next dawn', await page.getByTestId('plot-countdown').textContent().then((t) => /\d s to dawn/.test(t)))
+  await page.waitForTimeout(150)
+  const rg1 = await ring(page)
+  check('the ring is the day\'s clock while it runs: the phase and the seconds', !!rg1 && rg1.visible && rg1.mode === 'day' && /^(Sunrise|Morning|Afternoon|Sunset|Night|Before dawn) · \d s$/.test(rg1.label ?? ''), rg1?.label)
   const sunRunning = await page.evaluate(() => window.__world.sun())
   await page.evaluate(() => window.__world.plot.runDay())
   await waitFor(page, () => window.__world.plot.run()?.phase === 'dawn')
@@ -217,7 +232,10 @@ async function toTrial(page, { name = 'Leafy 7', said = 3 } = {}) {
   check('the plate reads it', await page.getByTestId('plot-firm').textContent().then((t) => /0\.3[2-4]/.test(t)))
   check('the sky is the trial\'s: dawn glow at the pause, brighter as the day ran', Math.abs((await page.evaluate(() => window.__world.sun())) - 0.46) < 0.03 && sunRunning > 0.5, `${sunRunning} → ${await page.evaluate(() => window.__world.sun())}`)
   check('a new dawn asks for the probe first, and the water and air bars are greyed until it goes in', (await page.getByTestId('plot-clock').getAttribute('data-state')) === 'unprobed' && (await page.getByTestId('plot-word').textContent()).includes('probe first') && (await page.getByTestId('plot-eq').getAttribute('data-stale')) === 'true')
-  check('the equaliser has water, air and the leaf, the goal on the leaf', (await page.getByTestId('eq-water').count()) === 1 && (await page.getByTestId('eq-air').count()) === 1 && (await page.getByTestId('eq-firm').textContent()).toLowerCase().includes('standing'))
+  check('three dials — water, air and the leaf, the standing zone on the leaf', (await page.getByTestId('eq-water').count()) === 1 && (await page.getByTestId('eq-air').count()) === 1 && (await page.getByTestId('eq-firm').textContent()).toLowerCase().includes('standing') && (await page.locator('[data-testid=eq-firm] > svg path').count()) >= 4)
+  const rg2 = await ring(page)
+  check('at a new dawn the ring asks for the probe', !!rg2 && rg2.visible && rg2.mode === 'probe' && rg2.label === 'PROBE', JSON.stringify(rg2 && { mode: rg2.mode, label: rg2.label }))
+  check('the dials name what they read, for a screen reader too', await page.getByTestId('eq-firm').locator('svg').first().getAttribute('aria-label').then((t) => /^Leaf: 0\.3\d/.test(t ?? '')))
   // change my number
   await resilientClick(page.getByTestId('plot-revise'), { label: 'change my number' })
   await waitFor(page, () => !!document.querySelector('[data-testid=plot-brief]'))
@@ -296,6 +314,8 @@ async function toTrial(page, { name = 'Leafy 7', said = 3 } = {}) {
   check('cans on 7 and 10 end standing (firm ≥ 0.8 at the last noon)', done.days[13].firm13 >= 0.8 && (await plot(page)).rescuedFirst, done.days[13].firm13.toFixed(2))
   await page.waitForTimeout(300)
   check("the run over, the child's own Look is back (Day)", (await page.evaluate(() => window.__world.sun())) === 1)
+  const ringGone = await waitFor(page, () => window.__world.scene.getObjectByName('day-ring')?.visible === false, 6000).then(() => true, () => false)
+  check('and the ring fades out with it', ringGone)
   await waitFor(page, () => !!document.querySelector('[data-testid=rescue-line]'))
   const rl = await page.getByTestId('rescue-line').textContent()
   check('the rescue line: Still standing · 2 cans · you said 2', /Still standing · 2 cans · you said 2/.test(rl), rl)
@@ -319,6 +339,9 @@ async function toTrial(page, { name = 'Leafy 7', said = 3 } = {}) {
   await page.evaluate(() => window.__world.plot.probe())
   await waitFor(page, () => document.querySelector('[data-testid=plot-brief]')?.getAttribute('data-bed') === 'second')
   check('the far bed asks for its own number after the first probe', await page.getByTestId('plot-brief').textContent().then((t) => /this bed take to stay standing for the week/.test(t)))
+  await page.waitForTimeout(300)
+  const rg3 = await ring(page)
+  check('the ring has moved to the far bed, DRY in it', !!rg3 && rg3.visible && rg3.bed === 'second' && rg3.label === 'DRY' && Math.hypot(rg3.pos[0] + 9.5, rg3.pos[2] + 1) < 0.9, JSON.stringify(rg3 && { bed: rg3.bed, label: rg3.label, pos: rg3.pos.map((v) => v.toFixed(2)) }))
   check('Pour and Wait are shut until it is said', await page.getByTestId('plot-wait').isDisabled())
   await page.getByTestId('plot-cans').fill('3')
   await resilientClick(page.getByTestId('plot-say'), { label: 'Say it' })

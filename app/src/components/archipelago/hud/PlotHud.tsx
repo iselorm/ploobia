@@ -23,7 +23,8 @@ import {
   type PlotState,
   type WorldState,
 } from '@/lib/archipelago'
-import { CARE_FIRM, RESCUE_FIRM, cansUsed, everyMorning, methodSteps, methodReply, plateUp, recordOf, saidNow, secondsToDawn, steadyHands, type PlotRecord, type PlotRun } from '@/lib/plot'
+import { CARE_FIRM, GAUGE, RESCUE_FIRM, airWord, cansUsed, dayPhase, everyMorning, methodSteps, methodReply, plateUp, recordOf, saidNow, secondsToDawn, steadyHands, type PlotRecord, type PlotRun } from '@/lib/plot'
+import { AIR_COLOR, LEAF_COLOR, PLOT_CREAM, WORD_COLOR, leafColor } from '../plotColors'
 import { ROOTS_CONSTANTS, SOIL, airOf, newBed, storedOf } from '@/lib/roots'
 import { judgeWhyOf, TRUST } from '@/lib/whyjudge'
 import { WORLD_TEXT } from '@/lib/worldtext'
@@ -126,20 +127,16 @@ export function PlotBody({ onRevise }: { onRevise: () => void }) {
           {/* the clock: the day running down to the next dawn, or the dawn waiting on the probe */}
           <div className="mt-1" data-testid="plot-clock" data-state={running ? 'running' : reading ? 'read' : 'unprobed'}>
             {running ? (
-              <>
-                <div className="flex items-baseline justify-between text-[11px] font-extrabold text-[#F6F2E8]">
-                  <span>{dayPhase(run.hour + run.acc)}</span>
-                  <span className="tabular-nums" data-testid="plot-countdown">
-                    {secondsToDawn(run)} s to dawn
-                  </span>
-                </div>
-                <div className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-[#F6F2E8]/15">
-                  <div className="h-full rounded-full bg-[#F0B354] transition-[width] duration-150" style={{ width: `${((run.hour + run.acc) / 24) * 100}%` }} />
-                </div>
-              </>
+              // the day's clock is the ring at the bed (DayRing); here, the same words in one line
+              <p className="flex items-baseline justify-between gap-2 text-[11px] font-extrabold text-[#F6F2E8]">
+                <span>{dayPhase(run.hour + run.acc)}</span>
+                <span className="tabular-nums whitespace-nowrap" data-testid="plot-countdown">
+                  {secondsToDawn(run)} s to dawn
+                </span>
+              </p>
             ) : reading ? (
               <p className="text-[11px] font-extrabold text-[#F6F2E8]" data-testid="plot-word">
-                <span className="text-[#F0B354]">Probe</span> · {reading.word}
+                <span className="text-[#F0B354]">Probe</span> · <span style={{ color: WORD_COLOR[reading.word] }}>{reading.word}</span>
                 {caps.quantitative && (
                   <span className="text-[#F6F2E8]/75">
                     {' '}
@@ -155,9 +152,9 @@ export function PlotBody({ onRevise }: { onRevise: () => void }) {
               </p>
             )}
           </div>
-          {/* the equaliser: water and air from the last probe, the leaf live, the goal on it */}
-          <Equalizer theta={lastProbed?.theta ?? null} air={lastProbed?.air ?? null} stale={stale} firm={firm} worst={run.worst13} stood={p.stood} numbers={caps.quantitative} />
-          <div className="mt-1 flex items-baseline justify-between">
+          {/* the dials: water and air from the last probe, the leaf live, the goal on it */}
+          <Dials theta={lastProbed?.theta ?? null} air={lastProbed?.air ?? null} stale={stale} firm={firm} worst={run.worst13} stood={p.stood} numbers={caps.quantitative} />
+          <div className="mt-1 flex items-baseline justify-between gap-x-2">
             <span className="text-[10px] font-extrabold tracking-wide text-[#F0B354] uppercase">Cans</span>
             <span className="text-[12px] font-extrabold tabular-nums text-[#F6F2E8]">
               <span data-testid="plot-used">{used}</span> used · <span data-testid="plot-said">{said ?? '—'}</span> said
@@ -211,10 +208,10 @@ export function PlotBody({ onRevise }: { onRevise: () => void }) {
 }
 
 /** The leaf: droops with the value, green at the first stand. */
-function LeafGauge({ firm, stood, small = false }: { firm: number; stood: boolean; small?: boolean }) {
+function LeafGauge({ firm, stood, small = false, tiny = false }: { firm: number; stood: boolean; small?: boolean; tiny?: boolean }) {
   const angle = (1 - Math.max(0, Math.min(1, firm))) * 70
   const hue = 40 + 60 * firm
-  const size = small ? 26 : 44
+  const size = tiny ? 16 : small ? 26 : 44
   return (
     <svg viewBox="0 0 44 44" width={size} height={size} role="img" aria-label={`Leaf firmness ${firm.toFixed(2)}`} data-testid="plot-leaf" data-stood={stood}>
       <line x1={22} y1={40} x2={22} y2={18} stroke="#8A6A45" strokeWidth={3} strokeLinecap="round" />
@@ -226,79 +223,142 @@ function LeafGauge({ firm, stood, small = false }: { firm: number; stood: boolea
   )
 }
 
-/** The hour of the running day, in words a child reads at a glance. */
-function dayPhase(hour: number): string {
-  const h = ((hour % 24) + 24) % 24
-  if (h < 2) return 'Sunrise'
-  if (h < 11) return 'Morning'
-  if (h < 15) return 'Afternoon'
-  if (h < 19.5) return 'Sunset'
-  if (h < 22) return 'Night'
-  return 'Before dawn'
-}
 
 /**
- * The equaliser (Selorm, after the first test): three bars that rise and
- * fall as the fortnight goes — WATER and AIR from the last probe (greyed
- * until the probe goes in again), the LEAF live with the goal drawn on it.
- * No good/bad zone on water or air: those are readings; the goal is on the
- * leaf, where the goal is. The bars move together, and that is the lesson
- * arriving without a sentence.
+ * The dials (Selorm, 25 Sep, chosen over the equaliser bars): three gauges
+ * that read like a cockpit — WATER and AIR from the last probe (dimmed until
+ * the probe goes in again), the LEAF live. Each arc is coloured by what the
+ * reading means, from the model's own thresholds (`GAUGE`): water dry · damp
+ * · soaked where the probe says those words, air little · some · plenty,
+ * the leaf below the floor · close · standing. The word is always under the
+ * needle, so colour never speaks alone; the ends of each arc are named.
  */
-function Equalizer({ theta, air, stale, firm, worst, stood, numbers }: { theta: number | null; air: number | null; stale: boolean; firm: number; worst: number; stood: boolean; numbers: boolean }) {
-  const clay = SOIL.clay
-  // water: wilting point → porosity across the bar; the probe's words at their thresholds
-  const water = theta == null ? null : Math.max(0, Math.min(1, (theta - clay.wp) / (clay.phi - clay.wp)))
-  const soakedAt = (clay.phi - 0.1 - clay.wp) / (clay.phi - clay.wp)
-  const dryAt = (clay.fc - 0.35 * (clay.fc - clay.wp) - clay.wp) / (clay.phi - clay.wp)
-  const airBar = air == null ? null : Math.max(0, Math.min(1, air / 0.25))
+function Dials({ theta, air, stale, firm, worst, stood, numbers }: { theta: number | null; air: number | null; stale: boolean; firm: number; worst: number; stood: boolean; numbers: boolean }) {
+  const water = theta == null ? null : GAUGE.water(theta)
+  const airV = air == null ? null : GAUGE.air(air)
+  const wWord = water == null ? null : water >= GAUGE.soakedAt ? 'SOAKED' : water <= GAUGE.dryAt ? 'DRY' : 'DAMP'
+  const aWord = air == null ? null : airWord(air)
   return (
-    <div className="mt-1.5 grid grid-cols-3 gap-2" data-testid="plot-eq" data-stale={stale}>
-      <Column label="Water" testid="eq-water" value={water} text={theta == null ? 'probe' : numbers ? `θ ${theta.toFixed(2)}` : wordFor(water, soakedAt, dryAt)} color="#4F8AA8" stale={stale} marks={[{ at: soakedAt, label: 'soaked' }, { at: dryAt, label: 'dry' }]} />
-      <Column label="Air" testid="eq-air" value={airBar} text={air == null ? 'probe' : numbers ? `${Math.round(air * 100)} %` : air < 0.1 ? 'little' : air < 0.16 ? 'some' : 'plenty'} color="#F6F2E8" stale={stale} />
-      <Column
+    <div className="mt-1.5 grid grid-cols-3 gap-1" data-testid="plot-eq" data-stale={stale}>
+      <Dial
+        label="Water"
+        testid="eq-water"
+        value={water}
+        zones={[
+          [0, GAUGE.dryAt, WORD_COLOR.DRY],
+          [GAUGE.dryAt, GAUGE.soakedAt, WORD_COLOR.DAMP],
+          [GAUGE.soakedAt, 1, WORD_COLOR.SOAKED],
+        ]}
+        ends={['dry', 'soaked']}
+        text={theta == null ? 'probe' : numbers ? `θ ${theta.toFixed(2)}` : (wWord ?? '').toLowerCase()}
+        color={wWord ? WORD_COLOR[wWord] : PLOT_CREAM}
+        stale={stale}
+      />
+      <Dial
+        label="Air"
+        testid="eq-air"
+        value={airV}
+        zones={[
+          [0, GAUGE.airLittleAt, AIR_COLOR.little],
+          [GAUGE.airLittleAt, GAUGE.airSomeAt, AIR_COLOR.some],
+          [GAUGE.airSomeAt, 1, AIR_COLOR.plenty],
+        ]}
+        ends={['none', 'plenty']}
+        text={air == null ? 'probe' : numbers ? `${Math.round(air * 100)} %` : (aWord ?? '')}
+        color={aWord ? AIR_COLOR[aWord] : PLOT_CREAM}
+        stale={stale}
+      />
+      <Dial
         label="Leaf"
         testid="eq-firm"
         value={firm}
+        zones={[
+          [0, GAUGE.floor, LEAF_COLOR.down],
+          [GAUGE.floor, GAUGE.standing, LEAF_COLOR.close],
+          [GAUGE.standing, 1, LEAF_COLOR.standing],
+        ]}
+        ends={['down', 'standing']}
         text={firm.toFixed(2)}
-        color={stood ? '#7BD389' : '#E8A33D'}
+        color={leafColor(firm, GAUGE.floor, GAUGE.standing)}
         stale={false}
-        goal={{ from: RESCUE_FIRM, label: 'standing' }}
-        floor={CARE_FIRM}
         worst={worst}
-        icon={<LeafGauge firm={firm} stood={stood} small />}
+        icon={<LeafGauge firm={firm} stood={stood} tiny />}
         valueTestid="plot-firm"
       />
     </div>
   )
 }
 
-function wordFor(water: number | null, soakedAt: number, dryAt: number): string {
-  if (water == null) return 'probe'
-  return water >= soakedAt ? 'soaked' : water <= dryAt ? 'dry' : 'damp'
-}
-
-function Column({ label, testid, value, text, color, stale, marks = [], goal, floor, worst, icon, valueTestid }: { label: string; testid: string; value: number | null; text: string; color: string; stale: boolean; marks?: { at: number; label: string }[]; goal?: { from: number; label: string }; floor?: number; worst?: number; icon?: React.ReactNode; valueTestid?: string }) {
-  const h = 60
+/** One gauge: a half-circle arc in coloured zones, a needle, the ends named, the reading under it. */
+function Dial({
+  label,
+  testid,
+  value,
+  zones,
+  ends,
+  text,
+  color,
+  stale,
+  worst,
+  icon,
+  valueTestid,
+}: {
+  label: string
+  testid: string
+  value: number | null
+  zones: [number, number, string][]
+  ends: [string, string]
+  text: string
+  color: string
+  stale: boolean
+  worst?: number
+  icon?: React.ReactNode
+  valueTestid?: string
+}) {
+  const cx = 50
+  const cy = 52
+  const R = 38
+  const pt = (v: number, r = R): [number, number] => {
+    const a = Math.PI * (1 - Math.max(0, Math.min(1, v)))
+    return [cx + r * Math.cos(a), cy - r * Math.sin(a)]
+  }
+  const arc = (a0: number, a1: number) => {
+    const [x0, y0] = pt(a0)
+    const [x1, y1] = pt(a1)
+    return `M${x0.toFixed(2)} ${y0.toFixed(2)} A${R} ${R} 0 0 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`
+  }
   const v = value ?? 0
+  const [nx, ny] = pt(v, R - 12)
+  const dim = stale ? 0.42 : 1
+  const aria = value == null ? `${label}: probe to read` : `${label}: ${text}${stale ? ' (last probe)' : ''}`
   return (
     <div className="flex flex-col items-center" data-testid={testid} data-value={value == null ? '' : v.toFixed(3)} data-stale={stale}>
       <span className="text-[9px] font-extrabold tracking-wide text-[#F0B354] uppercase">{label}</span>
-      <div className="relative mt-0.5 w-full overflow-hidden rounded-md bg-[#F6F2E8]/12" style={{ height: h }}>
-        {goal && <div className="absolute inset-x-0 top-0 bg-[#7BD389]/25" style={{ height: `${(1 - goal.from) * 100}%` }} title={goal.label} />}
-        {goal && <span className="absolute right-1 top-0.5 text-[8px] font-extrabold uppercase text-[#7BD389]">{goal.label}</span>}
-        {floor != null && <div className="absolute inset-x-0 h-px bg-[#FF8A5C]" style={{ bottom: `${floor * 100}%` }} title="steady hands" />}
-        {marks.map((m) => (
-          <div key={m.label} className="absolute inset-x-0 h-px bg-[#F6F2E8]/35" style={{ bottom: `${m.at * 100}%` }} title={m.label} />
-        ))}
-        {value != null && (
-          <div className={cn('absolute inset-x-0 bottom-0 rounded-md transition-[height] duration-300', stale && 'opacity-35')} style={{ height: `${v * 100}%`, background: color }} />
-        )}
-        {worst != null && worst < 1 && <div className="absolute inset-x-0 h-px bg-[#F6F2E8]/80" style={{ bottom: `${worst * 100}%` }} title="lowest since day 1" />}
-        {icon && <div className="absolute left-0.5 bottom-0.5">{icon}</div>}
-      </div>
-      <span className={cn('mt-0.5 text-[11px] font-extrabold tabular-nums', stale ? 'text-[#F6F2E8]/50' : 'text-[#F6F2E8]')} data-testid={valueTestid}>
-        {text}
+      <svg viewBox="0 0 100 58" className="w-full max-w-[112px]" role="img" aria-label={aria}>
+        <title>{`${label}: ${ends[0]} to ${ends[1]}`}</title>
+        <g opacity={dim}>
+          <path d={arc(0, 1)} fill="none" stroke="rgba(246,242,232,0.12)" strokeWidth={11} />
+          {zones.map(([a0, a1, c]) => (
+            <path key={a0} d={arc(a0, a1)} fill="none" stroke={c} strokeOpacity={0.78} strokeWidth={10} />
+          ))}
+          {worst != null && worst < 1 && (
+            <circle cx={pt(worst, R + 8)[0]} cy={pt(worst, R + 8)[1]} r={2.4} fill="#F6F2E8">
+              <title>lowest since day 1</title>
+            </circle>
+          )}
+          {value != null && (
+            <>
+              <line x1={cx} y1={cy} x2={nx} y2={ny} stroke="#F6F2E8" strokeWidth={3.2} strokeLinecap="round" />
+              <circle cx={cx} cy={cy} r={4} fill="#F6F2E8" />
+            </>
+          )}
+        </g>
+      </svg>
+      <span className="flex items-center gap-0.5">
+        {icon}
+        <span className="text-[11px] font-extrabold tabular-nums" style={{ color: stale ? 'rgba(246,242,232,0.5)' : color }} data-testid={valueTestid}>
+          {text}
+        </span>
       </span>
     </div>
   )

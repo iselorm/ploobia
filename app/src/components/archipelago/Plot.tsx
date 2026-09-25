@@ -8,6 +8,7 @@ import { WORLD_TEXT } from '@/lib/worldtext'
 import { Card, TextPlane } from './Dressing'
 import { useWorldTexture } from './useWorldMesh'
 import { BEDS, MARKER_IN, MARKER_LEAN, PAGE, WELL } from './landingLayout'
+import DayRing from './DayRing'
 
 /**
  * The plot's things — S0. Three raised beds on the Landing: Nara's by the
@@ -62,6 +63,7 @@ export default function Plot() {
       <Fence up={p.stage === 'reward' || p.stage === 'done'} />
       <WetStreak visible={p.stage === 'arrive' || p.stage === 'met'} />
       <Page visible={p.stage === 'page'} />
+      <DayRing />
     </group>
   )
 }
