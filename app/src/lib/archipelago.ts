@@ -46,6 +46,20 @@ import {
   type PlotRecord,
   type PlotRun,
 } from './plot'
+import {
+  answerPause,
+  beginDispatch,
+  confirmChoice,
+  initialKeep,
+  keepStage,
+  readReport,
+  seenWords,
+  settleDispatch,
+  type HandoffChoice,
+  type Keep,
+  type KeepStage,
+  type PauseAnswer,
+} from './keep'
 
 /* ----------------------------------------------------------------------------
  * Zones and rings
@@ -345,6 +359,8 @@ export interface WorldState {
   resumed: boolean
   /** The interactable being talked to (a `talk` verb), or null. The card is the HUD's. */
   talk: string | null
+  /** S1 — the handoff and its fortnights (lib/keep.ts). Null until Nara asks, after S0. */
+  keep: Keep | null
 }
 
 /** Cabinets a courtyard door can open. Each is an existing arcade page; the door is the link. */
@@ -406,6 +422,7 @@ const initial = (): WorldState => ({
   talk: null,
   journal: { prediction: null, action: null, observed: null, explanation: null },
   plot: initialPlot(),
+  keep: null,
 })
 
 export const worldStore = createStore<WorldState>(initial)
@@ -1026,6 +1043,94 @@ export const PLOT_WHY: Why = {
 }
 
 /* ----------------------------------------------------------------------------
+ * S1 — The Handoff (storyboard v3.1). The model is lib/keep.ts; these are the
+ * store's verbs. Ability stays in `plot.competence`: S1 raises it there (the
+ * copies pause), never through a second copy.
+ * ------------------------------------------------------------------------- */
+
+/** Nara's question, judged against the method: three named wrong answers, each a rule she could run. */
+export const HANDOFF_WHY: Why = {
+  ask: 'So what should Nara do each morning?',
+  options: [
+    { key: 'right', text: 'Probe first; if it is soaked or damp, wait; if it is dry, one can; check again tomorrow.', right: true, line: 'That is the method you showed her — both beds.' },
+    { key: 'daily', text: 'Give it a can every morning.', right: false, line: 'A can every morning, whatever the probe says.' },
+    { key: 'droop', text: 'Give it a can the morning after the leaves go down.', right: false, line: 'Watering when the leaves say so, a day behind.' },
+    { key: 'leave', text: 'Leave it and let it sort itself out.', right: false, line: 'No water at all on the far bed.' },
+  ],
+}
+
+/** Can Nara ask yet: S0 finished and both beds' runs to hand. */
+export function keepAvailable(s: WorldState): boolean {
+  return s.plot.sent && s.plot.first != null && s.plot.run?.bed === 'second'
+}
+
+export function keepStageOf(s: WorldState): KeepStage | null {
+  return s.keep ? keepStage(s.keep) : null
+}
+
+/** Nara asks. The beds are copied from S0's end once; S0's own record is never rewritten. */
+export function openKeep(): void {
+  setWorld((s) => {
+    if (s.keep || !keepAvailable(s) || !s.plot.first || !s.plot.run) return {}
+    return { keep: initialKeep(s.plot.first.b, s.plot.run.b, seenWords(s.plot.run)) }
+  })
+}
+
+/** The child answered "Yes, that" to Nara's say-back. */
+export function confirmKeep(choice: HandoffChoice, record?: Keep['handoff']): void {
+  setWorld((s) => (s.keep ? { keep: confirmChoice(s.keep, choice, record) } : {}))
+}
+
+const abilityOf = (s: WorldState): Competence => s.plot.competence ?? 'copies'
+
+/**
+ * Begin a dispatch at Sela's board. The story fortnight waits for the child's
+ * return across the water; a practice fortnight is computed at once (no errand,
+ * no crates) and goes straight to its report.
+ */
+export function beginKeep(opts: { rain?: boolean } = {}): void {
+  setWorld((s) => {
+    if (!s.keep) return {}
+    let k = beginDispatch(s.keep, abilityOf(s), opts)
+    if (k === s.keep) return {}
+    if (k.dispatch?.kind === 'practice') k = settleDispatch(k, abilityOf(s))
+    return { keep: k }
+  })
+}
+
+/** Fourteen days, applied once: beds, report, crates, campaign day together. */
+export function settleKeep(): void {
+  setWorld((s) => {
+    if (!s.keep) return {}
+    const k = settleDispatch(s.keep, abilityOf(s))
+    return k === s.keep ? {} : { keep: k }
+  })
+}
+
+/** The report read: the next instruction can be given. */
+export function readKeep(): void {
+  setWorld((s) => {
+    if (!s.keep) return {}
+    const k = readReport(s.keep)
+    return k === s.keep ? {} : { keep: k }
+  })
+}
+
+/**
+ * The child answered Nara's pause. A right answer raises `copies` to `runs`
+ * through S0's own `raiseCompetence`; nothing ever lowers it.
+ */
+export function answerKeepPause(answer: PauseAnswer): void {
+  setWorld((s) => {
+    const d = s.keep?.dispatch
+    if (!s.keep || !d?.report || d.report.pauseDay == null || d.report.pauseAnswer) return {}
+    const keep = answerPause(s.keep, d.id, answer)
+    const competence = s.plot.competence ? raiseCompetence(s.plot.competence, answer.right) : s.plot.competence
+    return { keep, plot: { ...s.plot, competence } }
+  })
+}
+
+/* ----------------------------------------------------------------------------
  * Verbs the HUD and the explorer call
  * ------------------------------------------------------------------------- */
 
@@ -1057,6 +1162,8 @@ export function talkTo(id: string | null): void {
 
 export function crossPortal(to: ZoneId): void {
   setWorld((s) => ({ zone: to, ring: 'world', held: null, near: null, crossings: s.crossings + 1 }))
+  // The first return to the Landing with a fortnight out settles it — once (settleDispatch ignores a settled one).
+  if (to === 'landing') settleKeep()
 }
 
 export function lightHearth(fuel: FuelId): void {

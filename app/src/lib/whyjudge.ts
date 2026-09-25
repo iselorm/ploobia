@@ -10,7 +10,9 @@
  * asks a TypeSafe System One model. `VITE_WHY_URL` overrides the path for a
  * hosted world served from another origin; unset → same-origin `/api/why`.
  */
-import { WHYS, whyFacts, getWorld, type Why } from './archipelago'
+import { HANDOFF_WHY, WHYS, whyFacts, getWorld, type Why } from './archipelago'
+import { methodSteps, type PlotRun } from './plot'
+import { interpretHandoff, type HandoffOffer } from './keep'
 
 export type Verdict = 'right' | 'partial' | 'misconception' | 'off'
 
@@ -63,4 +65,24 @@ export async function judgeWhyOf(why: Why, answer: string, facts: Record<string,
   } finally {
     window.clearTimeout(timer)
   }
+}
+
+/**
+ * S1 — Nara's "So what do I do each morning?" in the child's own words.
+ * Returns which say-back(s) to show; never runs a rule, never raises
+ * ability (storyboard v3.1 §03). No network, a 503, or a low-confidence
+ * verdict → all five choices.
+ */
+export async function judgeHandoff(answer: string): Promise<HandoffOffer & { verdict: Judgement | null }> {
+  const s = getWorld()
+  const steps = methodSteps([s.plot.first, s.plot.run].filter((r): r is PlotRun => !!r))
+  const facts = {
+    probedEachDawn: steps.probe,
+    waitedWhenSoaked: steps.soakedWait,
+    pouredWhenDry: steps.dryCan,
+    checkedAgainAfterPouring: steps.checkAgain,
+    beds: "Nara's bed and the far bed",
+  }
+  const verdict = answer.trim() ? await judgeWhyOf(HANDOFF_WHY, answer, facts, 'landing.handoff', 0) : null
+  return { ...interpretHandoff(verdict, TRUST), verdict }
 }

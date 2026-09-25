@@ -28,7 +28,7 @@
  * `verify-keep-model.mjs` pins the figures and sweeps every valid S0 ending.
  */
 import { CAN, probeWord, stepHour, type Bed, type ProbeWord } from './roots'
-import { CARE_FIRM, DEAD_HEALTH, FORTNIGHT, POUR_HOUR, READ_HOUR, RESCUE_FIRM, type Competence } from './plot'
+import { CARE_FIRM, DEAD_HEALTH, FORTNIGHT, POUR_HOUR, READ_HOUR, RESCUE_FIRM, type Competence, type MethodSteps, type PlotRun } from './plot'
 
 /* ----------------------------------------------------------------------------
  * Vocabulary
@@ -329,6 +329,15 @@ export interface KeepReport {
   crates: number
   /** Nara's pause: the question waiting for the child. */
   pauseDay: number | null
+  /** The child's answer to the pause, once given. */
+  pauseAnswer?: PauseAnswer
+}
+
+export interface PauseAnswer {
+  /** Option index (Explorer) or -1 for own words only. */
+  choice: number
+  text: string | null
+  right: boolean
 }
 
 export interface Dispatch {
@@ -508,4 +517,173 @@ export function readReport(k: Keep): Keep {
 
 export function totalCrates(k: Keep): number {
   return k.crates.reduce((a, l) => a + l.crates, 0)
+}
+
+/* ----------------------------------------------------------------------------
+ * From S0, and back to the store
+ * ------------------------------------------------------------------------- */
+
+/** Probe words the child read, and so acted on, at a bed in S0 — the copies pause's reference. */
+export function seenWords(run: PlotRun | null): ProbeWord[] {
+  if (!run) return []
+  const out = new Set<ProbeWord>()
+  for (const d of run.days) if (d.probed) out.add(d.word)
+  if (run.today.probed) out.add(run.today.word)
+  return [...out]
+}
+
+/** Where the handoff stands, for the quest and the HUD. */
+export type KeepStage = 'ask' | 'ready' | 'away' | 'report' | 'read'
+
+export function keepStage(k: Keep): KeepStage {
+  const d = k.dispatch
+  if (d?.status === 'begun') return 'away'
+  if (d?.status === 'settled') return 'report'
+  if (k.confirmed) return 'ready'
+  return d ? 'read' : 'ask'
+}
+
+/** Record the child's answer to Nara's pause on the report it came from. Once only. */
+export function answerPause(k: Keep, dispatchId: number, answer: PauseAnswer): Keep {
+  const i = k.reports.findIndex((r) => r.dispatchId === dispatchId)
+  if (i < 0 || k.reports[i].pauseDay == null || k.reports[i].pauseAnswer) return k
+  const reports = k.reports.slice()
+  reports[i] = { ...reports[i], pauseAnswer: answer }
+  const dispatch = k.dispatch && k.dispatch.id === dispatchId && k.dispatch.report ? { ...k.dispatch, report: reports[i] } : k.dispatch
+  return { ...k, reports, dispatch }
+}
+
+/* ----------------------------------------------------------------------------
+ * The handoff's judge, read conservatively (v3.1 §03)
+ * ------------------------------------------------------------------------- */
+
+export interface HandoffVerdict {
+  verdict: 'right' | 'partial' | 'misconception' | 'off'
+  confidence: number
+  misconception: string | null
+}
+
+export interface HandoffOffer {
+  /** The one say-back to offer, when the judge is sure enough; otherwise null. */
+  candidate: HandoffChoice | null
+  /** The choices shown, in order. The child always confirms before anything runs. */
+  offer: HandoffChoice[]
+}
+
+/**
+ * What to put in front of the child after a typed answer. Never runs a rule
+ * and never raises ability: a verdict only chooses which say-back(s) to show.
+ */
+export function interpretHandoff(j: HandoffVerdict | null, trust: number): HandoffOffer {
+  const all: HandoffChoice[] = [...CHOICES]
+  if (!j || j.confidence < trust) return { candidate: null, offer: all }
+  if (j.verdict === 'right') return { candidate: 'right', offer: ['right'] }
+  if (j.verdict === 'misconception') {
+    const key = j.misconception
+    if (key === 'daily' || key === 'droop' || key === 'leave') return { candidate: key, offer: [key] }
+    // "when it looks thirsty" and its kind: two readings, two rules — the child picks.
+    return { candidate: null, offer: ['daily', 'droop'] }
+  }
+  return { candidate: null, offer: all }
+}
+
+/** The steps of the demonstration a rule contradicts, for Nara's "which should I try?" (v3.1 §03). */
+export const CONTRADICTS: Readonly<Record<Rule, keyof MethodSteps | null>> = {
+  right: null,
+  daily: 'soakedWait',
+  droop: 'probe',
+  leave: 'dryCan',
+}
+
+export function contradicts(choice: HandoffChoice, steps: MethodSteps): boolean {
+  if (choice === 'supervised') return false
+  const k = CONTRADICTS[choice]
+  return k != null && steps[k]
+}
+
+/* ----------------------------------------------------------------------------
+ * The save's view of a keep
+ * ------------------------------------------------------------------------- */
+
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+const isBool = (v: unknown): v is boolean => typeof v === 'boolean'
+const BED_KEYS = ['theta', 'pond', 'o2', 'anox', 'health', 'firm', 'drained', 'spilled', 'taken', 'arrived', 'minFirm', 'pool', 'leached'] as const
+const WORDS: readonly string[] = ['SOAKED', 'DAMP', 'DRY']
+
+export function validBed(x: unknown): x is Bed {
+  const b = x as Record<string, unknown> | null
+  return !!b && typeof b === 'object' && b.texture === 'clay' && isBool(b.mound) && BED_KEYS.every((k) => isNum(b[k]))
+}
+
+function validLot(x: unknown): x is Lot {
+  const l = x as Record<string, unknown> | null
+  return !!l && typeof l === 'object' && typeof l.id === 'string' && isNum(l.dispatchId) && isNum(l.crates) && l.crates >= 0 && l.site === KEEP.site
+}
+
+function validMarks(x: unknown): boolean {
+  return Array.isArray(x) && x.every((m) => m && typeof m === 'object' && isNum(m.day) && WORDS.includes(m.word) && (m.action === 'can' || m.action === 'wait') && (m.actor === 'nara' || m.actor === 'crew') && isNum(m.firm13))
+}
+
+function validReport(x: unknown): x is KeepReport {
+  const r = x as Record<string, unknown> | null
+  if (!r || typeof r !== 'object' || !isNum(r.dispatchId) || (r.kind !== 'story' && r.kind !== 'practice')) return false
+  if (!(CHOICES as readonly unknown[]).includes(r.choice) || !isNum(r.crates) || !isNum(r.weatherMm)) return false
+  const beds = r.beds as Record<string, Record<string, unknown>> | undefined
+  if (!beds || typeof beds !== 'object') return false
+  return (['nara', 'far'] as const).every((t) => beds[t] && validMarks(beds[t].marks) && isNum(beds[t].health))
+}
+
+function validDispatch(x: unknown): x is Dispatch {
+  const d = x as Record<string, unknown> | null
+  if (!d || typeof d !== 'object' || !isNum(d.id) || !isNum(d.begun)) return false
+  if (d.kind !== 'story' && d.kind !== 'practice') return false
+  if (d.status !== 'begun' && d.status !== 'settled' && d.status !== 'read') return false
+  if (!(CHOICES as readonly unknown[]).includes(d.choice) || (d.packingCrew !== 1 && d.packingCrew !== 3)) return false
+  const w = d.weather as Record<string, unknown> | undefined
+  if (!w || typeof w !== 'object' || !Object.entries(w).every(([h, mm]) => isNum(Number(h)) && isNum(mm))) return false
+  const sb = d.startingBeds as Record<string, unknown> | undefined
+  if (!sb || !validBed(sb.nara) || !validBed(sb.far)) return false
+  if (!Array.isArray(d.awardedLots) || !d.awardedLots.every(validLot)) return false
+  if (d.status !== 'begun' && !validReport(d.report)) return false
+  return Array.isArray(d.jobs)
+}
+
+export function validKeep(x: unknown): x is Keep {
+  const k = x as Record<string, unknown> | null
+  if (!k || typeof k !== 'object') return false
+  if (k.choice != null && !(CHOICES as readonly unknown[]).includes(k.choice)) return false
+  if (!isBool(k.confirmed) || !isNum(k.campaignDay) || !isNum(k.nextDispatchId)) return false
+  const beds = k.beds as Record<string, unknown> | undefined
+  if (!beds || !validBed(beds.nara) || !validBed(beds.far)) return false
+  if (!Array.isArray(k.farSeen) || !k.farSeen.every((w) => WORDS.includes(w as string))) return false
+  if (k.dispatch != null && !validDispatch(k.dispatch)) return false
+  if (k.storyDispatchId != null && !isNum(k.storyDispatchId)) return false
+  if (!Array.isArray(k.crates) || !k.crates.every(validLot)) return false
+  if (!Array.isArray(k.reports) || !k.reports.every(validReport)) return false
+  return true
+}
+
+/**
+ * A keep block that does not validate: restore what does, and never let the
+ * story award be earned twice. If whether it was awarded cannot be read, it is
+ * treated as awarded (`storyDispatchId` −1). Beds that do not validate come
+ * back from S0's own end state (`fallback`).
+ */
+export function salvageKeep(x: unknown, fallback: { nara: Bed; far: Bed; farSeen: ProbeWord[] }): Keep {
+  const k = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>
+  const beds = k.beds as Record<string, unknown> | undefined
+  const crates = Array.isArray(k.crates) ? k.crates.filter(validLot) : []
+  const reports = Array.isArray(k.reports) ? k.reports.filter(validReport) : []
+  const traces = k.dispatch != null || crates.length > 0 || reports.length > 0 || (isNum(k.nextDispatchId) && k.nextDispatchId > 1) || k.storyDispatchId != null
+  const storyDispatchId = isNum(k.storyDispatchId) ? k.storyDispatchId : traces ? -1 : null
+  const maxId = Math.max(0, ...crates.map((l) => l.dispatchId), ...reports.map((r) => r.dispatchId), isNum(k.nextDispatchId) ? k.nextDispatchId - 1 : 0)
+  return {
+    ...initialKeep(beds && validBed(beds.nara) ? beds.nara : fallback.nara, beds && validBed(beds.far) ? beds.far : fallback.far, fallback.farSeen),
+    campaignDay: isNum(k.campaignDay) ? k.campaignDay : 0,
+    // A dispatch that did not validate is dropped; a new one must be confirmed and begun.
+    nextDispatchId: maxId + 1,
+    storyDispatchId,
+    crates,
+    reports,
+  }
 }

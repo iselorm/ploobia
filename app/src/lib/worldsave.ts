@@ -28,10 +28,15 @@ import {
   worldStore,
   type Crane,
   type FuelId,
+  keepStageOf,
   type WorldState,
 } from './archipelago'
+import { salvageKeep, seenWords, validKeep, type Keep } from './keep'
 
-/** v2 (S0): the plot rides in the save — the stage, the run in progress, the attempts. A v1 save is a fresh start. */
+/**
+ * v2 (S0): the plot rides in the save — the stage, the run in progress, the attempts. A v1 save is a fresh start.
+ * S1 adds an OPTIONAL `keep` block without a version bump: a v2 save without it restores exactly as before.
+ */
 export const SAVE_KEY = 'ploobia.world.v2'
 
 /** A store write schedules a save this long later; writes in between do not push it. */
@@ -74,7 +79,7 @@ export interface WorldSave {
   pos: [number, number, number] | null
   /** Which way they faced and looked; absent in a save without it. */
   look?: { facing: number; cam: [number, number] }
-  s: Pick<WorldState, SavedKeys> & { drops: Crane['drops'] }
+  s: Pick<WorldState, SavedKeys> & { drops: Crane['drops']; keep?: Keep | null }
 }
 
 const FUEL_IDS: FuelId[] = ['wetwood', 'drywood', 'charcoal']
@@ -116,6 +121,9 @@ export function snapshot(s: WorldState, spot: Spot | null): WorldSave {
       // mutation is on the live copy, so a save mid-day carries the day so far.
       plot: s.plot,
       drops,
+      // S1: the handoff, its dispatches, the beds' scientific state, lots and reports. Settled
+      // results are stored whole, so a reload replays the report and never re-runs a fortnight.
+      keep: s.keep,
     },
   }
 }
@@ -160,6 +168,7 @@ export function validSave(x: unknown): x is WorldSave {
     if (!dd || !isNum(dd.from) || !isNum(dd.t0) || !isNum(dd.t1)) return false
   }
   if (!validPlot(s.plot)) return false
+  // `keep` is not checked here: a bad keep block is salvaged on restore, never a reason to lose the world.
   return true
 }
 
@@ -211,13 +220,14 @@ export function clearSave(): void {
  */
 export function restoreWorld(save: WorldSave): Spot | null {
   resetWorld()
-  const { drops, ...kept } = save.s
+  const { drops, keep: rawKeep, ...kept } = save.s
   const base = getWorld()
   // A save taken mid-pause resumes at the record; a naming card is never saved open.
   const plot = { ...kept.plot, naming: false, stage: kept.plot.stage === 'pause' ? ('record' as const) : kept.plot.stage }
   setWorld({
     ...kept,
     plot,
+    keep: restoreKeep(rawKeep, plot),
     phase: 'welcome',
     resumed: true,
     crane: { ...base.crane, drops: { ...drops } },
@@ -227,8 +237,23 @@ export function restoreWorld(save: WorldSave): Spot | null {
   return { pos: save.pos, facing: save.look?.facing ?? Math.PI, cam: save.look?.cam ?? [Math.PI - 0.6, 0.42] }
 }
 
+/**
+ * The keep as saved: whole when it validates; otherwise what validates, with
+ * the story award treated as given if it cannot be read (lib/keep.ts
+ * `salvageKeep`). No keep, or no S0 beds to fall back on → none.
+ */
+export function restoreKeep(raw: unknown, plot: WorldState['plot']): Keep | null {
+  if (raw == null) return null
+  if (validKeep(raw)) return raw
+  if (!plot.first || plot.run?.bed !== 'second') return null
+  return salvageKeep(raw, { nara: plot.first.b, far: plot.run.b, farSeen: seenWords(plot.run) })
+}
+
 /** A one-line account of a save for the welcome card. */
 export function describeSave(s: WorldState): string {
+  const ks = keepStageOf(s)
+  if (ks === 'away') return 'A fortnight is running at the Landing. It settles when you cross back.'
+  if (ks === 'report') return "Nara's report is waiting at the Landing."
   if (s.poured) return s.whys[2] >= 0 ? 'The furnace is relit and the stamp is yours.' : 'The furnace is relit — the whys are waiting.'
   const run = s.plot.run
   if (s.zone === 'landing' && !s.plot.sent && run && (s.plot.stage === 'first' || s.plot.stage === 'second') && run.phase !== 'done' && run.phase !== 'dead') {
