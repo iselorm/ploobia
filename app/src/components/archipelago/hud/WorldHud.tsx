@@ -53,6 +53,8 @@ import { judgeWhy, TRUST } from '@/lib/whyjudge'
 import Ploob2 from '@/components/brand/Ploob2'
 import { Tile } from '@/components/ui/tile'
 import { control, live } from '../live'
+import { ARRIVAL_SEEN } from '@/lib/arrival'
+import { read } from '@/lib/persist'
 import { WORLD_TEXT } from '@/lib/worldtext'
 
 /**
@@ -63,7 +65,7 @@ import { WORLD_TEXT } from '@/lib/worldtext'
  * the frame; nothing here is a dashboard around a game.
  */
 
-export default function WorldHud({ compact }: { compact: boolean }) {
+export default function WorldHud({ compact, onArrival }: { compact: boolean; onArrival: (replay?: boolean) => void }) {
   const s = useWorld()
   const mode = useInputMode()
   const coarse = isCoarse(mode)
@@ -335,11 +337,13 @@ export default function WorldHud({ compact }: { compact: boolean }) {
             </p>
             <Tile autoFocus data-testid="play" className="mt-4 w-full rounded-full bg-[#E8A33D] px-5 py-3 text-[15px] font-extrabold text-[#2A2823]" onClick={() => {
                 startAudio()
-                setWorld({ phase: 'play', resumed: false })
+                if (!s.resumed && !read(ARRIVAL_SEEN, false) && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) onArrival()
+                else setWorld({ phase: 'play', resumed: false })
               }}
             >
               {s.resumed ? 'Continue' : 'Play'}
             </Tile>
+            <button type="button" className="mt-3 min-h-11 w-full text-sm font-bold text-[#5F5A4E] underline" onClick={() => { startAudio(); onArrival(true) }}>Watch the seaplane arrival</button>
             {s.resumed && (
               <Tile
                 data-testid="restart"
@@ -350,7 +354,8 @@ export default function WorldHud({ compact }: { compact: boolean }) {
                   resetWorld()
                   setAfter(0)
                   setBriefed(false)
-                  setWorld({ phase: 'play' })
+                  if (read(ARRIVAL_SEEN, false) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) setWorld({ phase: 'play' })
+                  else onArrival()
                 }}
               >
                 Start over

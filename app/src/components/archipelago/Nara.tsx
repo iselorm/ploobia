@@ -53,6 +53,10 @@ export default function Nara() {
     const dt = Math.min(0.25, dtRaw)
     const w = getWorld()
     const st = w.plot.stage
+    if (live.arrivalWalk) {
+      live.arrivalWalk = false
+      if (st === 'arrive') pos.current.set(6.2, 0, 11.5)
+    }
     const grp = g.current
     if (!grp) return
 

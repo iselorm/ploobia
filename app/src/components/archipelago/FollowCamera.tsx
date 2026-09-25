@@ -22,7 +22,7 @@ const LOOK = new THREE.Vector3()
 const ROOM_POS = new THREE.Vector3(0.2, 1.7, -4.3)
 const ROOM_LOOK = new THREE.Vector3(0, 0.9, -8.4)
 
-export default function FollowCamera({ hudBottom = 0 }: { hudBottom?: number }) {
+export default function FollowCamera({ hudBottom = 0, active = true }: { hudBottom?: number; active?: boolean }) {
   const camera = useThree((s) => s.camera)
   const size = useThree((s) => s.size)
   const gl = useThree((s) => s.gl)
@@ -77,6 +77,7 @@ export default function FollowCamera({ hudBottom = 0 }: { hudBottom?: number }) 
 
   const wasRoom = useRef(false)
   useFrame((_, dtRaw) => {
+    if (!active) { first.current = true; return }
     const dt = Math.min(0.05, dtRaw)
     const inRoom = getWorld().room === 'furnace'
     if (inRoom) {

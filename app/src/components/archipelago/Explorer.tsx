@@ -165,7 +165,7 @@ const MOVE = new THREE.Vector3()
 const FWD = new THREE.Vector3()
 const RIGHT = new THREE.Vector3()
 
-export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void }) {
+export default function Explorer({ onPortal, frozen = false }: { onPortal?: (to: ZoneId) => void; frozen?: boolean }) {
   const body = useRef<RapierRigidBody>(null)
   const mesh = useRef<THREE.Group>(null)
   const { world, rapier } = useRapier()
@@ -190,6 +190,7 @@ export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void
   useFrame((_, dtRaw) => {
     const b = body.current
     if (!b) return
+    if (frozen) { if (mesh.current) mesh.current.visible = false; return }
     // Real time, clamped against a hitch, not against a slow frame: on a weak
     // machine at 10 fps the walk must still cover the ground it would at 60.
     // The character controller shape-casts the whole move, so a long step

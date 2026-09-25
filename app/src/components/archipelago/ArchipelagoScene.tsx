@@ -13,6 +13,7 @@ import Explorer from './Explorer'
 import FollowCamera from './FollowCamera'
 import Companion from './Companion'
 import Guide from './Guide'
+import { ArrivalAircraft, ArrivalIslands } from './Arrival'
 import Landing from './Landing'
 import { control, live } from './live'
 
@@ -24,8 +25,8 @@ import { control, live } from './live'
  */
 const Courtyard = lazy(() => import('./Courtyard'))
 
-function Ticker() {
-  useFrame((_, dt) => tickWorld(dt))
+function Ticker({ paused }: { paused: boolean }) {
+  useFrame((_, dt) => { if (!paused) tickWorld(dt) })
   return null
 }
 
@@ -69,7 +70,7 @@ function Expose() {
   return null
 }
 
-export default function ArchipelagoScene({ hudBottom = 0, onContextLost }: { hudBottom?: number; onContextLost?: () => void }) {
+export default function ArchipelagoScene({ hudBottom = 0, onContextLost, arrival = false, onArrivalEnd }: { hudBottom?: number; onContextLost?: () => void; arrival?: boolean; onArrivalEnd: () => void }) {
   const quality = useQualityCaps()
   const s = useWorld()
   return (
@@ -92,14 +93,17 @@ export default function ArchipelagoScene({ hudBottom = 0, onContextLost }: { hud
     >
       <PerfProbe cabinet="world" />
       <Expose />
-      <Ticker />
+      <Ticker paused={arrival} />
       <Physics gravity={[0, -9.81, 0]} timeStep={1 / 60}>
-        <Suspense fallback={null}>{s.zone === 'landing' ? <Landing /> : <Courtyard />}</Suspense>
-        <Explorer />
+        <Suspense fallback={null}>{s.zone === 'landing' || arrival ? <Landing /> : <Courtyard />}</Suspense>
+        <Explorer frozen={arrival} />
+        {(s.zone === 'landing' || arrival) && <>
+          <ArrivalIslands />
+          <ArrivalAircraft key={arrival ? 'flight' : 'docked'} active={arrival} onFinish={onArrivalEnd} />
+        </>}
       </Physics>
-      <Companion />
-      <Guide />
-      <FollowCamera hudBottom={hudBottom} />
+      {!arrival && <><Companion /><Guide /></>}
+      <FollowCamera hudBottom={arrival ? 0 : hudBottom} active={!arrival} />
     </Canvas>
   )
 }

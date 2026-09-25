@@ -26,6 +26,8 @@ export const control = {
 }
 
 export const live = {
+  /** Fresh disembarkation cues Nara to walk up the harbour path once. */
+  arrivalWalk: false,
   pos: new THREE.Vector3(0, 0.5, 0),
   /** Direction the explorer faces, radians about +Y. Both spawns look down −Z, toward the gate and the furnace. */
   facing: Math.PI,

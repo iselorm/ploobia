@@ -1,13 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useLayoutTier, usePortraitPhone } from '@/hooks/use-layout'
-import { getWorld, resetWorld, returnFromCabinet } from '@/lib/archipelago'
+import { getWorld, resetWorld, returnFromCabinet, setWorld } from '@/lib/archipelago'
 import { loadSave, restoreWorld, watchWorld } from '@/lib/worldsave'
 import { installWorldAudio } from '@/lib/worldaudio'
 import SceneErrorBoundary, { WebglFallback } from '@/components/SceneErrorBoundary'
+import { ArrivalHud } from '@/components/archipelago/Arrival'
+import { ARRIVAL_SEEN, flight } from '@/lib/arrival'
+import { write } from '@/lib/persist'
+import { LANDING_SPAWN } from '@/components/archipelago/landingLayout'
 import TurnCard from '@/components/game/TurnCard'
 import ArchipelagoScene from '@/components/archipelago/ArchipelagoScene'
 import WorldHud from '@/components/archipelago/hud/WorldHud'
-import { installWorldKeys, live } from '@/components/archipelago/live'
+import { control, installWorldKeys, live } from '@/components/archipelago/live'
 
 /**
  * `#/world` — the Ploobia Archipelago, round W0 (previz).
@@ -19,6 +23,28 @@ export default function World() {
   const tier = useLayoutTier()
   const portrait = usePortraitPhone()
   const [lost, setLost] = useState(false)
+  const [arrival, setArrival] = useState<'new' | 'replay' | null>(null)
+  const beginArrival = useCallback((replay = false) => {
+    flight.seconds = 0
+    flight.paused = false
+    control.yaw = 0; control.pitch = 0
+    setArrival(replay ? 'replay' : 'new')
+  }, [])
+  const finishArrival = useCallback(() => {
+    write(ARRIVAL_SEEN, true)
+    control.x = 0; control.y = 0; control.yaw = 0; control.pitch = 0
+    control.jump = false; control.interact = false; control.lens = false
+    control.journal = false; control.hint = false; control.exit = false
+    flight.paused = false
+    if (arrival === 'new') {
+      live.arrivalWalk = true
+      live.requestPos = [...LANDING_SPAWN]
+      live.facing = Math.PI; live.camYaw = Math.PI; live.camPitch = 0.42
+      live.ploob.set(LANDING_SPAWN[0] + 1, 0, LANDING_SPAWN[2])
+      setWorld({ phase: 'play', resumed: false })
+    }
+    setArrival(null)
+  }, [arrival])
   // Canvas renderer creation can reject asynchronously, outside React's boundary,
   // so the required context is checked once, before the scene or its HUD mounts.
   const [webgl] = useState(() => {
@@ -70,8 +96,8 @@ export default function World() {
   return (
     <div className="fixed inset-0 bg-[#F6F2E8]" data-cabinet="world">
       <SceneErrorBoundary>
-        <ArchipelagoScene hudBottom={compact ? 72 : 0} onContextLost={() => setLost(true)} />
-        <WorldHud compact={compact} />
+        <ArchipelagoScene hudBottom={compact ? 72 : 0} onContextLost={() => setLost(true)} arrival={arrival !== null} onArrivalEnd={finishArrival} />
+        {arrival ? <ArrivalHud onSkip={finishArrival} /> : <WorldHud compact={compact} onArrival={beginArrival} />}
       </SceneErrorBoundary>
     </div>
   )

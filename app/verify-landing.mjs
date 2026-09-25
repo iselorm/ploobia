@@ -35,6 +35,8 @@ const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable
 
 async function open(viewport, { touch = false } = {}) {
   const ctx = await browser.newContext({ viewport, hasTouch: touch, deviceScaleFactor: 1 })
+  // These suites exercise gameplay; the arrival has its own checks.
+  await ctx.addInitScript(() => localStorage.setItem('ploobia.arrival.v1', 'true'))
   const page = await ctx.newPage()
   const errors = []
   page.on('pageerror', (e) => errors.push(String(e)))
@@ -523,6 +525,8 @@ for (const [name, width, height] of [
 
 {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true })
+  // These suites exercise gameplay; the arrival has its own checks.
+  await ctx.addInitScript(() => localStorage.setItem('ploobia.arrival.v1', 'true'))
   const page = await ctx.newPage()
   await page.goto(`${BASE}?q=low#/world`, { waitUntil: 'load' })
   await page.waitForTimeout(1500)
