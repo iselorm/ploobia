@@ -11,6 +11,9 @@ import { portraitUrl } from '@/lib/worldassets'
 import { plateUp, rescued } from '@/lib/plot'
 import { BedScope, Brief as PlotBrief, MethodCard, Naming, PageCard, PlotBody, PlotJournal, PlotPlate, RecordCard, RescueLine, Retry } from './PlotHud'
 import { usePlotMoments } from './plotMoments'
+import { BoardPill, GlassFilter, HandoffCard, KeepReturn, SelaBoard } from './KeepHud'
+import { KEEP_CARD, keepHint, keepOwnsTalk } from '@/lib/keepui'
+import { useQualityCaps } from '@/lib/quality'
 import { LOOK_PRESETS, nearestLook, setSun, useSun } from '@/lib/looks'
 import { isMuted, onMuteChange, setMuted, startAudio } from '@/lib/audio'
 import {
@@ -191,17 +194,27 @@ export default function WorldHud({ compact }: { compact: boolean }) {
   const driving = s.crane.active
   const afterPour = s.poured && seenPour && after < 4
   const playing = s.phase === 'play'
-  const hintText = note ?? step.coach
+  const hintText = note ?? keepHint(s) ?? step.coach
   const talkingTo = s.talk === 'talk.nara' ? 'nara' : s.talk === 'talk.sela' ? 'sela' : s.talk === 'talk.foreman' ? 'foreman' : null
+  // S1: the keep takes over Nara's and Sela's conversations when it has something to ask.
+  const keepTalk = keepOwnsTalk(s)
+  const keepStage = s.keep ? (s.keep.dispatch?.status === 'settled' ? 'report' : s.keep.confirmed && s.keep.dispatch?.status !== 'begun' ? 'ready' : null) : null
+  // Phone: the keep's pill has Ploob's slot while a report waits or Sela's board is folded.
+  const keepSlot = compact && s.zone === 'landing' && (keepStage === 'report' || (keepStage === 'ready' && !s.talk))
+  // Phone: while a card holds the explorer, the tools, the stick and the verb step back (Mock B).
+  const held = compact && !!s.talk
+  const caps = useQualityCaps()
+  const reduceGlass = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-transparency: reduce)').matches
 
   return (
-    <div className="hud pointer-events-none fixed inset-0 z-20 select-none">
+    <div className="hud pointer-events-none fixed inset-0 z-20 select-none" data-glass={caps.liquidGlass && !reduceGlass ? 'liquid' : 'solid'}>
+      <GlassFilter />
       {/* the System ring cools the world a step so the flows lead */}
       {s.ring === 'system' && <div className="absolute inset-0 bg-[#1B2A3A]/25" data-testid="system-tint" />}
 
       {/* top-left: wordmark + zone, then the checklist */}
       <div className="absolute top-3 left-3 flex flex-col items-start gap-2">
-        <div className="glass pointer-events-auto flex items-center gap-2.5 px-2.5 py-1.5" data-testid="wordmark">
+        <div className={cn('glass pointer-events-auto flex items-center gap-2.5 px-2.5 py-1.5 transition-opacity', held && 'pointer-events-none opacity-0')} data-testid="wordmark">
           <Link to="/" aria-label="Back to the hall" className="grid h-10 w-10 place-items-center rounded-full bg-[#F6F2E8]/10 text-[#F6F2E8]">
             <Swirl />
           </Link>
@@ -215,7 +228,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
           <SoundChip />
         </div>
         {playing && (
-          <div className="glass pointer-events-auto w-[16rem] max-w-[calc(100vw-1.5rem)] px-3 py-2" data-testid="quest-plate">
+          <div className={cn('glass pointer-events-auto w-[16rem] max-w-[calc(100vw-1.5rem)] px-3 py-2 transition-opacity', held && 'pointer-events-none opacity-0')} data-testid="quest-plate">
             <p className="flex items-center gap-2 text-[13px] leading-tight font-extrabold text-[#F6F2E8]">
               <span className="grid h-4 w-4 place-items-center rounded-full bg-[#E8A33D] text-[9px] text-[#2A2823]">!</span>
               {quest.title}
@@ -231,7 +244,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       {playing && !compact && <Minimap s={s} />}
 
       {/* bottom-left: the toolbelt — on a phone it moves to the top-right, and the stick has the bottom-left corner to itself */}
-      {playing && !inRoom && !driving && !cinematic && (
+      {playing && !inRoom && !driving && !cinematic && !held && (
         <div className={cn('absolute flex items-end gap-1.5', compact ? 'top-3 right-3' : 'bottom-3 left-3')} data-testid="toolbelt">
           <Tool label="Lens" keyHint={coarse ? undefined : 'Q'} active={s.ring === 'system'} testid="lens" onClick={() => (control.lens = true)}>
             <Eye size={18} />
@@ -248,14 +261,14 @@ export default function WorldHud({ compact }: { compact: boolean }) {
           {coarse && !compact && <Stick />}
         </div>
       )}
-      {playing && !inRoom && !driving && !cinematic && coarse && compact && (
+      {playing && !inRoom && !driving && !cinematic && coarse && compact && !held && (
         <div className="absolute bottom-3 left-3 flex">
           <Stick />
         </div>
       )}
 
       {/* low-centre: the one verb, near the thing — on a phone, the right thumb's corner */}
-      {playing && !inRoom && !driving && !cinematic && (
+      {playing && !inRoom && !driving && !cinematic && !held && (
         <div className={cn('absolute flex', compact ? 'right-3 bottom-3 justify-end' : 'inset-x-0 justify-center')} style={{ bottom: compact ? 12 : 22 }}>
           <Tile
             aria-label={verbLabel ?? 'Nothing near'}
@@ -292,7 +305,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       )}
 
       {/* bottom-right: Ploob's hint — on a phone it sits between the stick and the verb, off both thumbs */}
-      {playing && !brief && !inRoom && !afterPour && !cinematic && !plotBrief && !(compact && plateOpen && onPlot && plateUp(plot)) && (
+      {playing && !brief && !inRoom && !afterPour && !cinematic && !plotBrief && !keepSlot && !held && s.talk !== KEEP_CARD && !(compact && plateOpen && onPlot && plateUp(plot)) && (
         <div className={cn('absolute bottom-3', compact ? 'left-[9rem] right-[13.5rem]' : 'right-3 max-w-[min(24rem,calc(100vw-1.5rem))]')}>
           <button
             type="button"
@@ -370,8 +383,13 @@ export default function WorldHud({ compact }: { compact: boolean }) {
 
       {/* talking — Sefu's account of the stall, Nara's of the droop, Sela's ask; one line at a time */}
       {playing && !brief && talkingTo === 'foreman' && <TalkCard who={WORLD_TEXT.people.foreman} lines={sefuLines(s)} compact={compact} onClose={() => talkTo(null)} />}
-      {playing && talkingTo === 'nara' && <TalkCard who={WORLD_TEXT.people.nara} portrait={portraitUrl('nara')} lines={naraLines(s)} compact={compact} onClose={() => talkTo(null)} />}
-      {playing && talkingTo === 'sela' && (
+      {playing && talkingTo === 'nara' && !keepTalk && <TalkCard who={WORLD_TEXT.people.nara} portrait={portraitUrl('nara')} lines={naraLines(s)} compact={compact} onClose={() => talkTo(null)} />}
+      {/* S1 — the handoff: Nara's question and her say-back; Sela's board; the return */}
+      {playing && talkingTo === 'nara' && keepTalk && <HandoffCard s={s} compact={compact} />}
+      {playing && talkingTo === 'sela' && keepTalk && <SelaBoard s={s} compact={compact} />}
+      {playing && keepSlot && keepStage === 'ready' && <BoardPill s={s} onOpen={() => talkTo('talk.sela')} />}
+      {playing && s.zone === 'landing' && <KeepReturn s={s} compact={compact} />}
+      {playing && talkingTo === 'sela' && !keepTalk && (
         <TalkCard
           who={WORLD_TEXT.people.sela}
           portrait={portraitUrl('sela')}

@@ -1,3 +1,4 @@
+import { endOfS0 } from '@/lib/keepfixture'
 import { Suspense, lazy, useEffect } from 'react'
 import * as THREE from 'three'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
@@ -5,7 +6,7 @@ import { Physics } from '@react-three/rapier'
 import { WebglFallback } from '@/components/SceneErrorBoundary'
 import PerfProbe from '@/components/PerfProbe'
 import { getQualityCaps, useQualityCaps } from '@/lib/quality'
-import { getWorld, plotChoose, plotSay, probeBed, runBedId, setWorld, tickWorld, useWorld } from '@/lib/archipelago'
+import { crossPortal, getWorld, plotChoose, plotSay, probeBed, runBedId, setWorld, talkTo, tickWorld, useWorld } from '@/lib/archipelago'
 import { setBand } from '@/lib/bands'
 import { getSun, setSun } from '@/lib/looks'
 import { bedLevel } from '@/lib/worldaudio'
@@ -61,6 +62,8 @@ function Expose() {
           for (let i = 0; i < 40 && getWorld().plot.run?.phase === 'running'; i += 1) tickWorld(0.25)
         },
       },
+      // S1, suites only: the end of S0 in one call, a conversation, a crossing.
+      keep: { endOfS0, talk: talkTo, cross: crossPortal },
     }
     return () => {
       delete w.__world

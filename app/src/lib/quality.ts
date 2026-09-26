@@ -27,12 +27,18 @@ export interface QualityCaps {
   postFx: boolean
   /** Antialiasing on the WebGL context. */
   antialias: boolean
+  /**
+   * The world HUD's liquid glass (S1, Mock B): a blurred, refracting backdrop
+   * under each card. It re-samples the moving scene every frame, so the low
+   * tier gets the solid parchment plate instead.
+   */
+  liquidGlass: boolean
 }
 
 export const QUALITY_CAPS: Record<QualityTier, QualityCaps> = {
-  high: { maxDpr: 2, particleScale: 1, shadows: true, postFx: true, antialias: true },
-  medium: { maxDpr: 1.5, particleScale: 0.7, shadows: true, postFx: false, antialias: true },
-  low: { maxDpr: 1, particleScale: 0.45, shadows: false, postFx: false, antialias: false },
+  high: { maxDpr: 2, particleScale: 1, shadows: true, postFx: true, antialias: true, liquidGlass: true },
+  medium: { maxDpr: 1.5, particleScale: 0.7, shadows: true, postFx: false, antialias: true, liquidGlass: true },
+  low: { maxDpr: 1, particleScale: 0.45, shadows: false, postFx: false, antialias: false, liquidGlass: false },
 }
 
 const ORDER: QualityTier[] = ['high', 'medium', 'low']

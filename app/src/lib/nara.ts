@@ -17,7 +17,7 @@
 
 import type { WorldState } from './archipelago'
 import { cansUsed, recoveryLine, methodReply, methodSteps, type MethodSteps, type PlotRun } from './plot'
-import { contradicts, type CareMode, type HandoffChoice, type KeepReport } from './keep'
+import { contradicts, type CareMode, type HandoffChoice, type KeepReport, type Rule } from './keep'
 import type { ProbeWord } from './roots'
 
 export type NaraMood =
@@ -218,6 +218,9 @@ export function naraReportLine(r: KeepReport): string {
       const m = at(r.pauseDay)
       const w = m ? WORD_SAID[m.word] : 'something new'
       const did = m?.action === 'can' ? 'gave it a can' : 'waited'
+      // Asked once; after the child answers, the report says what the answer did.
+      if (r.pauseAnswer?.right) return `Day ${m?.day ?? '?'} the far bed read ${w} and I ${did}. You told me why — next time I won't need to stop.`
+      if (r.pauseAnswer) return `Day ${m?.day ?? '?'} the far bed read ${w} and I ${did}. I'm still not sure why that was right.`
       return `Day ${m?.day ?? '?'} the far bed read ${w}. You never showed me ${w} on that bed. I ${did}. Was that right — and why?`
     }
     case 'supervised':
@@ -241,6 +244,14 @@ export function naraReportLine(r: KeepReport): string {
 
 /** The faint second line on a stopped trial's report: labelled, never presented as what happened. */
 export const COUNTERFACTUAL_LABEL = 'If she had kept to the rule — this did not happen.'
+
+/** The far bed's rule, short, for the report's strip label. */
+export const RULE_SHORT: Readonly<Record<Rule, string>> = {
+  right: 'the method',
+  daily: 'a can every morning',
+  droop: 'a can after the leaves drop',
+  leave: 'left without water',
+}
 
 /** Portrait label by the far bed's care. */
 export const ASSIGNMENT_LABEL: Readonly<Record<CareMode, string>> = {

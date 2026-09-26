@@ -610,3 +610,112 @@ html[data-input='tv'] [data-slot='slider-thumb']:focus {
 @media (prefers-reduced-motion: reduce) {
   .market-count-tom { animation: none !important; }
 }
+
+/* ---- Liquid glass — S1, Mock B (Selorm 2026-09-26). Light glass for cards,
+   dark glass for the live review bar; a bright rim, a sheen, and — on
+   Chromium, where backdrop-filter takes an SVG filter — a slight bend of the
+   world behind it (#lg-refract, drawn once by the HUD). The HUD root says
+   which it can afford: data-glass="liquid" on high/medium quality, "solid"
+   on low and when the device asks for less transparency. Text sits on a tint
+   strong enough to read over the brightest sand and sea. ---- */
+.lg {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: linear-gradient(150deg, rgba(255, 253, 248, 0.84) 0%, rgba(255, 250, 240, 0.72) 55%, rgba(255, 247, 234, 0.8) 100%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%) brightness(1.05);
+  backdrop-filter: blur(22px) saturate(160%) brightness(1.05);
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  color: #2A2823;
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 0 24px rgba(255, 255, 255, 0.18),
+    0 18px 40px -18px rgba(40, 26, 10, 0.45),
+    0 2px 6px -2px rgba(40, 26, 10, 0.18);
+}
+[data-glass='liquid'] .lg {
+  backdrop-filter: url(#lg-refract) blur(22px) saturate(160%) brightness(1.05);
+}
+.lg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    radial-gradient(90% 55% at 12% -8%, rgba(255, 255, 255, 0.75), transparent 60%),
+    radial-gradient(70% 45% at 100% 110%, rgba(255, 236, 200, 0.35), transparent 60%);
+}
+.lg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.1) 40%, rgba(255, 255, 255, 0.05) 60%, rgba(255, 255, 255, 0.7));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+.lg-dark {
+  background: linear-gradient(150deg, rgba(38, 32, 26, 0.66), rgba(20, 16, 12, 0.56));
+  border-color: rgba(255, 244, 224, 0.28);
+  color: #F6F2E8;
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 244, 224, 0.35),
+    inset 0 0 24px rgba(255, 244, 224, 0.06),
+    0 18px 40px -18px rgba(0, 0, 0, 0.6);
+}
+.lg-dark::before {
+  background: radial-gradient(90% 60% at 10% -10%, rgba(255, 244, 224, 0.28), transparent 60%);
+}
+.lg-chip {
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+.lg-btn {
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 4px 10px -6px rgba(40, 26, 10, 0.4);
+}
+.lg-btn-amber {
+  background: linear-gradient(180deg, #F2B75A, #E39A2E);
+  border: 1px solid rgba(255, 226, 170, 0.9);
+  box-shadow: inset 0 1px 0 rgba(255, 240, 210, 0.9), 0 6px 14px -6px rgba(160, 90, 10, 0.6);
+}
+.lg-grab {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(42, 40, 35, 0.28);
+}
+/* Solid: the parchment plate, no sampling of the scene behind. */
+[data-glass='solid'] .lg {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: #FCFAF4;
+  border-color: #E4DCC9;
+  box-shadow:
+    0 1px 2px rgba(74, 62, 40, 0.05),
+    0 8px 22px -12px rgba(74, 62, 40, 0.22);
+}
+[data-glass='solid'] .lg-dark {
+  background: rgba(28, 24, 20, 0.92);
+  border-color: rgba(255, 244, 224, 0.14);
+}
+[data-glass='solid'] .lg::before,
+[data-glass='solid'] .lg::after {
+  display: none;
+}
+[data-glass='solid'] .lg-chip {
+  background: #F6F2E8;
+  border-color: #E4DCC9;
+}
+[data-glass='solid'] .lg-btn {
+  background: #EEE7D8;
+  border-color: #E4DCC9;
+  box-shadow: none;
+}

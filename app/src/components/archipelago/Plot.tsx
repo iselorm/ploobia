@@ -1,3 +1,4 @@
+import KeepScene from './KeepScene'
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
@@ -21,9 +22,14 @@ import DayRing from './DayRing'
  */
 
 /** A bed's look, from the model: soil wetness 0..1 and the leaf's firmness, or no plant. */
-function bedLook(p: PlotState, which: keyof typeof BEDS): { wet: number; firm: number | null; pond: number } {
+function bedLook(p: PlotState, which: keyof typeof BEDS, keep?: Record<'nara' | 'far', BedModel>): { wet: number; firm: number | null; pond: number } {
   const clay = SOIL.clay
   const wetOf = (b: BedModel) => Math.max(0, Math.min(1, (b.theta - clay.wp) / (clay.fc - clay.wp)))
+  // S1: once the handoff has the beds, they are the keep's (settled fortnights move them on).
+  if (keep && (which === 'nara' || which === 'far')) {
+    const b = keep[which]
+    return { wet: wetOf(b), firm: b.firm, pond: b.pond }
+  }
   const run = p.run
   if (which === 'nara') {
     const b = run?.bed === 'first' ? run.b : p.first?.b
@@ -40,8 +46,8 @@ function bedLook(p: PlotState, which: keyof typeof BEDS): { wet: number; firm: n
 export default function Plot() {
   const s = useWorld()
   const p = s.plot
-  const nara = bedLook(p, 'nara')
-  const far = bedLook(p, 'far')
+  const nara = bedLook(p, 'nara', s.keep?.beds)
+  const far = bedLook(p, 'far', s.keep?.beds)
   const mine = bedLook(p, 'mine')
   const probing = (id: string) => (p.run && (p.run.bed === 'first' ? 'bed.nara' : 'bed.far') === id ? 'Probe the bed' : 'Look at the bed')
   return (
@@ -64,6 +70,7 @@ export default function Plot() {
       <WetStreak visible={p.stage === 'arrive' || p.stage === 'met'} />
       <Page visible={p.stage === 'page'} />
       <DayRing />
+      <KeepScene />
     </group>
   )
 }
