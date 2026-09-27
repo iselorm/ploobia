@@ -245,6 +245,24 @@ for (const [name, width, height] of [
 }
 
 /* ------------------------------------------------------------------------ */
+/* Preview: the welcome card's jump to S1 (localhost counts as a preview)    */
+/* ------------------------------------------------------------------------ */
+{
+  const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true })
+  const page = await ctx.newPage()
+  await page.goto(`${BASE}?q=low#/world`, { waitUntil: 'load' })
+  await page.waitForFunction(() => !!window.__world, null, { timeout: 60000 })
+  check('preview: the welcome offers a jump to S1', (await page.getByTestId('chapters').count()) === 1)
+  await resilientClick(page.getByTestId('start-s1-runs'), { label: 'Start at S1' })
+  await waitFor(page, () => window.__world.get().phase === 'play' && window.__world.get().plot.sent)
+  check('Start at S1: S0 finished, no Codex card in the way', (await page.getByTestId('codex-close').count()) === 0)
+  await waitFor(page, () => /Nara has a question/.test(document.querySelector('[data-testid=coach]')?.textContent ?? ''))
+  check('Start at S1: Ploob points to Nara', true)
+  await page.screenshot({ path: path.join(SHOTS, 'keep-start-s1.png') })
+  await ctx.close()
+}
+
+/* ------------------------------------------------------------------------ */
 /* Glass — liquid where the quality allows it, solid where it doesn't        */
 /* ------------------------------------------------------------------------ */
 for (const q of ['medium', 'low']) {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { BookOpen, Eye, Hand, Moon, Ruler, Sun, Sunset, Thermometer, Volume2, VolumeX } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { isCoarse, useInputMode } from '@/lib/input'
@@ -12,7 +12,8 @@ import { plateUp, rescued } from '@/lib/plot'
 import { BedScope, Brief as PlotBrief, MethodCard, Naming, PageCard, PlotBody, PlotJournal, PlotPlate, RecordCard, RescueLine, Retry } from './PlotHud'
 import { usePlotMoments } from './plotMoments'
 import { BoardPill, GlassFilter, HandoffCard, KeepReturn, SelaBoard } from './KeepHud'
-import { KEEP_CARD, keepHint, keepOwnsTalk } from '@/lib/keepui'
+import { KEEP_CARD, keepHint, keepOwnsTalk, previewChapters } from '@/lib/keepui'
+import { endOfS0 } from '@/lib/keepfixture'
 import { useQualityCaps } from '@/lib/quality'
 import { LOOK_PRESETS, nearestLook, setSun, useSun } from '@/lib/looks'
 import { isMuted, onMuteChange, setMuted, startAudio } from '@/lib/audio'
@@ -99,6 +100,8 @@ export default function WorldHud({ compact }: { compact: boolean }) {
   usePlotMoments(say)
   // The page read in the world opens its card once (derived during render, no effect).
   const [seenPageRead, setSeenPageRead] = useState(s.plot.pageRead)
+  const [params] = useSearchParams()
+  const chapters = previewChapters(params.get('start'))
   if (s.plot.pageRead !== seenPageRead) {
     setSeenPageRead(s.plot.pageRead)
     if (s.plot.pageRead) setPageOpen(true)
@@ -353,6 +356,30 @@ export default function WorldHud({ compact }: { compact: boolean }) {
             >
               {s.resumed ? 'Continue' : 'Play'}
             </Tile>
+            {chapters && !s.keep && (
+              <div className="mt-3 rounded-2xl border border-dashed border-[#2A2823]/20 px-3 py-2.5 text-left" data-testid="chapters">
+                <span className="atlas-eyebrow block">Preview · jump to a chapter</span>
+                <p className="mt-0.5 text-[11.5px] font-semibold text-[#5F5A4E]">S1 · The Handoff — S0 finished (Nara's two beds as a by-the-book round leaves them), Sela's line heard.</p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {(['runs', 'copies'] as const).map((c) => (
+                    <Tile
+                      key={c}
+                      data-testid={`start-s1-${c}`}
+                      className="rounded-full bg-[#2F7F7A] px-3 py-2 text-[12px] font-extrabold text-white"
+                      onClick={() => {
+                        startAudio()
+                        setSeenPageRead(true)
+                        endOfS0(c)
+                        live.requestPos = [-2.2, 0.6, 3.8]
+                        setWorld({ phase: 'play', resumed: false })
+                      }}
+                    >
+                      {c === 'runs' ? 'Start at S1' : 'S1 · Nara copies'}
+                    </Tile>
+                  ))}
+                </div>
+              </div>
+            )}
             {s.resumed && (
               <Tile
                 data-testid="restart"

@@ -42,3 +42,14 @@ export function firstDecisive(r: KeepReport): number {
   return r.weatherNight > 0 ? r.weatherNight + 1 : far.lowDay || 1
 }
 
+
+/**
+ * Preview builds only: the welcome card may offer a jump to S1 (the end of
+ * S0 already in place) so a playtest does not have to replay S0 first. Shown
+ * on branch Preview hosts (`<branch>.ploobia.pages.dev`), on localhost, or
+ * with `?start=s1` — never on the production host.
+ */
+export function previewChapters(start: string | null, host: string = typeof window === 'undefined' ? '' : window.location.hostname): boolean {
+  if (host === 'ploobia.pages.dev' || host.endsWith('ploobia.com')) return false
+  return start === 's1' || /^[^.]+\.ploobia\.pages\.dev$/.test(host) || host === 'localhost' || host === '127.0.0.1'
+}
