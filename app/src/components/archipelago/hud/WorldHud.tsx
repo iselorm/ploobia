@@ -336,8 +336,9 @@ export default function WorldHud({ compact }: { compact: boolean }) {
 
       {/* the welcome — play first */}
       {s.phase === 'welcome' && (
-        <div className="pointer-events-auto absolute inset-0 grid place-items-center bg-[#2A2823]/35 p-4" data-focus-layer="">
-          <div className="atlas-plate w-full max-w-[24rem] rounded-[22px] px-6 py-6 text-center">
+        <div className="pointer-events-auto absolute inset-0 flex justify-center overflow-y-auto bg-[#2A2823]/35 p-4" data-focus-layer="" data-testid="welcome">
+          {/* m-auto centres the card when it fits and lets it scroll from the top when it does not (a 360 px phone) */}
+          <div className={cn('atlas-plate m-auto w-full max-w-[24rem] rounded-[22px] text-center', compact ? 'px-5 py-4' : 'px-6 py-6')}>
             <div className="flex justify-center">
               <Ploob2 size={56} />
             </div>

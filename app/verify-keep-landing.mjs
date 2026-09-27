@@ -260,6 +260,12 @@ for (const [name, width, height] of [
   await page.goto(`${BASE}?q=low#/world`, { waitUntil: 'load' })
   await page.waitForFunction(() => !!window.__world, null, { timeout: 60000 })
   check('preview: the welcome offers a jump to S1', (await page.getByTestId('chapters').count()) === 1)
+  await page.getByTestId('start-s1-runs').scrollIntoViewIfNeeded()
+  const reach = await page.evaluate(() => {
+    const r = document.querySelector('[data-testid=start-s1-runs]').getBoundingClientRect()
+    return r.bottom <= innerHeight && r.top >= 0
+  })
+  check('a 390 px phone can scroll the welcome to its buttons', reach)
   await resilientClick(page.getByTestId('start-s1-runs'), { label: 'Start at S1' })
   await waitFor(page, () => window.__world.get().phase === 'play' && window.__world.get().plot.sent)
   check('Start at S1: S0 finished, no Codex card in the way', (await page.getByTestId('codex-close').count()) === 0)
