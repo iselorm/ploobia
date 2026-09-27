@@ -680,17 +680,56 @@ export const PLOT: Quest<PlotStepId> = {
   hidden: ['trail', 'lens', 'done'],
 }
 
+/**
+ * S1 — the handoff, as the Landing's quest (storyboard v3.1 §05). Its step is
+ * derived from the keep's stage, never stored: tell Nara → tell Sela → away
+ * (the Foundry is the errand) → the report. The predicates are `never`; the
+ * checklist reads the order.
+ */
+export type KeepStepId = 'tell' | 'sela' | 'away' | 'report'
+export const KEEP_QUEST: Quest<KeepStepId> = {
+  id: 'landing.keep',
+  title: 'The Handoff',
+  hook: 'Nara will keep the beds while you are away. Tell her what to do — then see if it held.',
+  predict: { ask: '', unit: '' },
+  steps: [
+    { id: 'tell', label: 'Tell Nara what to do each morning', coach: 'Nara has a question for you, by her bed.', target: 'talk.nara', until: { type: 'never' } },
+    { id: 'sela', label: 'Tell Sela you are going', coach: 'Sela is at the jetty. Tell her when you are going.', target: 'talk.sela', until: { type: 'never' } },
+    { id: 'away', label: 'Relight the Foundry while the fortnight runs', coach: 'Through the gate: the Foundry is cold. The fortnight runs here while you are away.', target: 'portal.foundry', until: { type: 'never' } },
+    { id: 'report', label: "Read Nara's report", coach: 'Nara has kept a record of every morning.', target: null, until: { type: 'never' } },
+  ],
+  whys: [],
+  hidden: [],
+}
+
+/** The story fortnight's report has been read (the handoff's first loop is closed). */
+function storyRead(k: Keep | null): boolean {
+  if (!k || k.storyDispatchId == null) return false
+  const d = k.dispatch
+  return !d || d.id !== k.storyDispatchId || d.status === 'read'
+}
+
+/** The handoff holds the Landing's quest from Nara's question until the story report is read. */
+export function keepQuestActive(s: WorldState): boolean {
+  return s.zone === 'landing' && keepAvailable(s) && !storyRead(s.keep)
+}
+
+function keepStepId(s: WorldState): KeepStepId {
+  const st = s.keep ? keepStage(s.keep) : 'ask'
+  return st === 'ready' ? 'sela' : st === 'away' ? 'away' : st === 'report' ? 'report' : 'tell'
+}
+
 /** The plot holds the Landing until Sela sends the child across the water. */
 export function plotActive(s: WorldState): boolean {
   return s.zone === 'landing' && !s.plot.sent
 }
 
 export function activeQuest(s: WorldState): Quest {
-  return plotActive(s) ? PLOT : RELIGHT
+  return plotActive(s) ? PLOT : keepQuestActive(s) ? KEEP_QUEST : RELIGHT
 }
 
 export function currentStepId(s: WorldState): string {
-  return plotActive(s) ? s.plot.step : s.step
+  return plotActive(s) ? s.plot.step : keepQuestActive(s) ? keepStepId(s) : s.step
 }
 
 /**

@@ -27,7 +27,7 @@ import path from 'node:path'
 import { reporter, resilientClick } from './verify-lib.mjs'
 
 const BASE = process.env.WORLD_BASE ?? 'http://localhost:8766/index.html'
-const SHOTS = path.resolve('shots')
+const SHOTS = path.resolve(process.env.WORLD_SHOTS ?? 'shots')
 fs.mkdirSync(SHOTS, { recursive: true })
 const { check, tally } = reporter()
 
@@ -41,7 +41,7 @@ async function open(viewport, { touch = false } = {}) {
   page.on('console', (m) => {
     if (m.type() === 'error' && !/ERR_TUNNEL|favicon|WebGL|GPU|swiftshader|503/i.test(m.text())) errors.push(m.text())
   })
-  await page.goto(`${BASE}?q=low#/world`, { waitUntil: 'load' })
+  await page.goto(`${BASE}?q=${process.env.WORLD_Q ?? 'low'}#/world`, { waitUntil: 'load' })
   await page.waitForFunction(() => !!window.__world, null, { timeout: 60000 })
   return { page, ctx, errors }
 }
@@ -425,7 +425,8 @@ async function toTrial(page, { name = 'Leafy 7', said = 3 } = {}) {
   await resilientClick(page.getByTestId('talk-next'), { label: 'Go on' })
   await resilientClick(page.getByTestId('talk-next'), { label: 'Back to work' })
   await waitFor(page, () => window.__world.get().plot.sent === true)
-  check("after Sela, the furnace's quest takes the plate", (await page.getByTestId('quest-plate').textContent()).includes('Relight the furnace') && (await world(page)).step === 'arrive')
+  // S1: after Sela, the Landing's quest is the handoff (Nara's question); the furnace's waits as the errand.
+  check("after Sela, the handoff takes the plate; the furnace's quest waits", (await page.getByTestId('quest-plate').textContent()).includes('The Handoff') && (await world(page)).step === 'arrive')
   check('the beacon across the water is still dark', (await world(page)).poured === false)
   check('no console errors on the desktop walk', errors.length === 0, errors.slice(0, 3).join(' | '))
   await ctx.close()
@@ -547,7 +548,7 @@ for (const [name, width, height] of [
 {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true })
   const page = await ctx.newPage()
-  await page.goto(`${BASE}?q=low#/world`, { waitUntil: 'load' })
+  await page.goto(`${BASE}?q=${process.env.WORLD_Q ?? 'low'}#/world`, { waitUntil: 'load' })
   await page.waitForTimeout(1500)
   check('portrait: the turn card shows, no canvas', (await page.getByTestId('turn-card').count()) === 1 && (await page.locator('canvas').count()) === 0)
   await ctx.close()

@@ -25,7 +25,7 @@ import path from 'node:path'
 import { reporter, resilientClick } from './verify-lib.mjs'
 
 const BASE = process.env.WORLD_BASE ?? 'http://localhost:8766/index.html'
-const SHOTS = path.resolve('shots')
+const SHOTS = path.resolve(process.env.WORLD_SHOTS ?? 'shots')
 fs.mkdirSync(SHOTS, { recursive: true })
 const { check, tally } = reporter()
 const COPPER = 1085
@@ -40,7 +40,7 @@ async function open(viewport, { touch = false } = {}) {
   page.on('console', (m) => {
     if (m.type() === 'error' && !/ERR_TUNNEL|favicon|WebGL|GPU|swiftshader|503/i.test(m.text())) errors.push(m.text())
   })
-  await page.goto(`${BASE}?q=low#/world`, { waitUntil: 'load' })
+  await page.goto(`${BASE}?q=${process.env.WORLD_Q ?? 'low'}#/world`, { waitUntil: 'load' })
   await page.waitForFunction(() => !!window.__world, null, { timeout: 60000 })
   return { page, ctx, errors }
 }
@@ -714,7 +714,7 @@ for (const [name, viewport, touch] of [
 {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true })
   const page = await ctx.newPage()
-  await page.goto(`${BASE}?q=low#/world`, { waitUntil: 'load' })
+  await page.goto(`${BASE}?q=${process.env.WORLD_Q ?? 'low'}#/world`, { waitUntil: 'load' })
   await page.waitForTimeout(1500)
   check('portrait: the turn card shows', (await page.getByTestId('turn-card').count()) === 1)
   check('portrait: no canvas is mounted', (await page.locator('canvas').count()) === 0)
