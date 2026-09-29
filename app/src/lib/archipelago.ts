@@ -60,6 +60,7 @@ import {
   type KeepStage,
   type PauseAnswer,
 } from './keep'
+import { addIngot, benchOpens, done as benchDoneAt, drop as benchDropAt, initialBench, inspect as benchInspectAt, liftPattern, markRise, sinkPattern, take as benchTakeAt, takeIngot, toFire, type Bench } from './supply'
 
 /* ----------------------------------------------------------------------------
  * Zones and rings
@@ -173,7 +174,7 @@ function clamp01(x: number): number {
 export type StepId = 'arrive' | 'clear' | 'probe' | 'lens' | 'build' | 'feed' | 'done'
 
 /** A room is a cabinet interior entered from the world by a camera cut — same React tree, no reload. */
-export type RoomId = 'none' | 'furnace'
+export type RoomId = 'none' | 'furnace' | 'bench' | 'balance'
 
 /**
  * The crane — the way the heavy piece is cleared, and board 1's bet: drop a
@@ -361,6 +362,13 @@ export interface WorldState {
   talk: string | null
   /** S1 — the handoff and its fortnights (lib/keep.ts). Null until Nara asks, after S0. */
   keep: Keep | null
+  /** S2 — the cold bench and what it charged (lib/supply.ts). Null until the child first measures. */
+  supply: Supply | null
+}
+
+/** S2's state: the bench now; the cast, the vice and the road join it in later rounds. */
+export interface Supply {
+  bench: Bench
 }
 
 /** Cabinets a courtyard door can open. Each is an existing arcade page; the door is the link. */
@@ -423,6 +431,7 @@ const initial = (): WorldState => ({
   journal: { prediction: null, action: null, observed: null, explanation: null },
   plot: initialPlot(),
   keep: null,
+  supply: null,
 })
 
 export const worldStore = createStore<WorldState>(initial)
@@ -459,7 +468,7 @@ export function useWorld(): WorldState {
  * list. `near` is decided once per frame by the explorer from this map.
  * ------------------------------------------------------------------------- */
 
-export type Verb = 'grab' | 'probe' | 'build' | 'feed' | 'portal' | 'talk' | 'crane' | 'door' | 'marker' | 'read' | 'plant'
+export type Verb = 'grab' | 'probe' | 'build' | 'feed' | 'portal' | 'talk' | 'crane' | 'door' | 'marker' | 'read' | 'plant' | 'measure'
 
 export interface Interactable {
   id: string
@@ -702,6 +711,39 @@ export const KEEP_QUEST: Quest<KeepStepId> = {
   hidden: [],
 }
 
+/**
+ * S2 — The cart that must leave: the relight with a reason. The relight's own
+ * steps, then the four the kit needs. The new steps' predicates are `never`;
+ * the supply state decides which is current (storyboard v3.1 §03).
+ */
+export type CartStepId = StepId | 'measure' | 'cast' | 'test' | 'deliver'
+export const CART_QUEST: Quest<CartStepId> = {
+  id: 'foundry.cart',
+  title: 'The cart that must leave',
+  hook: "The watch's jetty gate will not close. Sela needs copper fittings, and the Foundry is cold.",
+  predict: RELIGHT.predict,
+  steps: [
+    ...RELIGHT.steps,
+    { id: 'measure', label: 'Measure the pattern', coach: 'The cold bench, by the west wall: water first. Water tells you what copper will.', target: 'bench.jug', until: { type: 'never' } },
+    { id: 'cast', label: 'Cast the fittings', coach: 'Sefu pours the dry charge into the gate mould.', target: null, until: { type: 'never' } },
+    { id: 'test', label: 'Test the straps', coach: 'At the vice: which one keeps the bend?', target: null, until: { type: 'never' } },
+    { id: 'deliver', label: 'Bring them to Sela', coach: 'Back through the crossing, with the kit.', target: 'portal.landing', until: { type: 'never' } },
+  ],
+  whys: RELIGHT.whys,
+  hidden: RELIGHT.hidden,
+}
+
+/** The cart holds the courtyard's quest once the child has come across from S0's Landing. */
+export function cartActive(s: WorldState): boolean {
+  return s.zone === 'foundry' && (s.keep != null || s.plot.sent)
+}
+
+function cartStepId(s: WorldState): CartStepId {
+  if (s.step !== 'done') return s.step
+  const b = s.supply?.bench
+  return b && b.phase === 'charged' ? 'cast' : 'measure'
+}
+
 /** The story fortnight's report has been read (the handoff's first loop is closed). */
 function storyRead(k: Keep | null): boolean {
   if (!k || k.storyDispatchId == null) return false
@@ -725,11 +767,11 @@ export function plotActive(s: WorldState): boolean {
 }
 
 export function activeQuest(s: WorldState): Quest {
-  return plotActive(s) ? PLOT : keepQuestActive(s) ? KEEP_QUEST : RELIGHT
+  return plotActive(s) ? PLOT : keepQuestActive(s) ? KEEP_QUEST : cartActive(s) ? CART_QUEST : RELIGHT
 }
 
 export function currentStepId(s: WorldState): string {
-  return plotActive(s) ? s.plot.step : keepQuestActive(s) ? keepStepId(s) : s.step
+  return plotActive(s) ? s.plot.step : keepQuestActive(s) ? keepStepId(s) : cartActive(s) ? cartStepId(s) : s.step
 }
 
 /**
@@ -1244,6 +1286,48 @@ export function enterRoom(room: RoomId): void {
 export function leaveRoom(): void {
   setWorld({ room: 'none' })
 }
+
+/* ----------------------------------------------------------------------------
+ * S2 — the cold bench (lib/supply.ts)
+ * ------------------------------------------------------------------------- */
+
+/** The bench works once the furnace has reached copper heat, or for a save that already poured. */
+export function benchAvailable(s: WorldState): boolean {
+  return s.zone === 'foundry' && benchOpens({ temp: s.furnace.temp, poured: s.poured })
+}
+
+/** Walk up to the jug or the balance: a camera cut into that station, the explorer held still beside it. */
+export function openBench(room: 'bench' | 'balance'): void {
+  setWorld((s) => {
+    if (!benchAvailable(s)) return {}
+    const supply = s.supply ?? { bench: initialBench() }
+    return { supply, room, held: null }
+  })
+}
+
+function withBench(f: (b: Bench) => Bench): void {
+  setWorld((s) => {
+    if (!s.supply) return {}
+    const b = f(s.supply.bench)
+    return b === s.supply.bench ? {} : { supply: { ...s.supply, bench: b } }
+  })
+}
+
+export const benchSink = (): void => withBench(sinkPattern)
+export const benchMark = (): void => withBench(markRise)
+export const benchLift = (): void => withBench(liftPattern)
+export const benchDrop = (id: string): void => withBench((b) => benchDropAt(b, id))
+export const benchTake = (id: string): void => withBench((b) => benchTakeAt(b, id))
+/** The set as it stands goes to the balance; the camera goes with it. */
+export function benchDone(): void {
+  withBench(benchDoneAt)
+  setWorld((s) => (s.supply?.bench.phase === 'balancing' ? { room: 'balance' } : {}))
+}
+export const balanceAdd = (): void => withBench(addIngot)
+export const balanceTake = (): void => withBench(takeIngot)
+export const balanceInspect = (id: string): void => withBench((b) => benchInspectAt(b, id))
+/** Sefu takes the dry pan, with his runner. The wet set stays where it is. */
+export const balanceToFire = (): void => withBench(toFire)
 
 export function commitPrediction(n: number): void {
   setWorld({ prediction: n, journal: { ...getWorld().journal, prediction: `Said the furnace must reach ${n} °C to melt copper.` } })

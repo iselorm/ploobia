@@ -29,9 +29,11 @@ import {
   type Crane,
   type FuelId,
   keepStageOf,
+  type Supply,
   type WorldState,
 } from './archipelago'
 import { salvageKeep, seenWords, validKeep, type Keep } from './keep'
+import { initialBench, type Bench } from './supply'
 
 /**
  * v2 (S0): the plot rides in the save — the stage, the run in progress, the attempts. A v1 save is a fresh start.
@@ -79,7 +81,7 @@ export interface WorldSave {
   pos: [number, number, number] | null
   /** Which way they faced and looked; absent in a save without it. */
   look?: { facing: number; cam: [number, number] }
-  s: Pick<WorldState, SavedKeys> & { drops: Crane['drops']; keep?: Keep | null }
+  s: Pick<WorldState, SavedKeys> & { drops: Crane['drops']; keep?: Keep | null; supply?: Supply | null }
 }
 
 const FUEL_IDS: FuelId[] = ['wetwood', 'drywood', 'charcoal']
@@ -124,6 +126,7 @@ export function snapshot(s: WorldState, spot: Spot | null): WorldSave {
       // S1: the handoff, its dispatches, the beds' scientific state, lots and reports. Settled
       // results are stored whole, so a reload replays the report and never re-runs a fortnight.
       keep: s.keep,
+      supply: s.supply,
     },
   }
 }
@@ -220,7 +223,7 @@ export function clearSave(): void {
  */
 export function restoreWorld(save: WorldSave): Spot | null {
   resetWorld()
-  const { drops, keep: rawKeep, ...kept } = save.s
+  const { drops, keep: rawKeep, supply: rawSupply, ...kept } = save.s
   const base = getWorld()
   // A save taken mid-pause resumes at the record; a naming card is never saved open.
   const plot = { ...kept.plot, naming: false, stage: kept.plot.stage === 'pause' ? ('record' as const) : kept.plot.stage }
@@ -228,6 +231,7 @@ export function restoreWorld(save: WorldSave): Spot | null {
     ...kept,
     plot,
     keep: restoreKeep(rawKeep, plot),
+    supply: restoreSupply(rawSupply),
     phase: 'welcome',
     resumed: true,
     crane: { ...base.crane, drops: { ...drops } },
@@ -235,6 +239,26 @@ export function restoreWorld(save: WorldSave): Spot | null {
   seedClock(kept.time, kept.furnace.lit, kept.curve)
   if (!save.pos) return null
   return { pos: save.pos, facing: save.look?.facing ?? Math.PI, cam: save.look?.cam ?? [Math.PI - 0.6, 0.42] }
+}
+
+const BENCH_PHASES = new Set(['idle', 'pattern', 'marked', 'matching', 'balancing', 'charged'])
+
+/**
+ * S2's block as saved: the bench when its shape holds, else a fresh bench —
+ * a bad block is never a reason to lose the world. No block → none.
+ */
+export function restoreSupply(raw: unknown): Supply | null {
+  if (raw == null || typeof raw !== 'object') return null
+  const b = (raw as { bench?: unknown }).bench
+  if (!b || typeof b !== 'object') return { bench: initialBench() }
+  const x = b as Partial<Bench>
+  const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every((i) => typeof i === 'string')
+  const ok =
+    typeof x.phase === 'string' && BENCH_PHASES.has(x.phase) && strings(x.inJug) && strings(x.inspected) &&
+    typeof x.patternIn === 'boolean' && typeof x.marked === 'boolean' && typeof x.dry === 'number' && x.dry >= 0 &&
+    typeof x.runner === 'boolean' && typeof x.sentUnlevel === 'boolean' &&
+    (x.matched == null || typeof x.matched === 'number') && (x.charge == null || typeof x.charge === 'number')
+  return { bench: ok ? { ...initialBench(), ...(x as Bench) } : initialBench() }
 }
 
 /**
