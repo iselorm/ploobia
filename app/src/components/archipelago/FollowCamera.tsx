@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
-import { CRANE, craneTip, getWorld } from '@/lib/archipelago'
+import { CRANE, craneTip, getWorld, type RoomId } from '@/lib/archipelago'
+import { BALANCE_CAM, BALANCE_CAM_PHONE, BENCH_CAM, BENCH_CAM_PHONE } from './benchLayout'
 import { control, live } from './live'
 
 /**
@@ -18,9 +19,17 @@ const HEIGHT = 2.9
 const TARGET = new THREE.Vector3()
 const WANT = new THREE.Vector3()
 const LOOK = new THREE.Vector3()
-/** The furnace room's viewpoint: just outside the mouth, looking onto the bed. */
-const ROOM_POS = new THREE.Vector3(0.2, 1.7, -4.3)
-const ROOM_LOOK = new THREE.Vector3(0, 0.9, -8.4)
+/**
+ * Each room's viewpoint. The furnace: just outside the mouth, looking onto the
+ * bed. The benches (S2): close on the instrument from the yard side.
+ */
+type Cut = { pos: THREE.Vector3; look: THREE.Vector3 }
+const cut = (c: { pos: [number, number, number]; look: [number, number, number] }): Cut => ({ pos: new THREE.Vector3(...c.pos), look: new THREE.Vector3(...c.look) })
+const ROOMS: Record<Exclude<RoomId, 'none'>, { wide: Cut; phone: Cut }> = {
+  furnace: { wide: { pos: new THREE.Vector3(0.2, 1.7, -4.3), look: new THREE.Vector3(0, 0.9, -8.4) }, phone: { pos: new THREE.Vector3(0.2, 1.7, -4.3), look: new THREE.Vector3(0, 0.9, -8.4) } },
+  bench: { wide: cut(BENCH_CAM), phone: cut(BENCH_CAM_PHONE) },
+  balance: { wide: cut(BALANCE_CAM), phone: cut(BALANCE_CAM_PHONE) },
+}
 
 export default function FollowCamera({ hudBottom = 0 }: { hudBottom?: number }) {
   const camera = useThree((s) => s.camera)
@@ -75,24 +84,25 @@ export default function FollowCamera({ hudBottom = 0 }: { hudBottom?: number }) 
     }
   }, [gl])
 
-  const wasRoom = useRef(false)
+  const wasRoom = useRef<RoomId | null>(null)
   useFrame((_, dtRaw) => {
     const dt = Math.min(0.05, dtRaw)
-    const inRoom = getWorld().room === 'furnace'
-    if (inRoom) {
+    const room = getWorld().room
+    if (room !== 'none') {
       // A room is a CUT, not a glide: the first frame snaps, then it holds.
-      if (!wasRoom.current) {
-        camera.position.copy(ROOM_POS)
-        wasRoom.current = true
+      const r = size.height < 500 ? ROOMS[room].phone : ROOMS[room].wide
+      if (wasRoom.current !== room) {
+        camera.position.copy(r.pos)
+        wasRoom.current = room
       }
-      camera.lookAt(ROOM_LOOK)
+      camera.lookAt(r.look)
       control.yaw = 0
       control.pitch = 0
       return
     }
     if (wasRoom.current) {
-      // Cut back out to the follow shot, no glide from inside the furnace.
-      wasRoom.current = false
+      // Cut back out to the follow shot, no glide from inside the room.
+      wasRoom.current = null
       first.current = true
     }
     live.camYaw += control.yaw

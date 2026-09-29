@@ -24,6 +24,7 @@ import Lighting, { Lamp } from './Lighting'
 import { lightingFor, useSun } from '@/lib/looks'
 import Prop from './Prop'
 import { Banner, Braces, Chalkboard, Lintel, Skyline, ToolRack } from './Dressing'
+import BenchScene from './BenchScene'
 import { useWorldMesh, useWorldTexture } from './useWorldMesh'
 import { WORLD_TEXTURES } from '@/lib/worldassets'
 import { WORLD_TEXT } from '@/lib/worldtext'
@@ -65,6 +66,8 @@ export default function Courtyard() {
   return (
     <>
       <Lighting zone="foundry" />
+      {/* S2: the cold bench and the balance bench, by the west wall */}
+      <BenchScene />
       {/* the yard's lamps: up as the sun goes down (Night shift keeps the subject lit, never the room black) */}
       <Lamp position={[-3.4, 3.1, 11.9]} up={lamps} />
       <Lamp position={[3.4, 3.1, 11.9]} up={lamps} />

@@ -25,6 +25,7 @@ import {
   type FuelId,
   type ZoneId,
   enterDoor,
+  openBench,
 } from '@/lib/archipelago'
 import { SPAWNS, control, live } from './live'
 import { LANDING_SPAWN } from './landingLayout'
@@ -415,6 +416,10 @@ export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void
       }
       case 'talk':
         talkTo(id)
+        return
+      case 'measure':
+        // S2: the jug or the balance — a camera cut into that station.
+        openBench(id === 'bench.balance' ? 'balance' : 'bench')
         return
     }
   }

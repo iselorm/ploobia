@@ -1317,7 +1317,11 @@ export const benchSink = (): void => withBench(sinkPattern)
 export const benchMark = (): void => withBench(markRise)
 export const benchLift = (): void => withBench(liftPattern)
 export const benchDrop = (id: string): void => withBench((b) => benchDropAt(b, id))
-export const benchTake = (id: string): void => withBench((b) => benchTakeAt(b, id))
+/** A piece out of the water — or off the pan, which sends the set back to the jug and the camera with it. */
+export function benchTake(id: string): void {
+  withBench((b) => benchTakeAt(b, id))
+  setWorld((s) => (s.room === 'balance' && s.supply?.bench.phase === 'matching' ? { room: 'bench' } : {}))
+}
 /** The set as it stands goes to the balance; the camera goes with it. */
 export function benchDone(): void {
   withBench(benchDoneAt)
