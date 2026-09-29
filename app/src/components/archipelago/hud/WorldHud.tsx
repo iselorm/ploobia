@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router'
 import { BookOpen, Eye, Hand, Moon, Ruler, Sun, Sunset, Thermometer, Volume2, VolumeX } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { isCoarse, useInputMode } from '@/lib/input'
-import { useBandCaps } from '@/lib/bands'
+import { useBand, useBandCaps } from '@/lib/bands'
 import { clearSave, describeSave } from '@/lib/worldsave'
 import { sefuLines } from '@/lib/sefu'
 import { SELA_LINES, naraLines } from '@/lib/nara'
@@ -13,6 +13,8 @@ import { BedScope, Brief as PlotBrief, MethodCard, Naming, PageCard, PlotBody, P
 import { usePlotMoments } from './plotMoments'
 import { BoardPill, GlassFilter, HandoffCard, KeepReturn, SelaBoard } from './KeepHud'
 import { KEEP_CARD, keepHint, keepOwnsTalk, previewChapters } from '@/lib/keepui'
+import { BenchPill, BenchStrip, FurnaceReady } from './BenchHud'
+import { benchHint, benchRoomOf } from '@/lib/benchui'
 import { endOfS0 } from '@/lib/keepfixture'
 import { useQualityCaps } from '@/lib/quality'
 import { LOOK_PRESETS, nearestLook, setSun, useSun } from '@/lib/looks'
@@ -24,6 +26,7 @@ import {
   RELIGHT,
   WHYS,
   activeQuest,
+  benchAvailable,
   currentStepId,
   plotActive,
   sendAcross,
@@ -194,10 +197,14 @@ export default function WorldHud({ compact }: { compact: boolean }) {
   const showGauge = s.zone === 'foundry' && (s.lit.length > 0 || s.furnace.lit)
   const brief = s.zone === 'foundry' && s.prediction == null && !briefed && s.phase === 'play'
   const inRoom = s.room === 'furnace'
+  // S2: a bench room is a cut too; the strip is BenchHud's, the tags are the scene's.
+  const benchRoom = benchRoomOf(s)
+  const anyRoom = s.room !== 'none'
+  const [band] = useBand()
   const driving = s.crane.active
   const afterPour = s.poured && seenPour && after < 4
   const playing = s.phase === 'play'
-  const hintText = note ?? keepHint(s) ?? step.coach
+  const hintText = note ?? keepHint(s) ?? benchHint(s, band) ?? step.coach
   const talkingTo = s.talk === 'talk.nara' ? 'nara' : s.talk === 'talk.sela' ? 'sela' : s.talk === 'talk.foreman' ? 'foreman' : null
   // S1: the keep takes over Nara's and Sela's conversations when it has something to ask.
   const keepTalk = keepOwnsTalk(s)
@@ -205,7 +212,9 @@ export default function WorldHud({ compact }: { compact: boolean }) {
   // Phone: the keep's pill has Ploob's slot while a report waits or Sela's board is folded.
   const keepSlot = compact && s.zone === 'landing' && (keepStage === 'report' || (keepStage === 'ready' && !s.talk))
   // Phone: while a card holds the explorer, the tools, the stick and the verb step back (Mock B).
-  const held = compact && !!s.talk
+  const held = compact && (!!s.talk || !!benchRoom)
+  // Phone: the bench's pill has Ploob's slot while the child has stepped away from a started bench.
+  const benchSlot = compact && s.zone === 'foundry' && !!s.supply && !anyRoom && !s.talk && s.supply.bench.phase !== 'idle'
   const caps = useQualityCaps()
   const reduceGlass = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-transparency: reduce)').matches
 
@@ -237,7 +246,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
               {quest.title}
             </p>
             {!compact && !cinematic && <Checklist s={s} />}
-            {showGauge && <Gauge fuel={s.furnace.fuel} temp={s.furnace.temp} hearths={s.hearths} lit={s.lit} compact={compact} />}
+            {showGauge && (benchRoom ? <FurnaceReady temp={s.furnace.temp} /> : <Gauge fuel={s.furnace.fuel} temp={s.furnace.temp} hearths={s.hearths} lit={s.lit} compact={compact} />)}
             {onPlot && !cinematic && <PlotPlate compact={compact} open={plateOpen} onToggle={() => setPlateOpen((o) => !o)} onRevise={() => setRevising(true)} />}
           </div>
         )}
@@ -247,7 +256,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       {playing && !compact && <Minimap s={s} />}
 
       {/* bottom-left: the toolbelt — on a phone it moves to the top-right, and the stick has the bottom-left corner to itself */}
-      {playing && !inRoom && !driving && !cinematic && !held && (
+      {playing && !anyRoom && !driving && !cinematic && !held && (
         <div className={cn('absolute flex items-end gap-1.5', compact ? 'top-3 right-3' : 'bottom-3 left-3')} data-testid="toolbelt">
           <Tool label="Lens" keyHint={coarse ? undefined : 'Q'} active={s.ring === 'system'} testid="lens" onClick={() => (control.lens = true)}>
             <Eye size={18} />
@@ -255,7 +264,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
           <Tool label="Probe" keyHint={coarse ? undefined : 'E'} dim={s.zone === 'landing' && near?.verb !== 'probe'} testid="probe" onClick={() => (control.interact = true)}>
             <Thermometer size={18} />
           </Tool>
-          <Tool label="Measure" locked testid="measure">
+          <Tool label="Measure" locked={!benchAvailable(s)} active={!!benchRoom} testid="measure" onClick={() => (control.interact = true)}>
             <Ruler size={18} />
           </Tool>
           <Tool label="Journal" keyHint={coarse ? undefined : 'J'} testid="journal" active={journalOpen} onClick={() => setJournalOpen((o) => !o)}>
@@ -264,14 +273,14 @@ export default function WorldHud({ compact }: { compact: boolean }) {
           {coarse && !compact && <Stick />}
         </div>
       )}
-      {playing && !inRoom && !driving && !cinematic && coarse && compact && !held && (
+      {playing && !anyRoom && !driving && !cinematic && coarse && compact && !held && (
         <div className="absolute bottom-3 left-3 flex">
           <Stick />
         </div>
       )}
 
       {/* low-centre: the one verb, near the thing — on a phone, the right thumb's corner */}
-      {playing && !inRoom && !driving && !cinematic && !held && (
+      {playing && !anyRoom && !driving && !cinematic && !held && (
         <div className={cn('absolute flex', compact ? 'right-3 bottom-3 justify-end' : 'inset-x-0 justify-center')} style={{ bottom: compact ? 12 : 22 }}>
           <Tile
             aria-label={verbLabel ?? 'Nothing near'}
@@ -308,7 +317,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       )}
 
       {/* bottom-right: Ploob's hint — on a phone it sits between the stick and the verb, off both thumbs */}
-      {playing && !brief && !inRoom && !afterPour && !cinematic && !plotBrief && !keepSlot && !held && s.talk !== KEEP_CARD && !(compact && plateOpen && onPlot && plateUp(plot)) && (
+      {playing && !brief && !anyRoom && !afterPour && !cinematic && !plotBrief && !keepSlot && !benchSlot && !held && s.talk !== KEEP_CARD && !(compact && plateOpen && onPlot && plateUp(plot)) && (
         <div className={cn('absolute bottom-3', compact ? 'left-[9rem] right-[13.5rem]' : 'right-3 max-w-[min(24rem,calc(100vw-1.5rem))]')}>
           <button
             type="button"
@@ -405,7 +414,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       {brief && <Brief onDone={() => setBriefed(true)} />}
 
       {/* the Lens up in the courtyard: the scope of the air system, the split marked */}
-      {playing && !inRoom && !driving && s.zone === 'foundry' && s.ring === 'system' && <Scope pipeFixed={s.pipeFixed} compact={compact} />}
+      {playing && !anyRoom && !driving && s.zone === 'foundry' && s.ring === 'system' && <Scope pipeFixed={s.pipeFixed} compact={compact} />}
       {/* the Lens up at a bed: the bed in section — evidence, no sentence */}
       {playing && s.zone === 'landing' && s.ring === 'system' && !!run && <BedScope compact={compact} />}
 
@@ -415,6 +424,9 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       {/* S1 — the handoff: Nara's question and her say-back; Sela's board; the return */}
       {playing && talkingTo === 'nara' && keepTalk && <HandoffCard s={s} compact={compact} />}
       {playing && talkingTo === 'sela' && keepTalk && <SelaBoard s={s} compact={compact} />}
+      {/* S2: the bench strip while a bench room is open; the pill while the child has stepped away (phones) */}
+      {playing && benchRoom && <BenchStrip s={s} room={benchRoom} band={band} compact={compact} />}
+      {playing && benchSlot && <BenchPill s={s} />}
       {playing && keepSlot && keepStage === 'ready' && <BoardPill s={s} onOpen={() => talkTo('talk.sela')} />}
       {playing && s.zone === 'landing' && <KeepReturn s={s} compact={compact} />}
       {playing && talkingTo === 'sela' && !keepTalk && (
@@ -452,8 +464,8 @@ export default function WorldHud({ compact }: { compact: boolean }) {
           }}
         />
       )}
-      {afterPour && after < 3 && <WhyCard index={after} onNext={() => setAfter(after + 1)} />}
-      {afterPour && after === 3 && <Stamp journal={s.journal} onClose={() => setAfter(4)} />}
+      {afterPour && !benchRoom && after < 3 && <WhyCard index={after} onNext={() => setAfter(after + 1)} />}
+      {afterPour && !benchRoom && after === 3 && <Stamp journal={s.journal} onClose={() => setAfter(4)} />}
       {journalOpen && !afterPour && (onPlot ? <PlotJournal p={plot} onClose={() => setJournalOpen(false)} /> : <Stamp journal={s.journal} onClose={() => setJournalOpen(false)} />)}
     </div>
   )
