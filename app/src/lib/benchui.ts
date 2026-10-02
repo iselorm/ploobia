@@ -29,7 +29,7 @@ export function benchHint(s: WorldState, band: string): string | null {
   // The mould leads once a charge has gone to the fire.
   switch (mouldLookOf(s)) {
     case 'waiting':
-      return pourBlocked(s) ? "The fire's dropped. Back to the bellows: air sets how close it gets." : "Sefu's got the dry pan. The mould's at the furnace foot."
+      return pourBlocked(s) ? "The fire's dropped. Back to the furnace: check the fuel and the air." : "Sefu's got the dry pan. The mould's at the furnace foot."
     case 'run':
       return "The channel's running."
     case 'cool':

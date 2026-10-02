@@ -75,6 +75,7 @@ import {
   initialCast,
   inspect as benchInspectAt,
   kitCast,
+  lastPour,
   liftPattern,
   markLevel,
   markRise,
@@ -783,9 +784,10 @@ export function cartActive(s: WorldState): boolean {
 
 function cartStepId(s: WorldState): CartStepId {
   const sup = s.supply
-  // The relight's own steps lead until the heat is there (the cart holds the pour) or an old pour is done.
-  if (s.step !== 'done' && !(s.step === 'feed' && sup)) return s.step
-  if (!sup) return 'measure'
+  // The relight's own steps lead until the bench is open (the heat is there, and the cart holds the pour)
+  // or an old pour is done. From then on the bench and the mould lead — whatever relight step a child who
+  // skipped ahead was left on.
+  if (!sup) return s.step === 'done' ? 'measure' : s.step
   if (kitCast(sup.cast)) return sup.cast.why >= 0 ? 'test' : 'cast'
   return mouldStage(sup.bench, sup.cast) === 'empty' ? 'measure' : 'cast'
 }
@@ -974,7 +976,9 @@ export function tickWorld(dtRaw: number): void {
     sinceFlush = 0
     // The curve: one point every ~0.5 s of the furnace's life, from lighting.
     let curve = s.curve
-    if (s.furnace.lit && litAt != null) {
+    // The curve is the climb to copper heat. While Sefu holds the pour for the bench it stops, so the
+    // pour card shows the climb and not the minutes spent measuring.
+    if (s.furnace.lit && litAt != null && !(sup && !s.poured)) {
       const t = simTime - litAt
       const last = curve[curve.length - 1]
       if (!last || t - last[0] >= 0.5) curve = [...curve, [Math.round(t * 10) / 10, Math.round(furnaceTemp)]]
@@ -1356,9 +1360,10 @@ export function benchAvailable(s: WorldState): boolean {
 /** Walk up to the jug or the balance: a camera cut into that station, the explorer held still beside it. */
 export function openBench(room: 'bench' | 'balance'): void {
   setWorld((s) => {
-    if (!benchAvailable(s)) return {}
+    // Not while carrying: a piece in hand is put down by the explorer, never dropped by a camera cut.
+    if (!benchAvailable(s) || s.held) return {}
     const supply = s.supply ?? newSupply()
-    return { supply, room, held: null }
+    return { supply, room }
   })
 }
 
@@ -1406,15 +1411,21 @@ export function mouldLookOf(s: WorldState): MouldLook {
   return mouldLook(mouldStage(sup.bench, sup.cast), sup.pouredAt != null ? simTime - sup.pouredAt : null)
 }
 
+/** The furnace is at copper heat right now: lit, and at the reading the relight itself pours at. */
+export function furnaceReady(s: WorldState): boolean {
+  return s.furnace.lit && hotEnough(s.furnace.temp)
+}
+
 /** Why Sefu will not pour a waiting charge: the fire is below copper heat. Null when nothing blocks it. */
 export function pourBlocked(s: WorldState): 'cold' | null {
   if (mouldLookOf(s) !== 'waiting') return null
-  return s.furnace.lit && hotEnough(s.furnace.temp) ? null : 'cold'
+  return furnaceReady(s) ? null : 'cold'
 }
 
 /** Walk up to the mould: a camera cut onto the casting pit, the explorer held still beside it. */
 export function openMould(): void {
-  setWorld((s) => (s.zone === 'foundry' && mouldShown(s) ? { room: 'mould', held: null } : {}))
+  // Not while carrying: a piece in hand is put down by the explorer, never dropped by a camera cut.
+  setWorld((s) => (s.zone === 'foundry' && mouldShown(s) && !s.held ? { room: 'mould' } : {}))
 }
 
 /** The child says the word and Sefu pours the waiting charge. Never cold, never twice. */
@@ -1491,12 +1502,14 @@ export function castFacts(s: WorldState): Record<string, string | number | boole
   const sup = s.supply
   const b = sup?.bench
   const first = sup?.cast.pours[0]
+  const last = lastPour(sup?.cast)
   return {
     water_before_cm3: JUG_START,
     water_with_the_pattern_under_cm3: markLevel(),
     scrap_reached_the_mark: b ? benchReached(b) : false,
     wet_set_weighed_g: b ? benchWetMass(b) : 0,
     dry_ingots_on_the_pan: b?.dry ?? 0,
+    beam_was_level: last ? !last.guess : false,
     pours: sup?.cast.pours.length ?? 0,
     first_pour: first ? (first.short ? `short: ${castCm3(first)} of 1000 cm³` : 'filled the mould') : 'none',
     furnace_reading_c: Math.round(s.furnace.temp),

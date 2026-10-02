@@ -14,10 +14,10 @@
  * the strings; the name is fixed across languages (the bible).
  */
 
-import { DOORS, cartStory, mouldLookOf, pourBlocked, type StepId, type WorldState } from './archipelago'
+import { DOORS, cartStory, furnaceReady, mouldLookOf, type StepId, type WorldState } from './archipelago'
 
 /** Which set of lines a state calls for. `arrive` and `done` never reach him: he is only in the courtyard, and `done` is the pour. */
-export type SefuMood = Exclude<StepId, 'arrive' | 'done'> | 'poured' | 'bench' | 'heat' | 'left' | 'charged' | 'cold' | 'short' | 'kit'
+export type SefuMood = Exclude<StepId, 'arrive' | 'done'> | 'poured' | 'bench' | 'heat' | 'left' | 'charged' | 'pouring' | 'cold' | 'short' | 'kit'
 
 export const SEFU_LINES: Record<SefuMood, readonly string[]> = {
   clear: [
@@ -55,6 +55,7 @@ export const SEFU_LINES: Record<SefuMood, readonly string[]> = {
   heat: ['We have the heat. Now: how much copper?', "The pattern for Sela's gate is on the cold bench."],
   left: ["You left me good copper. Measure the pattern and I'll melt it for Sela."],
   charged: ['The dry pan is on the fire. Say the word at the mould.'],
+  pouring: ['Stand clear. Let it dull before you look.'],
   cold: ["Fire's dropped. I can't pour a thing cold."],
   short: ["Short copper, short strap. Find what's missing."],
   kit: ["Sela's, this one. The bells can wait for a better metal.", 'Now tell me what you changed. I want to know it, not guess it.'],
@@ -65,14 +66,17 @@ export function sefuMood(s: WorldState): SefuMood {
   // S2: on Sela's errand, or once the bench has been opened, the mould leads what he says.
   if (cartStory(s) || s.supply) {
     const look = mouldLookOf(s)
+    if (look === 'run' || look === 'cool' || look === 'open') return 'pouring'
     if (look === 'short') return 'short'
-    if (look === 'waiting') return pourBlocked(s) ? 'cold' : 'charged'
-    if (look === 'run' || look === 'cool' || look === 'open') return 'charged'
     if (look === 'full') return DOORS['door.bench'].unlocked(s) ? 'bench' : 'kit'
+    // Before a pour, charged or not: he says nothing about heat he does not have.
+    if (s.supply && !furnaceReady(s)) return 'cold'
+    if (look === 'waiting') return 'charged'
     // A cold mould: a short cast is back on the pan, an old pour is waiting to be measured, or the heat has just come.
     if (s.supply && s.supply.bench.recasts > 0) return 'short'
-    if (s.poured) return 'left'
-    if (s.supply) return 'heat'
+    // "You left me good copper" is for a child on Sela's errand; anyone else keeps the relight's own lines.
+    if (s.poured && cartStory(s)) return 'left'
+    if (s.supply && !s.poured) return 'heat'
   }
   if (DOORS['door.bench'].unlocked(s)) return 'bench'
   if (s.poured) return 'poured'

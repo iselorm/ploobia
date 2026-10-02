@@ -251,8 +251,7 @@ export function restoreSupply(raw: unknown): Supply | null {
   if (raw == null || typeof raw !== 'object') return null
   const r = raw as { bench?: unknown; cast?: unknown; pouredAt?: unknown }
   const b = r.bench
-  if (!b || typeof b !== 'object') return { bench: initialBench(), cast: initialCast(), pouredAt: null }
-  const x = b as Partial<Bench>
+  const x = (b && typeof b === 'object' ? b : {}) as Partial<Bench>
   const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every((i) => typeof i === 'string')
   const count = (v: unknown): boolean => v == null || (typeof v === 'number' && v >= 0)
   const ok =
@@ -262,8 +261,12 @@ export function restoreSupply(raw: unknown): Supply | null {
     (x.matched == null || typeof x.matched === 'number') && (x.charge == null || typeof x.charge === 'number') &&
     count(x.recasts) && count(x.castDry)
   // An A1 save has no `recasts`/`castDry` and no cast block: the bench comes back whole, the record starts empty.
-  const bench = ok ? { ...initialBench(), ...(x as Bench), recasts: x.recasts ?? 0, castDry: x.castDry ?? 0 } : initialBench()
-  const cast = ok ? restoreCast(r.cast, bench) : null
+  const read = ok ? { ...initialBench(), ...(x as Bench), recasts: x.recasts ?? 0, castDry: x.castDry ?? 0 } : initialBench()
+  // The record is read even beside an unreadable bench: a kit on it is still the one kit.
+  const cast = restoreCast(r.cast, read)
+  // A record that cannot be read starts again — and the bench's count of returns with it, or the next pours would
+  // be taken for ones already answered.
+  const bench = cast ? read : { ...read, recasts: 0, castDry: 0 }
   return { bench, cast: cast ?? initialCast(), pouredAt: cast && cast.pours.length > 0 && isNum(r.pouredAt) ? r.pouredAt : null }
 }
 

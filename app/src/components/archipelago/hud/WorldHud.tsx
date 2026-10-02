@@ -44,6 +44,7 @@ import {
   feedFurnace,
   interactables,
   leaveRoom,
+  furnaceReady,
   mouldLookOf,
   resetWorld,
   scoreRelight,
@@ -258,7 +259,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
               {quest.title}
             </p>
             {!compact && !cinematic && <Checklist s={s} />}
-            {showGauge && (supplyRoom ? <FurnaceReady temp={s.furnace.temp} /> : <Gauge fuel={s.furnace.fuel} temp={s.furnace.temp} hearths={s.hearths} lit={s.lit} compact={compact} />)}
+            {showGauge && (supplyRoom ? <FurnaceReady temp={s.furnace.temp} ready={furnaceReady(s)} /> : <Gauge fuel={s.furnace.fuel} temp={s.furnace.temp} hearths={s.hearths} lit={s.lit} compact={compact} />)}
             {onPlot && !cinematic && <PlotPlate compact={compact} open={plateOpen} onToggle={() => setPlateOpen((o) => !o)} onRevise={() => setRevising(true)} />}
           </div>
         )}

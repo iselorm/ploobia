@@ -357,12 +357,15 @@ const BEAM_Y = 0.5
 
 function Balance({ b, inRoom, band }: { b: Bench | null; inRoom: boolean; band: string }) {
   const beam = useRef<THREE.Group>(null)
-  const tilt = b ? benchTilt(b) : 0
-  const onPan = !!b && (b.phase === 'balancing' || b.phase === 'charged')
-  const dry = onPan ? b.dry : 0
-  // A short cast that came back from the mould lies on the dry pan: cold copper, one piece, worth `castDry` ingots.
-  const castDry = onPan ? b.castDry : 0
-  const loose = dry - castDry
+  // Once charged, the dry pan has gone to the fire with Sefu (round A2): nothing is left on that side.
+  const gone = b?.phase === 'charged'
+  const onPan = !!b && (b.phase === 'balancing' || gone)
+  const dry = b?.phase === 'balancing' ? b.dry : 0
+  // A short cast that came back from the mould lies on the dry pan — cold copper, one piece, worth `castDry`
+  // ingots — and it waits there while the child is back at the jug.
+  const castDry = b && !gone ? b.castDry : 0
+  const loose = Math.max(0, dry - castDry)
+  const tilt = !b ? 0 : b.phase === 'balancing' ? benchTilt(b) : gone ? -1 : castDry > 0 ? 1 : 0
   useFrame((_, dt) => {
     const g = beam.current
     if (!g) return
@@ -375,16 +378,20 @@ function Balance({ b, inRoom, band }: { b: Bench | null; inRoom: boolean; band: 
   const wet = onPan ? benchWetMass(b) : 0
   const predicted = onPan ? benchPredicted(b) : 0
   const gap = onPan ? benchGap(b) : 0
-  const showRunner = !!b && (runnerOffered(b) || b.phase === 'charged')
-  const readout = !onPan
-    ? 'Nothing on the pans yet'
-    : band === 'explorer'
-      ? `${castDry > 0 ? `The short cast + ${loose} ingot${loose === 1 ? '' : 's'}` : `${dry} dry ingot${dry === 1 ? '' : 's'}`} · ${level ? 'level' : tilt > 0 ? 'dry side heavy' : 'dry side light'}`
-      : gap === 0 || band === 'scientist'
-        ? `Measured ${fmt(wet)} g · Predicted ${fmt(predicted)} g${level ? ' · level' : ''}`
-        : `Measured ${fmt(wet)} g · Predicted ${fmt(predicted)} g · ${fmt(Math.abs(gap))} g ${gap < 0 ? 'below' : 'above'} prediction`
+  const showRunner = !!b && runnerOffered(b)
+  const readout = gone
+    ? 'The dry pan has gone to the fire'
+    : !onPan
+      ? castDry > 0
+        ? 'The short cast waits on the dry pan'
+        : 'Nothing on the pans yet'
+      : band === 'explorer'
+        ? `${castDry > 0 ? `The short cast + ${loose} ingot${loose === 1 ? '' : 's'}` : `${dry} dry ingot${dry === 1 ? '' : 's'}`} · ${level ? 'level' : tilt > 0 ? 'dry side heavy' : 'dry side light'}`
+        : gap === 0 || band === 'scientist'
+          ? `Measured ${fmt(wet)} g · Predicted ${fmt(predicted)} g${level ? ' · level' : ''}`
+          : `Measured ${fmt(wet)} g · Predicted ${fmt(predicted)} g · ${fmt(Math.abs(gap))} g ${gap < 0 ? 'below' : 'above'} prediction`
   return (
-    <group position={BALANCE_AT} name="bench-balance" userData={{ tilt, dry, level, castDry }}>
+    <group position={BALANCE_AT} name="bench-balance" userData={{ tilt, dry, level, castDry, gone }}>
       {/* base and post */}
       <mesh position={[0, 0.03, 0]} castShadow>
         <boxGeometry args={[0.3, 0.06, 0.3]} />

@@ -5,7 +5,7 @@ import { Html } from '@react-three/drei'
 import { CuboidCollider } from '@react-three/rapier'
 import { getSimTime, getWorld, mouldLookOf, mouldShown, registerInteractable, useWorld } from '@/lib/archipelago'
 import { useBand } from '@/lib/bands'
-import { INGOT_G, PATTERN_CM3, POUR_BEATS, RUNNER_G, castCm3, castG, lastPour, missingG, type MouldLook, type Pour } from '@/lib/supply'
+import { INGOT_G, PATTERN_CM3, POUR_BEATS, RUNNER_G, castCm3, castG, lastPour, type MouldLook, type Pour } from '@/lib/supply'
 import Tag from './SceneTag'
 import { BASIN_AT, CHANNEL, MOULD, MOULD_AT, MOULD_REACH, MOULD_VERB_AT, SAND, STRAP, TRAY_AT } from './mouldLayout'
 
@@ -220,8 +220,9 @@ function Mould({ look, pour }: { look: MouldLook; pour: Pour | null }) {
               </mesh>
             ) : null,
           )}
-          <PinShape x={PIN_X[0]} h={0.034} color={COPPER_CAST} inset />
-          {!pour.pinSeatMissing && <PinShape x={PIN_X[1]} h={0.034} color={COPPER_CAST} inset />}
+          {/* a pin is cast only if the copper reached its sprue */}
+          {xEnd >= PIN_X[0] && <PinShape x={PIN_X[0]} h={0.034} color={COPPER_CAST} inset name="cast-pin-0" />}
+          {!pour.pinSeatMissing && <PinShape x={PIN_X[1]} h={0.034} color={COPPER_CAST} inset name="cast-pin-1" />}
         </group>
       )}
 
@@ -307,12 +308,12 @@ function Strap({ from, to, z, r, h, color, capEnd, lip }: { from: number; to: nu
 }
 
 /** A gate pin beside the strap: a short shank on its sprue and a domed head, toward the yard. */
-function PinShape({ x, h, color, inset }: { x: number; h: number; color: string; inset?: boolean }) {
+function PinShape({ x, h, color, inset, name }: { x: number; h: number; color: string; inset?: boolean; name?: string }) {
   const metal = color === COPPER_CAST
   const k = inset ? 0.86 : 1
   const mat = <meshStandardMaterial color={color} roughness={metal ? 0.55 : 0.8} metalness={metal ? 0.45 : 0} emissive={metal ? MOLTEN_E : '#000000'} emissiveIntensity={0} />
   return (
-    <group position={[x, h / 2, 0]}>
+    <group position={[x, h / 2, 0]} name={name}>
       {/* the sprue from the strap's edge */}
       <mesh position={[0, 0, 0.05]}>
         <boxGeometry args={[0.022 * k, h, 0.07]} />
@@ -415,7 +416,8 @@ function Tags({ look, pour, band }: { look: MouldLook; pour: Pour | null; band: 
       main = 'Dulling'
       break
     case 'short':
-      main = pour ? `${fmt(castCm3(pour))} of ${fmt(PATTERN_CM3)} cm³${words ? ` · ${fmt(missingG(pour))} g short` : ''}` : ''
+      // Volume only, at every band: how much copper that is, and where it went missing, is theirs to find.
+      main = pour ? `${fmt(castCm3(pour))} of ${fmt(PATTERN_CM3)} cm³` : ''
       break
     case 'full':
       main = pour ? (words ? `In ${fmt(pour.chargeG)} g = cast ${fmt(castG(pour))} g + tray ${fmt(pour.spareG)} g` : `${fmt(PATTERN_CM3)} of ${fmt(PATTERN_CM3)} cm³`) : ''

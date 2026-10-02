@@ -90,6 +90,8 @@ function KitLine({ s, compact, back }: { s: WorldState; compact: boolean; back: 
       line={
         <>
           “{SEFU_LINES.kit[0]}”{spare && <span className="font-semibold text-[#6F6857]"> “More than the mould holds. The rest goes back in the tray.”</span>}
+          {/* a kit cast by a guess is still a guess: the beam said so before the fire did */}
+          {pour?.guess && <span className="font-semibold text-[#B8741A]"> “You sent me a guess. The beam wasn't level.”</span>}
           <span className="mt-1 flex items-start gap-2">
             <Ploob2 size={compact ? 18 : 22} />
             <span className={cn('leading-snug font-extrabold', compact ? 'text-[11.5px]' : 'text-[12.5px]', chosen?.right ? 'text-[#2F6B3A]' : 'text-[#2A2823]')} data-testid="mould-why-line">

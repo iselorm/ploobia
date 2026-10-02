@@ -16,7 +16,7 @@ import {
   openBench,
   type WorldState,
 } from '@/lib/archipelago'
-import { PIECES, benchGap, benchLevel_, benchReached, benchToMark, densityOf, massOf, runnerOffered, trayFor, type Bench, type Piece } from '@/lib/supply'
+import { PIECES, benchGap, benchLevel_, benchReached, benchToMark, densityOf, kitCast, massOf, runnerOffered, trayFor, type Bench, type Piece } from '@/lib/supply'
 import { benchPill, type BenchRoom } from '@/lib/benchui'
 
 /**
@@ -151,8 +151,16 @@ export function BenchStrip({ s, room, band, compact }: { s: WorldState; room: Be
   // the balance room
   if (b.phase !== 'balancing' && b.phase !== 'charged') {
     return (
-      <Strip who="The balance" line="Nothing on the pans yet. The jug first." compact={compact} testid="balance-strip">
+      <Strip who="The balance" line={b.castDry > 0 ? 'The short cast is on the dry pan. The jug first.' : 'Nothing on the pans yet. The jug first.'} compact={compact} testid="balance-strip">
         <Btn primary onClick={() => openBench('bench')} data-testid="balance-to-jug">To the jug</Btn>
+        {back}
+      </Strip>
+    )
+  }
+  if (b.phase === 'charged' && kitCast(s.supply?.cast)) {
+    // After the kit: the pan is gone and the pour is made — nothing here still points at the mould.
+    return (
+      <Strip who="The balance" line="The dry pan went to the fire, and the fittings are cast. The wet set stays." compact={compact} testid="balance-strip">
         {back}
       </Strip>
     )
@@ -267,11 +275,11 @@ export function BenchPill({ s }: { s: WorldState }) {
   )
 }
 
-/** The furnace plate, folded to one line while a bench room is open: the furnace is not the task now. */
-export function FurnaceReady({ temp }: { temp: number }) {
+/** The furnace plate, folded to one line while one of S2's rooms is open: the furnace is not the task now — unless its fire has dropped. */
+export function FurnaceReady({ temp, ready }: { temp: number; ready: boolean }) {
   return (
-    <p className="mt-1.5 border-t border-[#F6F2E8]/15 pt-1.5 text-[11px] font-extrabold text-[#F6F2E8]/85" data-testid="furnace-ready">
-      Furnace ready · {Math.round(temp)} °C
+    <p className={cn('mt-1.5 border-t border-[#F6F2E8]/15 pt-1.5 text-[11px] font-extrabold', ready ? 'text-[#F6F2E8]/85' : 'text-[#F0B354]')} data-testid="furnace-ready">
+      {ready ? 'Furnace ready' : 'Fire low'} · {Math.round(temp)} °C
     </p>
   )
 }
