@@ -141,7 +141,8 @@ const smallTargets = (page, root) =>
   await page.waitForTimeout(400)
   const b = await bench(page)
   check('to the fire: charged 9,856 g, the wet set stays, not a guess', b.phase === 'charged' && b.charge === 9856 && b.inJug.length === 6 && !b.sentUnlevel)
-  check('Sefu: Sela\'s, this one — and the plate moves to Cast the fittings', /Sela's, this one/.test((await text(page, 'balance-strip')) ?? '') && (await page.evaluate(() => window.__world.get().step)) === 'done')
+  // Round A2: "Sela's, this one" is said at the full mould now; at the charge Sefu takes the dry pan to it.
+  check('Sefu takes the dry pan to the mould — and the plate moves to Cast the fittings', /Dry goes to the fire/.test((await text(page, 'balance-strip')) ?? '') && /mould/.test((await text(page, 'balance-strip')) ?? '') && (await page.evaluate(() => window.__world.get().step)) === 'done')
   await page.screenshot({ path: path.join(SHOTS, 'bench-charged-desktop.png') })
   await tap(page, 'bench-back')
   await waitFor(page, () => window.__world.get().room === 'none')

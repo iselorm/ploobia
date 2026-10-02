@@ -31,20 +31,45 @@ import { benchPill, type BenchRoom } from '@/lib/benchui'
 const PIECE_NAME: Record<Piece['shape'], string> = { nugget: 'Nugget', pin: 'Pin', offcut: 'Offcut', knob: 'Knob', drip: 'Drip', bell: 'Bell piece', lump: 'Grey lump' }
 const fmt = (n: number): string => n.toLocaleString('en-GB')
 
-function Btn({ primary, className, ...p }: React.ComponentProps<typeof Tile> & { primary?: boolean }) {
+export function Btn({ primary, className, ...p }: React.ComponentProps<typeof Tile> & { primary?: boolean }) {
   return <Tile {...p} className={cn('rounded-full px-3.5 py-2 text-[12.5px] font-extrabold whitespace-nowrap text-[#2A2823]', primary ? 'lg-btn-amber' : 'lg-btn', className)} />
 }
 
-/** The strip's frame: eyebrow + line left, verbs right; phones put it at the top under a scrim. */
-function Strip({ who, line, compact, children, testid }: { who: string; line: React.ReactNode; compact: boolean; children?: React.ReactNode; testid: string }) {
+/**
+ * The strip's frame: eyebrow + line left, verbs right; phones put it at the top under a scrim.
+ * `top` keeps it at the top on a wide screen too (the furnace room's own plate has the bottom);
+ * `narrow` keeps it clear of the quest plate there.
+ */
+export function Strip({
+  who,
+  line,
+  compact,
+  children,
+  testid,
+  lineTestid = 'bench-line',
+  top = false,
+  narrow = false,
+  low = false,
+}: {
+  who: string
+  line: React.ReactNode
+  compact: boolean
+  children?: React.ReactNode
+  testid: string
+  lineTestid?: string
+  top?: boolean
+  narrow?: boolean
+  /** Sit lower on a wide screen: for a room whose object needs the middle of the frame. */
+  low?: boolean
+}) {
   return (
     <>
       {compact && <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-[#14100C]/45 to-transparent" />}
-      <div className={cn('pointer-events-auto absolute inset-x-0 z-30 flex justify-center px-3', compact ? 'top-2' : 'bottom-[5.5rem]')} data-focus-layer="">
-        <div className={cn('lg flex w-full flex-wrap items-center gap-x-4 gap-y-2 rounded-[20px]', compact ? 'max-w-[52rem] px-3.5 py-2' : 'max-w-[46rem] px-4.5 py-3')} data-testid={testid}>
-          <div className="min-w-[14rem] flex-1 basis-[16rem]">
+      <div className={cn('pointer-events-auto absolute inset-x-0 z-30 flex justify-center px-3', compact ? 'top-2' : top ? 'top-16' : low ? 'bottom-6' : 'bottom-[5.5rem]')} data-focus-layer="">
+        <div className={cn('lg flex w-full flex-wrap items-center gap-x-4 gap-y-2 rounded-[20px]', compact ? 'max-w-[52rem] px-3.5 py-2' : narrow ? 'max-w-[30rem] px-4.5 py-3' : 'max-w-[46rem] px-4.5 py-3')} data-testid={testid}>
+          <div className={cn('flex-1', narrow ? 'min-w-[11rem] basis-[12rem]' : 'min-w-[14rem] basis-[16rem]')}>
             <span className="atlas-eyebrow block">{who}</span>
-            <span className={cn('block leading-snug font-bold text-[#2A2823]', compact ? 'text-[13px]' : 'text-[15px]')} data-testid="bench-line">
+            <span className={cn('block leading-snug font-bold text-[#2A2823]', compact ? 'text-[13px]' : 'text-[15px]')} data-testid={lineTestid}>
               {line}
             </span>
           </div>
@@ -138,7 +163,7 @@ export function BenchStrip({ s, room, band, compact }: { s: WorldState; room: Be
         who="Sefu · the Foreman"
         line={
           <>
-            “Sela's, this one.” <span className="font-semibold text-[#6F6857]">{fmt(b.charge ?? 0)} g to the fire, the runner in. The wet set stays.</span>
+            “Dry goes to the fire.” <span className="font-semibold text-[#6F6857]">{fmt(b.charge ?? 0)} g, the runner in. The wet set stays. Sefu pours at the mould, by the furnace foot.</span>
             {b.sentUnlevel && <span className="font-semibold text-[#B8741A]"> “You sent me a guess. The beam wasn't level.”</span>}
           </>
         }
@@ -169,7 +194,7 @@ export function BenchStrip({ s, room, band, compact }: { s: WorldState; room: Be
         testid="balance-strip"
       >
         <Btn onClick={() => balanceAdd()} data-testid="balance-add">Add a dry ingot</Btn>
-        <Btn onClick={() => balanceTake()} data-testid="balance-take" disabled={b.dry === 0}>Take one off</Btn>
+        <Btn onClick={() => balanceTake()} data-testid="balance-take" disabled={b.dry <= b.castDry}>Take one off</Btn>
         {canInspect && (
           <Btn onClick={() => setInspecting((v) => !v)} data-testid="balance-inspect" className={cn(inspecting && 'ring-2 ring-[#E8A33D]')}>
             Inspect the set

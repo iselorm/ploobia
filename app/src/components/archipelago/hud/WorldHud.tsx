@@ -14,7 +14,9 @@ import { usePlotMoments } from './plotMoments'
 import { BoardPill, GlassFilter, HandoffCard, KeepReturn, SelaBoard } from './KeepHud'
 import { KEEP_CARD, keepHint, keepOwnsTalk, previewChapters } from '@/lib/keepui'
 import { BenchPill, BenchStrip, FurnaceReady } from './BenchHud'
-import { benchHint, benchRoomOf } from '@/lib/benchui'
+import { HeatStrip, MouldPill, MouldStrip } from './MouldHud'
+import { benchHint, benchRoomOf, mouldPill, supplyRoomOf } from '@/lib/benchui'
+import { kitCast } from '@/lib/supply'
 import { endOfS0 } from '@/lib/keepfixture'
 import { useQualityCaps } from '@/lib/quality'
 import { LOOK_PRESETS, nearestLook, setSun, useSun } from '@/lib/looks'
@@ -42,6 +44,7 @@ import {
   feedFurnace,
   interactables,
   leaveRoom,
+  mouldLookOf,
   resetWorld,
   scoreRelight,
   setAir,
@@ -199,6 +202,8 @@ export default function WorldHud({ compact }: { compact: boolean }) {
   const inRoom = s.room === 'furnace'
   // S2: a bench room is a cut too; the strip is BenchHud's, the tags are the scene's.
   const benchRoom = benchRoomOf(s)
+  // …and so is the mould (round A2): any of S2's rooms folds the furnace plate and holds the whys.
+  const supplyRoom = supplyRoomOf(s)
   const anyRoom = s.room !== 'none'
   const [band] = useBand()
   const driving = s.crane.active
@@ -212,9 +217,15 @@ export default function WorldHud({ compact }: { compact: boolean }) {
   // Phone: the keep's pill has Ploob's slot while a report waits or Sela's board is folded.
   const keepSlot = compact && s.zone === 'landing' && (keepStage === 'report' || (keepStage === 'ready' && !s.talk))
   // Phone: while a card holds the explorer, the tools, the stick and the verb step back (Mock B).
-  const held = compact && (!!s.talk || !!benchRoom)
-  // Phone: the bench's pill has Ploob's slot while the child has stepped away from a started bench.
-  const benchSlot = compact && s.zone === 'foundry' && !!s.supply && !anyRoom && !s.talk && s.supply.bench.phase !== 'idle'
+  const held = compact && (!!s.talk || !!supplyRoom)
+  // Phone: the bench's pill — or the mould's, once a charge is on the fire — has Ploob's slot while the child
+  // has stepped away from a started bench. Once the kit is cast and Sefu is answered, Ploob has it back.
+  const kitDone = !!s.supply && kitCast(s.supply.cast) && s.supply.cast.why >= 0
+  const mouldSlot = !!s.supply && !!mouldPill(mouldLookOf(s), s.supply.cast)
+  const benchSlot = compact && s.zone === 'foundry' && !!s.supply && !anyRoom && !s.talk && !kitDone && (mouldSlot || s.supply.bench.phase !== 'idle')
+  // S2: on Sela's errand the heat does not pour — Sefu asks how much copper, once, wherever the child is.
+  const [heatSeen, setHeatSeen] = useState(false)
+  const heatAsk = s.zone === 'foundry' && !!s.supply && !s.poured && s.supply.bench.phase === 'idle' && s.supply.cast.pours.length === 0 && !heatSeen && (s.room === 'none' || s.room === 'furnace') && !s.talk
   const caps = useQualityCaps()
   const reduceGlass = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-transparency: reduce)').matches
 
@@ -246,7 +257,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
               {quest.title}
             </p>
             {!compact && !cinematic && <Checklist s={s} />}
-            {showGauge && (benchRoom ? <FurnaceReady temp={s.furnace.temp} /> : <Gauge fuel={s.furnace.fuel} temp={s.furnace.temp} hearths={s.hearths} lit={s.lit} compact={compact} />)}
+            {showGauge && (supplyRoom ? <FurnaceReady temp={s.furnace.temp} /> : <Gauge fuel={s.furnace.fuel} temp={s.furnace.temp} hearths={s.hearths} lit={s.lit} compact={compact} />)}
             {onPlot && !cinematic && <PlotPlate compact={compact} open={plateOpen} onToggle={() => setPlateOpen((o) => !o)} onRevise={() => setRevising(true)} />}
           </div>
         )}
@@ -264,7 +275,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
           <Tool label="Probe" keyHint={coarse ? undefined : 'E'} dim={s.zone === 'landing' && near?.verb !== 'probe'} testid="probe" onClick={() => (control.interact = true)}>
             <Thermometer size={18} />
           </Tool>
-          <Tool label="Measure" locked={!benchAvailable(s)} active={!!benchRoom} testid="measure" onClick={() => (control.interact = true)}>
+          <Tool label="Measure" locked={!benchAvailable(s)} active={!!supplyRoom} testid="measure" onClick={() => (control.interact = true)}>
             <Ruler size={18} />
           </Tool>
           <Tool label="Journal" keyHint={coarse ? undefined : 'J'} testid="journal" active={journalOpen} onClick={() => setJournalOpen((o) => !o)}>
@@ -426,7 +437,17 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       {playing && talkingTo === 'sela' && keepTalk && <SelaBoard s={s} compact={compact} />}
       {/* S2: the bench strip while a bench room is open; the pill while the child has stepped away (phones) */}
       {playing && benchRoom && <BenchStrip s={s} room={benchRoom} band={band} compact={compact} />}
-      {playing && benchSlot && <BenchPill s={s} />}
+      {playing && s.room === 'mould' && <MouldStrip s={s} compact={compact} />}
+      {playing && benchSlot && (mouldSlot ? <MouldPill s={s} /> : <BenchPill s={s} />)}
+      {playing && heatAsk && !brief && (
+        <HeatStrip
+          compact={compact}
+          onGo={() => {
+            setHeatSeen(true)
+            leaveRoom()
+          }}
+        />
+      )}
       {playing && keepSlot && keepStage === 'ready' && <BoardPill s={s} onOpen={() => talkTo('talk.sela')} />}
       {playing && s.zone === 'landing' && <KeepReturn s={s} compact={compact} />}
       {playing && talkingTo === 'sela' && !keepTalk && (
@@ -456,7 +477,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       {inRoom && !s.poured && <Room lit={s.lit} hearths={s.hearths} fuel={s.furnace.fuel} air={s.air} pipeFixed={s.pipeFixed} compact={compact} />}
 
       {/* the pour — the hand-in card, then the three whys, then the stamp */}
-      {s.poured && !seenPour && (
+      {s.poured && !seenPour && s.room !== 'mould' && (
         <Pour
           onClose={() => {
             setSeenPour(true)
@@ -464,8 +485,8 @@ export default function WorldHud({ compact }: { compact: boolean }) {
           }}
         />
       )}
-      {afterPour && !benchRoom && after < 3 && <WhyCard index={after} onNext={() => setAfter(after + 1)} />}
-      {afterPour && !benchRoom && after === 3 && <Stamp journal={s.journal} onClose={() => setAfter(4)} />}
+      {afterPour && !supplyRoom && after < 3 && <WhyCard index={after} onNext={() => setAfter(after + 1)} />}
+      {afterPour && !supplyRoom && after === 3 && <Stamp journal={s.journal} onClose={() => setAfter(4)} />}
       {journalOpen && !afterPour && (onPlot ? <PlotJournal p={plot} onClose={() => setJournalOpen(false)} /> : <Stamp journal={s.journal} onClose={() => setJournalOpen(false)} />)}
     </div>
   )
