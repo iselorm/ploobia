@@ -115,5 +115,78 @@ check('…drop the sixth copper piece, done → level at ten again', e.phase ===
 /* 7 · availability ----------------------------------------------------------- */
 check('the bench opens at copper heat or once poured', S.benchOpens({ temp: 1085, poured: false }) && S.benchOpens({ temp: 20, poured: true }) && !S.benchOpens({ temp: 900, poured: false }))
 
+/* 8 · the mould (round A2) ------------------------------------------------------
+ * A pour is recorded; a short one sends the cold cast back to the dry pan and
+ * the child back to the bench; a full one is the kit, once.
+ */
+/** A bench charged from `pieces` in the water and `dry` ingots on the pan. */
+const charged = (pieces, dry) => {
+  let x = S.liftPattern(S.markRise(S.sinkPattern(S.initialBench())))
+  for (const p of pieces) x = S.drop(x, p.id)
+  x = S.done(x)
+  for (let i = 0; i < dry; i++) x = S.addIngot(x)
+  return S.toFire(x)
+}
+const none = S.initialCast()
+check('a cast record starts empty: no pours, the why unanswered', none.pours.length === 0 && none.why === -1 && none.whyText === null && !S.kitCast(none))
+check('the mould is empty until a charge arrives', S.mouldStage(S.initialBench(), none) === 'empty' && S.mouldStage(null, null) === 'empty')
+check('pouring with nothing charged changes nothing', S.pourCharge(S.initialBench(), none) === none)
+
+// the right charge: six pieces, ten ingots
+const okBench = charged(tray, 10)
+check('a charged bench waits at the mould', S.mouldStage(okBench, none) === 'charged')
+const okCast = S.pourCharge(okBench, none)
+const okPour = S.lastPour(okCast)
+check('ten ingots poured: one pour on the record, full, 9,856 g in', okCast.pours.length === 1 && okPour.fraction === 1 && !okPour.short && okPour.chargeG === 9856 && okPour.dry === 10 && !okPour.guess)
+check('…the mould is full and the kit is cast', S.mouldStage(okBench, okCast) === 'full' && S.kitCast(okCast))
+check('…1,000 of 1,000 cm³; nothing missing; the runner back in the tray', S.castCm3(okPour) === 1000 && S.missingG(okPour) === 0 && okPour.spareG === 896)
+check('one kit: a second pour is refused', S.pourCharge(okBench, okCast) === okCast)
+check('one kit: nothing goes back to the bench from a full mould', S.backToBench(okBench, okCast) === okBench)
+
+// short at the water: five pieces (900 cm³), nine ingots level
+const shortBench = charged(five, 9)
+check('five pieces and nine ingots: level, charged as measured', shortBench.phase === 'charged' && !shortBench.sentUnlevel && shortBench.charge === 8960)
+check('nothing goes back to the bench before the pour', S.backToBench(shortBench, none) === shortBench)
+const shortCast = S.pourCharge(shortBench, none)
+const shortPour = S.lastPour(shortCast)
+check('…poured: short, 900 of 1,000 cm³, 896 g missing, the pin seat there', S.mouldStage(shortBench, shortCast) === 'short' && shortPour.short && S.castCm3(shortPour) === 900 && S.missingG(shortPour) === 896 && !shortPour.pinSeatMissing && !S.kitCast(shortCast))
+check('…pouring again without going back changes nothing', S.pourCharge(shortBench, shortCast) === shortCast)
+let again = S.backToBench(shortBench, shortCast)
+check('back to the jug: matching again, the cold cast on the dry pan as nine ingots’ worth', again.phase === 'matching' && again.dry === 9 && again.castDry === 9 && again.recasts === 1 && !again.runner && again.charge === null && again.inJug.length === 5)
+check('…the mould is empty again', S.mouldStage(again, shortCast) === 'empty')
+again = S.done(S.drop(again, tray[0].id))
+check('…the missing piece in: at the mark, on the balance, one ingot light', again.phase === 'balancing' && S.benchReached(again) && S.benchTilt(again) < 0)
+check('…the cast is one piece: no ingot comes off below it', S.takeIngot(again) === again)
+again = S.addIngot(again)
+check('…one more ingot: level at ten', again.dry === 10 && S.benchLevel_(again))
+check('…and that one can come off again', S.takeIngot(again).dry === 9)
+again = S.toFire(again)
+check('…to the fire: the whole charge again, 9,856 g', again.phase === 'charged' && again.charge === 9856 && S.mouldStage(again, shortCast) === 'charged')
+const second = S.pourCharge(again, shortCast)
+check('the second pour fills the mould: two pours on the record, the kit cast', second.pours.length === 2 && S.kitCast(second) && S.mouldStage(again, second) === 'full' && S.lastPour(second).dry === 10)
+
+// short at the balance: the water was right, the ingots were the guess
+const guessBench = charged(tray, 8)
+check('six pieces but eight ingots sent anyway: a guess', guessBench.sentUnlevel && guessBench.charge === 8064)
+const guessCast = S.pourCharge(guessBench, none)
+check('…800 of 1,000 cm³, the last pin seat never filled, flagged as a guess', S.castCm3(S.lastPour(guessCast)) === 800 && S.lastPour(guessCast).pinSeatMissing && S.lastPour(guessCast).guess && S.missingG(S.lastPour(guessCast)) === 1792)
+const guessBack = S.backToBench(guessBench, guessCast)
+check('…back to the BALANCE (the water was at the mark), eight ingots’ worth kept', guessBack.phase === 'balancing' && guessBack.dry === 8 && guessBack.castDry === 8 && !guessBack.sentUnlevel)
+
+// too much: twelve ingots sent anyway
+const fatCast = S.pourCharge(charged(tray, 12), none)
+check('twelve ingots: full, 2,688 g back to the tray, flagged as a guess', S.kitCast(fatCast) && S.lastPour(fatCast).spareG === 2688 && S.lastPour(fatCast).guess)
+
+// the mass record: what went in is what came out, at every charge
+check(
+  'the mass record balances for every charge: in = cast + tray',
+  Array.from({ length: 14 }, (_, i) => i + 1).every((n) => {
+    const p = S.lastPour(S.pourCharge(charged(tray, n), none))
+    return p.chargeG === n * 896 + 896 && S.castG(p) + p.spareG === p.chargeG
+  }),
+)
+check('the pour needs copper heat, by the relight’s own tolerance (1,045)', S.hotEnough(1045) && S.hotEnough(1200) && !S.hotEnough(1044))
+check('a bench that has been opened stays open', S.benchOpens({ temp: 600, poured: false, opened: true }) && !S.benchOpens({ temp: 600, poured: false, opened: false }))
+
 console.log(`\n${passes} passed, ${fails} failed`)
 process.exit(fails ? 1 : 0)

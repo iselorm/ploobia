@@ -9,6 +9,10 @@
  * The safety rule is state, not text: what goes in the water (the pattern, the
  * scrap) never goes to the fire. The wet set is balanced against DRY ingots,
  * and only the dry pan is charged. `verify-supply-model.mjs` pins all of this.
+ *
+ * Round A2 adds the mould: every pour is on a record, a short pour sends the
+ * cold cast back to the dry pan (it is dry copper; it never met the water),
+ * and a full one is the kit — once.
  */
 
 /* ----------------------------------------------------------------------------
@@ -200,10 +204,14 @@ export interface Bench {
   sentUnlevel: boolean
   /** Grams sent to the fire, once charged. */
   charge: number | null
+  /** Times a short cast has come back from the mould. */
+  recasts: number
+  /** The cold short cast on the dry pan, as ingots' worth. It is one piece: it never comes off the pan. */
+  castDry: number
 }
 
 export function initialBench(): Bench {
-  return { phase: 'idle', inJug: [], patternIn: false, marked: false, matched: null, dry: 0, runner: false, inspected: [], sentUnlevel: false, charge: null }
+  return { phase: 'idle', inJug: [], patternIn: false, marked: false, matched: null, dry: 0, runner: false, inspected: [], sentUnlevel: false, charge: null, recasts: 0, castDry: 0 }
 }
 
 const piecesIn = (b: Bench): Piece[] => b.inJug.map((id) => PIECES[id]).filter((p): p is Piece => !!p)
@@ -279,7 +287,7 @@ export function addIngot(b: Bench): Bench {
 }
 
 export function takeIngot(b: Bench): Bench {
-  if (b.phase !== 'balancing' || b.dry <= 0) return b
+  if (b.phase !== 'balancing' || b.dry <= b.castDry) return b
   return { ...b, dry: b.dry - 1 }
 }
 
@@ -295,7 +303,96 @@ export function toFire(b: Bench): Bench {
   return { ...b, phase: 'charged', runner: true, sentUnlevel: !isLevel(b.dry, benchWetMass(b)), charge: chargeOf(b.dry, true) }
 }
 
-/** The bench opens once the furnace has reached copper heat, or for a save that already poured. */
-export function benchOpens(f: { temp: number; poured: boolean }): boolean {
-  return f.poured || f.temp >= 1085
+/** The bench opens once the furnace has reached copper heat, or for a save that already poured — and, once opened, stays open. */
+export function benchOpens(f: { temp: number; poured: boolean; opened?: boolean }): boolean {
+  return f.poured || !!f.opened || f.temp >= 1085
+}
+
+/* ----------------------------------------------------------------------------
+ * The mould (round A2) — the pours, on a record
+ * ------------------------------------------------------------------------- */
+
+/** Copper runs at this reading: the relight's own hand-in tolerance under 1,085 °C. */
+export const POUR_AT_C = 1045
+
+export function hotEnough(temp: number): boolean {
+  return temp >= POUR_AT_C
+}
+
+/** One pour into the gate mould: what went in, and what the mould gave. */
+export interface Pour extends Cast {
+  /** Dry copper in the crucible, as ingots' worth. */
+  dry: number
+  /** Grams to the fire: the dry copper and the runner. */
+  chargeG: number
+  /** The pan went without the beam level. */
+  guess: boolean
+}
+
+export interface CastRecord {
+  pours: Pour[]
+  /** "Which measurement told you how much?" — the option chosen, −1 until answered. */
+  why: number
+  /** The same, in the learner's own words (Investigator, Engineer), when the judge took it. */
+  whyText: string | null
+}
+
+export function initialCast(): CastRecord {
+  return { pours: [], why: -1, whyText: null }
+}
+
+export function lastPour(c: CastRecord | null | undefined): Pour | null {
+  return c && c.pours.length ? c.pours[c.pours.length - 1] : null
+}
+
+/** The fittings are cast: the last pour filled the mould. One kit, ever. */
+export function kitCast(c: CastRecord | null | undefined): boolean {
+  const p = lastPour(c)
+  return !!p && !p.short
+}
+
+/** How much of the pattern's volume the pour filled, cm³. */
+export function castCm3(p: Pour): number {
+  return Math.round(p.fraction * PATTERN_CM3)
+}
+
+/** Copper that stayed in the mould, grams. */
+export function castG(p: Pour): number {
+  return Math.min(p.dry * INGOT_G, needG())
+}
+
+/** Copper the mould still wanted, grams. */
+export function missingG(p: Pour): number {
+  return needG() - castG(p)
+}
+
+/**
+ * What stands at the furnace foot: nothing yet, a charge waiting for the
+ * pour, a short cast cooling in the open mould, or the fittings.
+ */
+export type MouldStage = 'empty' | 'charged' | 'short' | 'full'
+
+export function mouldStage(b: Bench | null | undefined, c: CastRecord | null | undefined): MouldStage {
+  if (kitCast(c)) return 'full'
+  if (!b || b.phase !== 'charged') return 'empty'
+  // Every return to the bench answers one short pour; a charge beyond that has not been poured yet.
+  return (c?.pours.length ?? 0) > b.recasts ? 'short' : 'charged'
+}
+
+/** Sefu pours the charge. Only a waiting charge pours; a cast kit is never poured again. */
+export function pourCharge(b: Bench, c: CastRecord): CastRecord {
+  if (mouldStage(b, c) !== 'charged') return c
+  const pour: Pour = { ...castOf(b.dry), dry: b.dry, chargeG: b.charge ?? chargeOf(b.dry, true), guess: b.sentUnlevel }
+  return { ...c, pours: [...c.pours, pour] }
+}
+
+/**
+ * A short cast, once dull, goes on the dry pan and the child goes back to find
+ * what is missing: to the jug if the water never reached the mark, else to the
+ * balance. The runner returns to Sefu until the next charge.
+ */
+export function backToBench(b: Bench, c: CastRecord): Bench {
+  if (mouldStage(b, c) !== 'short') return b
+  const atMark = benchReached(b)
+  return { ...b, phase: atMark ? 'balancing' : 'matching', matched: atMark ? b.matched : null, runner: false, sentUnlevel: false, charge: null, recasts: b.recasts + 1, castDry: b.dry }
 }
