@@ -235,11 +235,14 @@ function Mould({ look, pour }: { look: MouldLook; pour: Pour | null }) {
             <meshStandardMaterial color={AMBER} emissive={AMBER} emissiveIntensity={0.9} transparent opacity={0.32} toneMapped={false} depthWrite={false} />
           </mesh>
           <Dashes x0={xEnd + 0.03} x1={x0 + STRAP.len + r + 0.03} z={STRAP.z} half={r + 0.035} />
-          {pour.pinSeatMissing && (
-            <mesh position={[PIN_X[1], 0, 0.2]} rotation={[Math.PI / 2, 0, 0]}>
-              <torusGeometry args={[0.105, 0.009, 6, 24]} />
-              <meshStandardMaterial color={AMBER} emissive={AMBER} emissiveIntensity={0.9} toneMapped={false} />
-            </mesh>
+          {/* a ring round every pin seat the copper never reached */}
+          {[xEnd < PIN_X[0], pour.pinSeatMissing].map((missing, i) =>
+            missing ? (
+              <mesh key={i} position={[PIN_X[i], 0, 0.2]} rotation={[Math.PI / 2, 0, 0]}>
+                <torusGeometry args={[0.105, 0.009, 6, 24]} />
+                <meshStandardMaterial color={AMBER} emissive={AMBER} emissiveIntensity={0.9} toneMapped={false} />
+              </mesh>
+            ) : null,
           )}
         </group>
       )}
@@ -434,7 +437,7 @@ function Tags({ look, pour, band }: { look: MouldLook; pour: Pour | null; band: 
       {look === 'short' && pour && (
         <Html position={pour.pinSeatMissing ? [PIN_X[1] + 0.5, 0.1, 0.16] : [xEnd + 0.36, 0.2, STRAP.z - 0.16]} center zIndexRange={[30, 0]} style={{ pointerEvents: 'none' }}>
           <Tag small dark testid="missing-tag">
-            {pour.pinSeatMissing ? 'the last pin seat never filled' : 'the end never filled'}
+            {xEnd < PIN_X[0] ? 'no pin seat filled' : pour.pinSeatMissing ? 'the last pin seat never filled' : 'the end never filled'}
           </Tag>
         </Html>
       )}

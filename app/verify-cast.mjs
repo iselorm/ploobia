@@ -392,7 +392,7 @@ for (const [name, width, height, touch] of [['desktop', 1280, 800, false], ['740
   await charge(page, SIX, 2)
   await toMould(page)
   await pour(page)
-  check('two ingots: a fifth of a strap and no pin at all', (await node(page, 'cast-mould'))?.fraction === 0.2 && !(await page.evaluate(() => !!window.__world.scene.getObjectByName('cast-pin-0') || !!window.__world.scene.getObjectByName('cast-pin-1'))))
+  check('two ingots: a fifth of a strap and no pin at all, and the object says so', (await node(page, 'cast-mould'))?.fraction === 0.2 && !(await page.evaluate(() => !!window.__world.scene.getObjectByName('cast-pin-0') || !!window.__world.scene.getObjectByName('cast-pin-1'))) && /no pin seat filled/.test((await text(page, 'missing-tag')) ?? ''), await text(page, 'missing-tag'))
   await page.screenshot({ path: path.join(SHOTS, 'cast-two-ingots-desktop.png') })
   await tap(page, 'mould-back')
   await waitFor(page, () => window.__world.get().room === 'none')
