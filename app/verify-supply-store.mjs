@@ -174,6 +174,7 @@ check('the cart story: copper heat does NOT pour', !w().poured && w().furnace.te
 check('…it opens the bench instead: a fresh bench and an empty cast record', bench()?.phase === 'idle' && cast()?.pours.length === 0 && w().supply.pouredAt === null)
 check('…the relight step stays at feed; the cart’s current step is measure', w().step === 'feed' && A.currentStepId(w()) === 'measure')
 check('…the cart calls that step "Reach 1085 °C" (the pour is the cast)', A.CART_QUEST.steps.find((x) => x.id === 'feed').label === 'Reach 1085 °C' && A.RELIGHT.steps.find((x) => x.id === 'feed').label === 'Reach 1085 °C and pour')
+check('…the heat Sefu holds the pour at is the relight\'s own hand-in reading', M.POUR_AT_C === A.COPPER_MELT_C - A.HANDIN_TOLERANCE_C)
 check('…Sefu: "We have the heat. Now: how much copper?"', F.sefuMood(w()) === 'heat' && F.sefuLines(w())[0] === 'We have the heat. Now: how much copper?')
 check('…Ploob points at the cold bench', /cold bench/i.test(U.benchHint(w(), 'explorer') ?? ''))
 A.setWorld((s) => ({ air: 0, furnace: { ...s.furnace, temp: 600 } }))

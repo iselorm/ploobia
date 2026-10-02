@@ -26,8 +26,11 @@ export const BASIN_AT: Vec3 = [-0.5, 0, -0.47]
 /** The recovery tray, on the sand beside the mould's east end. */
 export const TRAY_AT: Vec3 = [1.1, 0, -1.78]
 
-/** Where Sefu stands for the pour: east of the channel, behind the mould, clear of the quest plate in the cut. */
-export const SEFU_AT_MOULD: Vec3 = [1.6, 0, -3.3]
+/**
+ * Where Sefu stands for the pour: east of the channel, behind the tray — clear of the quest plate in the
+ * cut, and far enough from the furnace mouth that the child at the mouth still gets the furnace's verb.
+ */
+export const SEFU_AT_MOULD: Vec3 = [1.95, 0, -2.9]
 
 /** Where the explorer's Measure verb finds the mould: the yard side of the sand. */
 export const MOULD_VERB_AT: Vec3 = [0.2, 0, -0.55]

@@ -350,6 +350,35 @@ async function pour(page) {
   check('no console errors across the guess walk', errors.length === 0, errors.slice(0, 3).join(' | '))
   await ctx.close()
 }
+for (const [name, width, height, touch] of [['desktop', 1280, 800, false], ['740', 740, 360, true]]) {
+  // The heat arrives while the child is at the bellows, in the furnace's own room.
+  const { page, ctx, errors } = await open({ width, height }, { touch })
+  await onTheErrand(page, { temp: 300 })
+  // Hold the fire low (little air) until the child is in the room; then the room's own control gives it air.
+  await page.evaluate(() => window.__world.set({ air: 0.2 }))
+  await walkTo(page, 0.2, -4.4, Math.PI)
+  await waitFor(page, () => window.__world.get().near === 'feed.furnace', 15000).catch(() => {})
+  check(`${name}: with Sefu at his post, the furnace's verb is the one at the mouth`, (await w(page)).near === 'feed.furnace' && !(await w(page)).supply, `${(await w(page)).near}`)
+  if (touch) await tap(page, 'interact')
+  else await page.keyboard.press('e')
+  await waitFor(page, () => window.__world.get().room === 'furnace')
+  check(`${name}: below copper heat there is no ask yet`, !(await has(page, 'heat-strip')) && (await has(page, 'room')))
+  await tap(page, 'air-hard')
+  await waitFor(page, () => !!document.querySelector('[data-testid=heat-strip]'), 90000)
+  const heat = await box(page, 'heat-strip')
+  const room = await box(page, 'room')
+  check(`${name}: in the furnace room the heat strip sits above the room's own plate, both on screen`, !!heat && !!room && !overlaps(heat, room) && heat.y >= 0 && room.y + room.height <= height + 1 && !(await has(page, 'pour-card')), JSON.stringify({ heat: heat && [Math.round(heat.y), Math.round(heat.height)], room: room && [Math.round(room.y), Math.round(room.height)] }))
+  await page.screenshot({ path: path.join(SHOTS, `cast-heat-room-${name}.png`) })
+  await tap(page, 'heat-to-bench')
+  await waitFor(page, () => window.__world.get().room === 'none')
+  check(`${name}: "To the cold bench" steps out of the furnace room`, !(await has(page, 'heat-strip')) && !(await w(page)).poured)
+  // With a charge on the fire Sefu is at the mould — and the mouth still gives the furnace, not Sefu.
+  await charge(page, SIX, 10)
+  await walkTo(page, 0.2, -4.4, Math.PI)
+  check(`${name}: with Sefu at the mould, the mouth still gives the furnace's verb`, (await node(page, 'sefu'))?.at === 'mould' && (await w(page)).near === 'feed.furnace', `${(await w(page)).near}`)
+  check(`${name}: no console errors`, errors.length === 0, errors.slice(0, 3).join(' | '))
+  await ctx.close()
+}
 {
   const { page, ctx, errors } = await open({ width: 1280, height: 800 })
   await afterAnOldPour(page)

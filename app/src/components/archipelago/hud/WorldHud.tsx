@@ -217,15 +217,16 @@ export default function WorldHud({ compact }: { compact: boolean }) {
   // Phone: the keep's pill has Ploob's slot while a report waits or Sela's board is folded.
   const keepSlot = compact && s.zone === 'landing' && (keepStage === 'report' || (keepStage === 'ready' && !s.talk))
   // Phone: while a card holds the explorer, the tools, the stick and the verb step back (Mock B).
-  const held = compact && (!!s.talk || !!supplyRoom)
+  // S2: on Sela's errand the heat does not pour — Sefu asks how much copper, once, wherever the child is.
+  const [heatSeen, setHeatSeen] = useState(false)
+  const heatAsk = s.zone === 'foundry' && !!s.supply && !s.poured && s.supply.bench.phase === 'idle' && s.supply.cast.pours.length === 0 && !heatSeen && (s.room === 'none' || s.room === 'furnace') && !s.talk
+  // …a room's strip and Sefu's ask count: on a phone their strip has the top of the screen.
+  const held = compact && (!!s.talk || !!supplyRoom || (heatAsk && s.phase === 'play'))
   // Phone: the bench's pill — or the mould's, once a charge is on the fire — has Ploob's slot while the child
   // has stepped away from a started bench. Once the kit is cast and Sefu is answered, Ploob has it back.
   const kitDone = !!s.supply && kitCast(s.supply.cast) && s.supply.cast.why >= 0
   const mouldSlot = !!s.supply && !!mouldPill(mouldLookOf(s), s.supply.cast)
   const benchSlot = compact && s.zone === 'foundry' && !!s.supply && !anyRoom && !s.talk && !kitDone && (mouldSlot || s.supply.bench.phase !== 'idle')
-  // S2: on Sela's errand the heat does not pour — Sefu asks how much copper, once, wherever the child is.
-  const [heatSeen, setHeatSeen] = useState(false)
-  const heatAsk = s.zone === 'foundry' && !!s.supply && !s.poured && s.supply.bench.phase === 'idle' && s.supply.cast.pours.length === 0 && !heatSeen && (s.room === 'none' || s.room === 'furnace') && !s.talk
   const caps = useQualityCaps()
   const reduceGlass = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-transparency: reduce)').matches
 
