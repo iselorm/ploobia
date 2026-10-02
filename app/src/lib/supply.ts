@@ -396,3 +396,30 @@ export function backToBench(b: Bench, c: CastRecord): Bench {
   const atMark = benchReached(b)
   return { ...b, phase: atMark ? 'balancing' : 'matching', matched: atMark ? b.matched : null, runner: false, sentUnlevel: false, charge: null, recasts: b.recasts + 1, castDry: b.dry }
 }
+
+/**
+ * The pour's beats, in seconds of sim time: the channel runs, the metal dulls
+ * (nobody touches it bright), the mould opens. The scene and the HUD read the
+ * beat off the clock; nothing else times it.
+ */
+export const POUR_BEATS = { run: 2.6, cool: 3.4, open: 0.8 } as const
+export const POUR_TOTAL = 6.8
+export type PourBeat = 'run' | 'cool' | 'open' | 'done'
+
+export function pourBeat(elapsed: number): PourBeat {
+  if (elapsed < POUR_BEATS.run) return 'run'
+  if (elapsed < POUR_BEATS.run + POUR_BEATS.cool) return 'cool'
+  if (elapsed < POUR_TOTAL) return 'open'
+  return 'done'
+}
+
+/** What the mould looks like now: cold, a charge waiting, a beat of the pour, or what the pour gave. */
+export type MouldLook = 'cold' | 'waiting' | 'run' | 'cool' | 'open' | 'short' | 'full'
+
+/** `elapsed` is seconds since the last pour began; null when no clock is running (a restored, settled pour). */
+export function mouldLook(stage: MouldStage, elapsed: number | null): MouldLook {
+  if (stage === 'empty') return 'cold'
+  if (stage === 'charged') return 'waiting'
+  const beat = elapsed == null ? 'done' : pourBeat(elapsed)
+  return beat === 'done' ? stage : beat
+}

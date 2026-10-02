@@ -17,7 +17,7 @@
  */
 
 import { audioGraph, blip, canPlay, noiseBuffer } from './audio'
-import { COPPER_MELT_C, fallTimes, getWorld, worldStore, type WorldState } from './archipelago'
+import { COPPER_MELT_C, fallTimes, getWorld, mouldLookOf, worldStore, type WorldState } from './archipelago'
 
 /* ----------------------------------------------------------------------------
  * Primitives
@@ -113,6 +113,17 @@ export function pour(): void {
   window.setTimeout(() => blip(523.25, 0.9, 0.09), 140)
   window.setTimeout(() => blip(659.25, 1.2, 0.08), 280)
   window.setTimeout(() => blip(783.99, 1.8, 0.07), 420)
+}
+
+/** Sefu's pour into the mould: the channel running, no chord — nobody knows yet what the mould will give. */
+export function stream(): void {
+  burst({ dur: 2.4, gain: 0.07, type: 'bandpass', freq: 700, freqTo: 2200, q: 0.5, attack: 0.3 })
+}
+
+/** The mould opening on a short cast: stone on stone, and nothing bright after it. */
+export function shortCast(): void {
+  burst({ dur: 0.2, gain: 0.1, type: 'lowpass', freq: 240, freqTo: 120, q: 0.8 })
+  window.setTimeout(() => blip(196, 0.5, 0.05, 'sine', 174), 120)
 }
 
 /** The stamp landing on the journal. */
@@ -240,6 +251,7 @@ export function installWorldAudio(getStride: () => Stride): () => void {
   let lastAir = prev.air
   let lastHook = prev.crane.hookY
   let winchAt = 0
+  let lastLook = mouldLookOf(prev)
   driveBed(prev)
 
   const unsub = worldStore.subscribe((s) => {
@@ -253,6 +265,15 @@ export function installWorldAudio(getStride: () => Stride): () => void {
     if (s.lit.length > prev.lit.length) ignite()
     if (s.furnace.lit && !prev.furnace.lit) ignite()
     if (s.poured && !prev.poured) pour()
+    // S2: the mould. A pour starts with the channel; a short cast opens dull; a full one rings —
+    // by `poured` above for a first pour, here for a save that had already poured.
+    if (s.supply && s.supply.pouredAt != null && s.supply.pouredAt !== prev.supply?.pouredAt) stream()
+    const look = mouldLookOf(s)
+    if (look !== lastLook) {
+      if (look === 'short' && (lastLook === 'open' || lastLook === 'cool')) shortCast()
+      if (look === 'full' && (lastLook === 'open' || lastLook === 'cool') && prev.poured) pour()
+      lastLook = look
+    }
     if (s.whys[2] >= 0 && prev.whys[2] < 0) stamp()
     if (s.cabinet && !prev.cabinet) latch()
     if (s.talk && !prev.talk) talk()

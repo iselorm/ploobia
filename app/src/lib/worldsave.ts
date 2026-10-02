@@ -33,7 +33,7 @@ import {
   type WorldState,
 } from './archipelago'
 import { salvageKeep, seenWords, validKeep, type Keep } from './keep'
-import { initialBench, type Bench } from './supply'
+import { initialBench, initialCast, type Bench, type CastRecord, type Pour } from './supply'
 
 /**
  * v2 (S0): the plot rides in the save — the stage, the run in progress, the attempts. A v1 save is a fresh start.
@@ -249,16 +249,40 @@ const BENCH_PHASES = new Set(['idle', 'pattern', 'marked', 'matching', 'balancin
  */
 export function restoreSupply(raw: unknown): Supply | null {
   if (raw == null || typeof raw !== 'object') return null
-  const b = (raw as { bench?: unknown }).bench
-  if (!b || typeof b !== 'object') return { bench: initialBench() }
+  const r = raw as { bench?: unknown; cast?: unknown; pouredAt?: unknown }
+  const b = r.bench
+  if (!b || typeof b !== 'object') return { bench: initialBench(), cast: initialCast(), pouredAt: null }
   const x = b as Partial<Bench>
   const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every((i) => typeof i === 'string')
+  const count = (v: unknown): boolean => v == null || (typeof v === 'number' && v >= 0)
   const ok =
     typeof x.phase === 'string' && BENCH_PHASES.has(x.phase) && strings(x.inJug) && strings(x.inspected) &&
     typeof x.patternIn === 'boolean' && typeof x.marked === 'boolean' && typeof x.dry === 'number' && x.dry >= 0 &&
     typeof x.runner === 'boolean' && typeof x.sentUnlevel === 'boolean' &&
-    (x.matched == null || typeof x.matched === 'number') && (x.charge == null || typeof x.charge === 'number')
-  return { bench: ok ? { ...initialBench(), ...(x as Bench) } : initialBench() }
+    (x.matched == null || typeof x.matched === 'number') && (x.charge == null || typeof x.charge === 'number') &&
+    count(x.recasts) && count(x.castDry)
+  // An A1 save has no `recasts`/`castDry` and no cast block: the bench comes back whole, the record starts empty.
+  const bench = ok ? { ...initialBench(), ...(x as Bench), recasts: x.recasts ?? 0, castDry: x.castDry ?? 0 } : initialBench()
+  const cast = ok ? restoreCast(r.cast, bench) : null
+  return { bench, cast: cast ?? initialCast(), pouredAt: cast && cast.pours.length > 0 && isNum(r.pouredAt) ? r.pouredAt : null }
+}
+
+/** The mould's record as saved, when every pour reads true and it fits the bench it came with; else null (the record starts again). */
+function restoreCast(raw: unknown, bench: Bench): CastRecord | null {
+  if (raw == null || typeof raw !== 'object') return null
+  const c = raw as Partial<CastRecord>
+  if (!Array.isArray(c.pours) || !isNum(c.why) || c.why < -1 || c.why > 2 || !(c.whyText == null || typeof c.whyText === 'string')) return null
+  const pourOk = (p: unknown): p is Pour => {
+    if (!p || typeof p !== 'object') return false
+    const q = p as Partial<Pour>
+    return isNum(q.dry) && q.dry > 0 && isNum(q.chargeG) && isNum(q.fraction) && q.fraction >= 0 && q.fraction <= 1 && isBool(q.short) && isBool(q.pinSeatMissing) && isNum(q.spareG) && isBool(q.guess)
+  }
+  if (!c.pours.every(pourOk)) return null
+  // Every return to the bench answers one short pour: a record that disagrees with its bench is not this bench's record.
+  const full = c.pours.filter((p) => !p.short).length
+  if (full > 1 || (full === 1 && c.pours[c.pours.length - 1].short)) return null
+  if (full === 0 && c.pours.length !== bench.recasts + (bench.phase === 'charged' && c.pours.length > bench.recasts ? 1 : 0)) return null
+  return { pours: c.pours, why: c.why, whyText: c.whyText ?? null }
 }
 
 /**

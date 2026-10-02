@@ -10,7 +10,7 @@
  * asks a TypeSafe System One model. `VITE_WHY_URL` overrides the path for a
  * hosted world served from another origin; unset → same-origin `/api/why`.
  */
-import { HANDOFF_WHY, WHYS, whyFacts, getWorld, type Why } from './archipelago'
+import { HANDOFF_WHY, MEASURE_WHY, WHYS, castFacts, whyFacts, getWorld, type Why } from './archipelago'
 import { methodSteps, type PlotRun } from './plot'
 import { interpretHandoff, type HandoffOffer } from './keep'
 
@@ -65,6 +65,15 @@ export async function judgeWhyOf(why: Why, answer: string, facts: Record<string,
   } finally {
     window.clearTimeout(timer)
   }
+}
+
+/**
+ * S2 — Sefu's "Which measurement told you how much?" in the child's own
+ * words, against what they measured on the way to the pour (the jug's rise,
+ * the wet set's weight, the ingots, the pours). Same judge, same contract.
+ */
+export async function judgeCastWhy(answer: string): Promise<Judgement | null> {
+  return judgeWhyOf(MEASURE_WHY, answer, castFacts(getWorld()), 'foundry.cart.measure', 0)
 }
 
 /**

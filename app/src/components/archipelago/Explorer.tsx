@@ -26,6 +26,7 @@ import {
   type ZoneId,
   enterDoor,
   openBench,
+  openMould,
 } from '@/lib/archipelago'
 import { SPAWNS, control, live } from './live'
 import { LANDING_SPAWN } from './landingLayout'
@@ -418,8 +419,9 @@ export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void
         talkTo(id)
         return
       case 'measure':
-        // S2: the jug or the balance — a camera cut into that station.
-        openBench(id === 'bench.balance' ? 'balance' : 'bench')
+        // S2: the jug, the balance or the mould — a camera cut into that station.
+        if (id === 'cast.mould') openMould()
+        else openBench(id === 'bench.balance' ? 'balance' : 'bench')
         return
     }
   }

@@ -20,6 +20,7 @@ import {
   type Bench,
   type Piece,
 } from '@/lib/supply'
+import Tag from './SceneTag'
 import { BALANCE_AT, BALANCE_BENCH, BALANCE_BENCH_AT, BENCH_REACH, BIN_AT, BUTT_AT, COLD_BENCH, COLD_BENCH_AT, JUG_AT, PATTERN_AT, TRAY_AT } from './benchLayout'
 
 /**
@@ -359,6 +360,9 @@ function Balance({ b, inRoom, band }: { b: Bench | null; inRoom: boolean; band: 
   const tilt = b ? benchTilt(b) : 0
   const onPan = !!b && (b.phase === 'balancing' || b.phase === 'charged')
   const dry = onPan ? b.dry : 0
+  // A short cast that came back from the mould lies on the dry pan: cold copper, one piece, worth `castDry` ingots.
+  const castDry = onPan ? b.castDry : 0
+  const loose = dry - castDry
   useFrame((_, dt) => {
     const g = beam.current
     if (!g) return
@@ -375,12 +379,12 @@ function Balance({ b, inRoom, band }: { b: Bench | null; inRoom: boolean; band: 
   const readout = !onPan
     ? 'Nothing on the pans yet'
     : band === 'explorer'
-      ? `${dry} dry ingot${dry === 1 ? '' : 's'} · ${level ? 'level' : tilt > 0 ? 'dry side heavy' : 'dry side light'}`
+      ? `${castDry > 0 ? `The short cast + ${loose} ingot${loose === 1 ? '' : 's'}` : `${dry} dry ingot${dry === 1 ? '' : 's'}`} · ${level ? 'level' : tilt > 0 ? 'dry side heavy' : 'dry side light'}`
       : gap === 0 || band === 'scientist'
         ? `Measured ${fmt(wet)} g · Predicted ${fmt(predicted)} g${level ? ' · level' : ''}`
         : `Measured ${fmt(wet)} g · Predicted ${fmt(predicted)} g · ${fmt(Math.abs(gap))} g ${gap < 0 ? 'below' : 'above'} prediction`
   return (
-    <group position={BALANCE_AT} name="bench-balance" userData={{ tilt, dry, level }}>
+    <group position={BALANCE_AT} name="bench-balance" userData={{ tilt, dry, level, castDry }}>
       {/* base and post */}
       <mesh position={[0, 0.03, 0]} castShadow>
         <boxGeometry args={[0.3, 0.06, 0.3]} />
@@ -408,8 +412,15 @@ function Balance({ b, inRoom, band }: { b: Bench | null; inRoom: boolean; band: 
           ))}
         </Pan>
         <Pan x={ARM} label="dry">
-          {Array.from({ length: dry }, (_, i) => (
-            <mesh key={i} position={[((i % 5) - 2) * 0.045, 0.02 + Math.floor(i / 5) * 0.03, (Math.floor(i / 5) % 2) * 0.03 - 0.015]} castShadow>
+          {castDry > 0 && (
+            // the cold short cast, laid across the pan: as long as it filled, no longer
+            <mesh position={[0, 0.02, -0.07]} castShadow name="pan-cast">
+              <boxGeometry args={[0.024 * castDry, 0.022, 0.05]} />
+              <meshStandardMaterial color="#B8683A" roughness={0.6} metalness={0.4} />
+            </mesh>
+          )}
+          {Array.from({ length: loose }, (_, i) => (
+            <mesh key={i} position={[((i % 5) - 2) * 0.045, 0.02 + Math.floor(i / 5) * 0.03, (Math.floor(i / 5) % 2) * 0.03 - 0.015 + (castDry > 0 ? 0.04 : 0)]} castShadow>
               <boxGeometry args={[0.04, 0.024, 0.07]} />
               <meshStandardMaterial color={COPPER} roughness={0.55} metalness={0.4} />
             </mesh>
@@ -461,28 +472,6 @@ function Pan({ x, label, children }: { x: number; label: string; children?: Reac
       </mesh>
       <group position={[0, -drop + 0.01, 0]}>{children}</group>
     </group>
-  )
-}
-
-/* ---- tags ----------------------------------------------------------------- */
-
-function Tag({ children, small, dark, wide, testid }: { children: React.ReactNode; small?: boolean; dark?: boolean; wide?: boolean; testid?: string }) {
-  return (
-    <span
-      className={`lg ${dark ? 'lg-dark' : ''}`}
-      data-testid={testid}
-      style={{
-        display: 'inline-block',
-        whiteSpace: 'nowrap',
-        padding: small ? '3px 9px' : wide ? '6px 14px' : '5px 12px',
-        borderRadius: 999,
-        font: `900 ${small ? 11 : wide ? 13.5 : 13}px Nunito, ui-rounded, system-ui, sans-serif`,
-        color: dark ? '#F6F2E8' : '#2A2823',
-        boxShadow: '0 8px 20px -10px rgba(40,26,10,.6)',
-      }}
-    >
-      {children}
-    </span>
   )
 }
 

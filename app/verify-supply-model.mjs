@@ -186,6 +186,11 @@ check(
   }),
 )
 check('the pour needs copper heat, by the relight’s own tolerance (1,045)', S.hotEnough(1045) && S.hotEnough(1200) && !S.hotEnough(1044))
+// the pour's beats: the run, the cooling, the mould opening — read off sim time
+check('a pour runs 2.6 s, dulls for 3.4 s, opens in 0.8 s: 6.8 s in all', S.POUR_BEATS.run === 2.6 && S.POUR_BEATS.cool === 3.4 && S.POUR_BEATS.open === 0.8 && S.POUR_TOTAL === 6.8)
+check('…the beat by elapsed time', S.pourBeat(0) === 'run' && S.pourBeat(2.59) === 'run' && S.pourBeat(2.6) === 'cool' && S.pourBeat(5.99) === 'cool' && S.pourBeat(6.0) === 'open' && S.pourBeat(6.79) === 'open' && S.pourBeat(6.8) === 'done' && S.pourBeat(60) === 'done')
+check('the mould’s look: cold, waiting, the beats of the pour, then what it gave', S.mouldLook('empty', null) === 'cold' && S.mouldLook('charged', null) === 'waiting' && S.mouldLook('short', 1) === 'run' && S.mouldLook('full', 3) === 'cool' && S.mouldLook('short', 6.2) === 'open' && S.mouldLook('short', 7) === 'short' && S.mouldLook('full', 7) === 'full')
+check('…a restored pour with no clock is already settled', S.mouldLook('short', null) === 'short' && S.mouldLook('full', null) === 'full')
 check('a bench that has been opened stays open', S.benchOpens({ temp: 600, poured: false, opened: true }) && !S.benchOpens({ temp: 600, poured: false, opened: false }))
 
 console.log(`\n${passes} passed, ${fails} failed`)

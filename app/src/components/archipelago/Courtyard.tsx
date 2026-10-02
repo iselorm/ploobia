@@ -8,6 +8,7 @@ import {
   FUEL_ORDER,
   fedBlock,
   getWorld,
+  mouldLookOf,
   CRANE,
   craneTip,
   noteLanding,
@@ -25,6 +26,8 @@ import { lightingFor, useSun } from '@/lib/looks'
 import Prop from './Prop'
 import { Banner, Braces, Chalkboard, Lintel, Skyline, ToolRack } from './Dressing'
 import BenchScene from './BenchScene'
+import MouldScene, { PourChannel } from './MouldScene'
+import { MOULD_AT, SEFU_AT_MOULD } from './mouldLayout'
 import { useWorldMesh, useWorldTexture } from './useWorldMesh'
 import { WORLD_TEXTURES } from '@/lib/worldassets'
 import { WORLD_TEXT } from '@/lib/worldtext'
@@ -54,13 +57,15 @@ export default function Courtyard() {
       registerInteractable({ id: 'feed.furnace', verb: 'feed', label: 'Feed the furnace', pos: [0, 0, -6], radius: 2.4 }),
       registerInteractable({ id: 'build.pipe', verb: 'build', label: 'Fix the pipe', pos: [3.2, 0, -7], radius: 1.7 }),
       registerInteractable({ id: 'portal.landing', verb: 'portal', label: 'Back to the Landing', pos: [0, 0, 12.6], radius: 1.1 }),
-      registerInteractable({ id: 'talk.foreman', verb: 'talk', label: WORLD_TEXT.people.foreman.name, pos: [3.2, 0, 8], radius: 1.4 }),
       registerInteractable({ id: 'crane.controls', verb: 'crane', label: 'Drive the crane', pos: CRANE_POST, radius: 1.4 }),
       // The door to the Bench cabinet — shut until the foreman asks for bronze (the third why).
       registerInteractable({ id: 'door.bench', verb: 'door', label: DOORS['door.bench'].label, pos: [11.3, 0, 5.6], radius: 1.5 }),
     ]
     return () => offs.forEach((f) => f())
   }, [])
+  // Sefu goes where the work is: his post by the belt, or the mould once a charge is on the fire (S2).
+  const sefuAtMould = mouldLookOf(s) !== 'cold'
+  useEffect(() => registerInteractable({ id: 'talk.foreman', verb: 'talk', label: WORLD_TEXT.people.foreman.name, pos: sefuAtMould ? SEFU_AT_MOULD : FOREMAN_AT, radius: 1.4 }), [sefuAtMould])
   const heat = THREE.MathUtils.clamp((s.furnace.temp - 20) / (COPPER_MELT_C + 200), 0, 1)
   const lamps = lightingFor(useSun(), 'foundry').lamps
   return (
@@ -68,6 +73,8 @@ export default function Courtyard() {
       <Lighting zone="foundry" />
       {/* S2: the cold bench and the balance bench, by the west wall */}
       <BenchScene />
+      {/* S2: the gate mould in its bed of casting sand, at the channel's foot */}
+      <MouldScene />
       {/* the yard's lamps: up as the sun goes down (Night shift keeps the subject lit, never the room black) */}
       <Lamp position={[-3.4, 3.1, 11.9]} up={lamps} />
       <Lamp position={[3.4, 3.1, 11.9]} up={lamps} />
@@ -116,17 +123,8 @@ export default function Courtyard() {
         <MouthGlow heat={heat} visible={s.room !== 'furnace'} />
         {/* the room: the same furnace, cut open — what the camera sees from inside the mouth */}
         {s.room === 'furnace' && <FurnaceRoom heat={heat} air={s.air} lit={s.furnace.lit} fuel={s.furnace.fuel} />}
-        {/* the pour channel */}
-        <mesh position={[0, 0.06, -4.6]} receiveShadow>
-          <boxGeometry args={[0.9, 0.12, 4.4]} />
-          <meshStandardMaterial
-            color={s.poured ? '#FFB347' : '#8A6A48'}
-            emissive={s.poured ? '#FF7A2E' : '#000000'}
-            emissiveIntensity={s.poured ? 1.4 : 0}
-            roughness={0.5}
-            toneMapped={!s.poured}
-          />
-        </mesh>
+        {/* the pour channel — lit by the relight's own pour; run by Sefu's pours once the mould is in use (S2) */}
+        <PourChannel />
 
         {/* the conveyor bed */}
         <CuboidCollider args={[(BELT.x1 - BELT.x0) / 2, 0.25, BELT.halfW]} position={[(BELT.x0 + BELT.x1) / 2, 0.25, BELT.z]} />
@@ -161,7 +159,7 @@ export default function Courtyard() {
         ))}
 
         {/* Sefu, the foreman — his W2 mesh with its idle, facing the gate; the capsule stays as the stand-in */}
-        <Foreman />
+        <Foreman atMould={sefuAtMould} />
 
         {/* the gate back */}
         <mesh position={[0, 1.55, 12.7]}>
@@ -655,22 +653,29 @@ function Smoke({ lit }: { lit: boolean }) {
 const FOREMAN_AT: [number, number, number] = [3.2, 0, 8]
 const FOREMAN_REST = -Math.PI / 2 + 0.35
 
-/** Sefu stands by the belt and turns to whoever is talking to him; the rest yaw faces the yard. */
-function Foreman() {
+/**
+ * Sefu stands by the belt and turns to whoever is talking to him; the rest yaw
+ * faces the yard. Once a charge is on the fire he stands at the mould, facing
+ * it (S2): the pour is his, never the child's.
+ */
+function Foreman({ atMould }: { atMould: boolean }) {
   const turn = useRef<THREE.Group>(null)
+  const at = atMould ? SEFU_AT_MOULD : FOREMAN_AT
+  // At the mould his rest is toward the mould; at his post, toward the yard.
+  const rest = atMould ? Math.atan2(MOULD_AT[0] - at[0], MOULD_AT[2] - at[2]) - FOREMAN_REST : 0
   useFrame((_, dtRaw) => {
     const g = turn.current
     if (!g) return
     const dt = Math.min(0.05, dtRaw)
     const talking = getWorld().talk === 'talk.foreman'
     // The mesh fronts +Z after its own rest yaw; the group adds the turn toward the explorer.
-    const want = talking ? Math.atan2(live.pos.x - FOREMAN_AT[0], live.pos.z - FOREMAN_AT[2]) - FOREMAN_REST : 0
+    const want = talking ? Math.atan2(live.pos.x - at[0], live.pos.z - at[2]) - FOREMAN_REST : rest
     let d = want - g.rotation.y
     d = Math.atan2(Math.sin(d), Math.cos(d))
     g.rotation.y += d * Math.min(1, dt * 5)
   })
   return (
-    <group ref={turn} position={FOREMAN_AT}>
+    <group ref={turn} position={at} name="sefu" userData={{ at: atMould ? 'mould' : 'post' }}>
       <Prop id="foreman" rotation={[0, FOREMAN_REST, 0]} animate>
         <mesh position={[0, 0.7, 0]} castShadow>
           <capsuleGeometry args={[0.28, 0.7, 6, 12]} />

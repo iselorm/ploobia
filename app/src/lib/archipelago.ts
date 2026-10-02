@@ -60,7 +60,36 @@ import {
   type KeepStage,
   type PauseAnswer,
 } from './keep'
-import { addIngot, benchOpens, done as benchDoneAt, drop as benchDropAt, initialBench, inspect as benchInspectAt, liftPattern, markRise, sinkPattern, take as benchTakeAt, takeIngot, toFire, type Bench } from './supply'
+import {
+  POUR_TOTAL,
+  addIngot,
+  backToBench,
+  benchOpens,
+  benchReached,
+  benchWetMass,
+  castCm3,
+  done as benchDoneAt,
+  drop as benchDropAt,
+  hotEnough,
+  initialBench,
+  initialCast,
+  inspect as benchInspectAt,
+  kitCast,
+  liftPattern,
+  markLevel,
+  markRise,
+  mouldLook,
+  mouldStage,
+  pourCharge,
+  sinkPattern,
+  take as benchTakeAt,
+  takeIngot,
+  toFire,
+  JUG_START,
+  type Bench,
+  type CastRecord,
+  type MouldLook,
+} from './supply'
 
 /* ----------------------------------------------------------------------------
  * Zones and rings
@@ -174,7 +203,7 @@ function clamp01(x: number): number {
 export type StepId = 'arrive' | 'clear' | 'probe' | 'lens' | 'build' | 'feed' | 'done'
 
 /** A room is a cabinet interior entered from the world by a camera cut — same React tree, no reload. */
-export type RoomId = 'none' | 'furnace' | 'bench' | 'balance'
+export type RoomId = 'none' | 'furnace' | 'bench' | 'balance' | 'mould'
 
 /**
  * The crane — the way the heavy piece is cleared, and board 1's bet: drop a
@@ -366,9 +395,17 @@ export interface WorldState {
   supply: Supply | null
 }
 
-/** S2's state: the bench now; the cast, the vice and the road join it in later rounds. */
+/** S2's state: the bench and the mould now; the vice and the road join them in later rounds. */
 export interface Supply {
   bench: Bench
+  /** The mould at the furnace foot: every pour so far, and Sefu's question (round A2). */
+  cast: CastRecord
+  /** Sim time the last pour began; the channel, the cooling and the reveal are read off it. Null when nothing is in the mould. */
+  pouredAt: number | null
+}
+
+export function newSupply(): Supply {
+  return { bench: initialBench(), cast: initialCast(), pouredAt: null }
 }
 
 /** Cabinets a courtyard door can open. Each is an existing arcade page; the door is the link. */
@@ -723,25 +760,34 @@ export const CART_QUEST: Quest<CartStepId> = {
   hook: "The watch's jetty gate will not close. Sela needs copper fittings, and the Foundry is cold.",
   predict: RELIGHT.predict,
   steps: [
-    ...RELIGHT.steps,
+    // The cart holds the pour: the relight's last step is the heat, and the pour is the cast.
+    ...RELIGHT.steps.map((st) => (st.id === 'feed' ? { ...st, label: 'Reach 1085 °C' } : st)),
     { id: 'measure', label: 'Measure the pattern', coach: 'The cold bench, by the west wall: water first. Water tells you what copper will.', target: 'bench.jug', until: { type: 'never' } },
-    { id: 'cast', label: 'Cast the fittings', coach: 'Sefu pours the dry charge into the gate mould.', target: null, until: { type: 'never' } },
-    { id: 'test', label: 'Test the straps', coach: 'At the vice: which one keeps the bend?', target: null, until: { type: 'never' } },
+    { id: 'cast', label: 'Cast the fittings', coach: "Sefu's got the dry pan. The mould's at the furnace foot.", target: 'cast.mould', until: { type: 'never' } },
+    { id: 'test', label: 'Test the straps', coach: 'The fittings are cast. Next, the vice: which strap keeps a bend?', target: null, until: { type: 'never' } },
     { id: 'deliver', label: 'Bring them to Sela', coach: 'Back through the crossing, with the kit.', target: 'portal.landing', until: { type: 'never' } },
   ],
   whys: RELIGHT.whys,
   hidden: RELIGHT.hidden,
 }
 
+/** The child came across from S0's Landing: Sela's order is why the furnace is being lit. */
+export function cartStory(s: WorldState): boolean {
+  return s.keep != null || s.plot.sent
+}
+
 /** The cart holds the courtyard's quest once the child has come across from S0's Landing. */
 export function cartActive(s: WorldState): boolean {
-  return s.zone === 'foundry' && (s.keep != null || s.plot.sent)
+  return s.zone === 'foundry' && cartStory(s)
 }
 
 function cartStepId(s: WorldState): CartStepId {
-  if (s.step !== 'done') return s.step
-  const b = s.supply?.bench
-  return b && b.phase === 'charged' ? 'cast' : 'measure'
+  const sup = s.supply
+  // The relight's own steps lead until the heat is there (the cart holds the pour) or an old pour is done.
+  if (s.step !== 'done' && !(s.step === 'feed' && sup)) return s.step
+  if (!sup) return 'measure'
+  if (kitCast(sup.cast)) return sup.cast.why >= 0 ? 'test' : 'cast'
+  return mouldStage(sup.bench, sup.cast) === 'empty' ? 'measure' : 'cast'
 }
 
 /** The story fortnight's report has been read (the handoff's first loop is closed). */
@@ -912,8 +958,19 @@ export function tickWorld(dtRaw: number): void {
   }
   pendingFurnace = furnaceTemp
 
-  const poured = s.poured || (s.furnace.lit && furnaceTemp >= COPPER_MELT_C - HANDIN_TOLERANCE_C)
-  if (hot && (sinceFlush >= FLUSH_EVERY || poured !== s.poured)) {
+  // Copper heat. For a child on Sela's errand it opens the bench and Sefu holds the pour until the
+  // charge is measured (S2 round A2); for anyone else the relight pours by itself, as built.
+  const atHeat = s.furnace.lit && furnaceTemp >= COPPER_MELT_C - HANDIN_TOLERANCE_C
+  const story = cartStory(s)
+  const sup = s.supply
+  const elapsed = sup?.pouredAt != null ? simTime - sup.pouredAt : null
+  // A full cast becomes "the pour" when the mould opens on it, not when the channel starts.
+  const castDone = !!sup && kitCast(sup.cast) && (elapsed == null || elapsed >= POUR_TOTAL)
+  const poured = s.poured || castDone || (!story && atHeat)
+  const opens = story && atHeat && !s.poured && !sup
+  // While a pour plays, the store's clock is kept fresh so the HUD can read its beat.
+  const revealing = elapsed != null && elapsed < POUR_TOTAL + 2 * FLUSH_EVERY
+  if ((hot || revealing || poured !== s.poured) && (sinceFlush >= FLUSH_EVERY || poured !== s.poured || opens)) {
     sinceFlush = 0
     // The curve: one point every ~0.5 s of the furnace's life, from lighting.
     let curve = s.curve
@@ -932,7 +989,7 @@ export function tickWorld(dtRaw: number): void {
     const nextFurnace = furnaceTemp !== s.furnace.temp ? { ...s.furnace, temp: furnaceTemp } : s.furnace
     wroteHearths = nextHearths
     wroteFurnace = nextFurnace.temp
-    setWorld({ hearths: nextHearths, furnace: nextFurnace, poured, curve, journal, time: simTime })
+    setWorld({ hearths: nextHearths, furnace: nextFurnace, poured, curve, journal, time: simTime, ...(opens ? { supply: newSupply() } : {}) })
   }
   tickPlot(dt)
   advanceQuest()
@@ -1291,16 +1348,16 @@ export function leaveRoom(): void {
  * S2 — the cold bench (lib/supply.ts)
  * ------------------------------------------------------------------------- */
 
-/** The bench works once the furnace has reached copper heat, or for a save that already poured. */
+/** The bench works once the furnace has reached copper heat, or for a save that already poured — and, once opened, stays open. */
 export function benchAvailable(s: WorldState): boolean {
-  return s.zone === 'foundry' && benchOpens({ temp: s.furnace.temp, poured: s.poured })
+  return s.zone === 'foundry' && benchOpens({ temp: s.furnace.temp, poured: s.poured, opened: s.supply != null })
 }
 
 /** Walk up to the jug or the balance: a camera cut into that station, the explorer held still beside it. */
 export function openBench(room: 'bench' | 'balance'): void {
   setWorld((s) => {
     if (!benchAvailable(s)) return {}
-    const supply = s.supply ?? { bench: initialBench() }
+    const supply = s.supply ?? newSupply()
     return { supply, room, held: null }
   })
 }
@@ -1332,6 +1389,120 @@ export const balanceTake = (): void => withBench(takeIngot)
 export const balanceInspect = (id: string): void => withBench((b) => benchInspectAt(b, id))
 /** Sefu takes the dry pan, with his runner. The wet set stays where it is. */
 export const balanceToFire = (): void => withBench(toFire)
+
+/* ----------------------------------------------------------------------------
+ * S2 round A2 — the mould at the furnace foot
+ * ------------------------------------------------------------------------- */
+
+/** The mould stands in the yard for a child on Sela's errand, or once the bench has been opened. */
+export function mouldShown(s: WorldState): boolean {
+  return cartStory(s) || s.supply != null
+}
+
+/** What the mould looks like now, read off the record and the sim clock. */
+export function mouldLookOf(s: WorldState): MouldLook {
+  const sup = s.supply
+  if (!sup) return 'cold'
+  return mouldLook(mouldStage(sup.bench, sup.cast), sup.pouredAt != null ? simTime - sup.pouredAt : null)
+}
+
+/** Why Sefu will not pour a waiting charge: the fire is below copper heat. Null when nothing blocks it. */
+export function pourBlocked(s: WorldState): 'cold' | null {
+  if (mouldLookOf(s) !== 'waiting') return null
+  return s.furnace.lit && hotEnough(s.furnace.temp) ? null : 'cold'
+}
+
+/** Walk up to the mould: a camera cut onto the casting pit, the explorer held still beside it. */
+export function openMould(): void {
+  setWorld((s) => (s.zone === 'foundry' && mouldShown(s) ? { room: 'mould', held: null } : {}))
+}
+
+/** The child says the word and Sefu pours the waiting charge. Never cold, never twice. */
+export function castPour(): void {
+  setWorld((s) => {
+    const sup = s.supply
+    if (!sup || pourBlocked(s)) return {}
+    const cast = pourCharge(sup.bench, sup.cast)
+    return cast === sup.cast ? {} : { supply: { ...sup, cast, pouredAt: simTime } }
+  })
+}
+
+/** A short cast, once it has dulled and the mould is open, goes on the dry pan; the child and the camera go to the bench it sends them to. */
+export function castBack(): void {
+  setWorld((s) => {
+    const sup = s.supply
+    if (!sup || mouldLookOf(s) !== 'short') return {}
+    const bench = backToBench(sup.bench, sup.cast)
+    if (bench === sup.bench) return {}
+    return { supply: { ...sup, bench, pouredAt: null }, room: bench.phase === 'balancing' ? 'balance' : 'bench' }
+  })
+}
+
+/**
+ * Sefu's question at the full mould, answered by pointing. The lesson's why:
+ * one answer, Ploob's reasoned line, never a buzzer.
+ */
+export const MEASURE_WHY: Why = {
+  ask: 'Which measurement told you how much?',
+  options: [
+    {
+      key: 'right',
+      text: 'The water: the pattern raised it to the mark, and the scrap had to raise it to the same mark.',
+      right: true,
+      line: "The water. The pattern raised it to the mark; scrap that raises it the same takes up the same space. Same space of copper, same strap.",
+    },
+    { key: 'heat_tells_amount', text: 'The furnace gauge: it showed the copper was hot enough.', right: false, line: 'The gauge says when copper will run. It cannot say how much to melt.' },
+    { key: 'sefu_told', text: 'Sefu: he knew how much the gate needed.', right: false, line: 'Sefu asked you. He never gave a number. It came off the cold bench.' },
+  ],
+}
+/** What each option is on screen: a thing to point at, not a sentence to read. */
+export const MEASURE_POINTS: readonly { id: 'water' | 'gauge' | 'sefu'; label: string }[] = [
+  { id: 'water', label: 'the water' },
+  { id: 'gauge', label: 'the furnace' },
+  { id: 'sefu', label: 'Sefu' },
+]
+/** Ploob's one nudge when a typed answer is on the right track but stops short (the balance, the weight). */
+export const MEASURE_NUDGE = 'The balance matched dry copper to the wet set. What told you how big the set had to be?'
+
+export function answerCastWhy(choice: number): void {
+  setWorld((s) => {
+    const sup = s.supply
+    if (!sup || !kitCast(sup.cast) || sup.cast.why >= 0 || !MEASURE_WHY.options[choice]) return {}
+    return { supply: { ...sup, cast: { ...sup.cast, why: choice } } }
+  })
+}
+
+/** The same, in the learner's own words, judged: their sentence is kept when it was right. */
+export function answerCastWhyText(text: string, verdict: 'right' | 'partial' | 'misconception' | 'off', misconception: string | null): void {
+  setWorld((s) => {
+    const sup = s.supply
+    if (!sup || !kitCast(sup.cast) || sup.cast.why >= 0) return {}
+    if (verdict === 'right') return { supply: { ...sup, cast: { ...sup.cast, why: MEASURE_WHY.options.findIndex((o) => o.right), whyText: text.trim() } } }
+    if (verdict === 'misconception') {
+      const i = MEASURE_WHY.options.findIndex((o) => o.key === misconception)
+      return i >= 0 ? { supply: { ...sup, cast: { ...sup.cast, why: i } } } : {}
+    }
+    return {}
+  })
+}
+
+/** What the learner measured on the way to the pour: the facts a judge may weigh. */
+export function castFacts(s: WorldState): Record<string, string | number | boolean> {
+  const sup = s.supply
+  const b = sup?.bench
+  const first = sup?.cast.pours[0]
+  return {
+    water_before_cm3: JUG_START,
+    water_with_the_pattern_under_cm3: markLevel(),
+    scrap_reached_the_mark: b ? benchReached(b) : false,
+    wet_set_weighed_g: b ? benchWetMass(b) : 0,
+    dry_ingots_on_the_pan: b?.dry ?? 0,
+    pours: sup?.cast.pours.length ?? 0,
+    first_pour: first ? (first.short ? `short: ${castCm3(first)} of 1000 cm³` : 'filled the mould') : 'none',
+    furnace_reading_c: Math.round(s.furnace.temp),
+    sefu_gave_a_number: false,
+  }
+}
 
 export function commitPrediction(n: number): void {
   setWorld({ prediction: n, journal: { ...getWorld().journal, prediction: `Said the furnace must reach ${n} °C to melt copper.` } })
