@@ -10,7 +10,7 @@
  * asks a TypeSafe System One model. `VITE_WHY_URL` overrides the path for a
  * hosted world served from another origin; unset → same-origin `/api/why`.
  */
-import { HANDOFF_WHY, MEASURE_WHY, WHYS, castFacts, whyFacts, getWorld, type Why } from './archipelago'
+import { BEND_WHY, HANDOFF_WHY, MEASURE_WHY, WHYS, bendFacts, castFacts, whyFacts, getWorld, type Why } from './archipelago'
 import { methodSteps, type PlotRun } from './plot'
 import { interpretHandoff, type HandoffOffer } from './keep'
 
@@ -74,6 +74,15 @@ export async function judgeWhyOf(why: Why, answer: string, facts: Record<string,
  */
 export async function judgeCastWhy(answer: string): Promise<Judgement | null> {
   return judgeWhyOf(MEASURE_WHY, answer, castFacts(getWorld()), 'foundry.cart.measure', 0)
+}
+
+/**
+ * S2 round A3 — "Why does the gate still get copper?" in the child's own
+ * words, against their own four readings at the vice and what they pointed at
+ * on the drawing. Same judge, same contract.
+ */
+export async function judgeBendWhy(answer: string): Promise<Judgement | null> {
+  return judgeWhyOf(BEND_WHY, answer, bendFacts(getWorld()), 'foundry.cart.bend', 0)
 }
 
 /**

@@ -126,6 +126,41 @@ export function shortCast(): void {
   window.setTimeout(() => blip(196, 0.5, 0.05, 'sine', 174), 120)
 }
 
+/* S2 round A3 — the strap, the vice, the drawing. */
+
+/** The rusted strap coming off the bench: a dry scrape, and flakes. */
+export function strapTake(): void {
+  burst({ dur: 0.22, gain: 0.07, type: 'bandpass', freq: 900, freqTo: 500, q: 0.9 })
+  for (const d of [90, 170, 260]) window.setTimeout(() => crackle(0.035), d)
+}
+
+/** An ingot onto the hanger: a low copper clink. */
+export function ingotHang(): void {
+  blip(1175, 0.08, 0.05, 'triangle')
+  window.setTimeout(() => blip(880, 0.06, 0.03, 'triangle'), 30)
+}
+
+/** The hangers coming off: the strips spring back. */
+export function springBack(): void {
+  blip(260, 0.22, 0.05, 'sine', 392)
+}
+
+/** A strip that kept its bend: a dull tick, nothing ringing after it. */
+export function stayedBent(): void {
+  burst({ dur: 0.1, gain: 0.08, type: 'lowpass', freq: 260, freqTo: 140, q: 0.8 })
+}
+
+/** The rusted strip cracking: a dry snap. */
+export function crack(): void {
+  burst({ dur: 0.05, gain: 0.14, type: 'highpass', freq: 2400, q: 1.1 })
+  window.setTimeout(() => burst({ dur: 0.16, gain: 0.08, type: 'lowpass', freq: 220, freqTo: 110, q: 0.8 }), 30)
+}
+
+/** The gate leaf sagging on the drawing: a slow creak. */
+export function creak(): void {
+  window.setTimeout(() => burst({ dur: 1.3, gain: 0.05, type: 'bandpass', freq: 520, freqTo: 240, q: 4, attack: 0.2 }), 500)
+}
+
 /** The stamp landing on the journal. */
 export function stamp(): void {
   burst({ dur: 0.14, gain: 0.12, type: 'lowpass', freq: 500, q: 0.6 })
@@ -274,6 +309,22 @@ export function installWorldAudio(getStride: () => Stride): () => void {
       if (look === 'full' && (lastLook === 'open' || lastLook === 'cool') && prev.poured) pour()
       lastLook = look
     }
+    // S2 round A3: the strap taken, the vice's ingots and its lifts, the drawing's sag.
+    if (s.strap === 'taken' && prev.strap === 'shown') strapTake()
+    const v = s.supply?.bend
+    const pv = prev.supply?.bend
+    if (v && pv && v !== pv && v.sets === pv.sets) {
+      if (v.load > pv.load) {
+        ingotHang()
+        // The rusted strip cracks under the load itself, the moment it is too much.
+        if (v.readings.rusted.gaveAt == null && v.load >= 2 && pv.load < 2) window.setTimeout(crack, 140)
+      }
+      if (pv.on && !v.on) {
+        springBack()
+        if ((['copper', 'oldCopper', 'iron'] as const).some((id) => v.readings[id].gaveAt != null && pv.readings[id].gaveAt == null)) window.setTimeout(stayedBent, 180)
+      }
+    }
+    if (s.supply?.drawnAt != null && s.supply.drawnAt !== prev.supply?.drawnAt) creak()
     if (s.whys[2] >= 0 && prev.whys[2] < 0) stamp()
     if (s.cabinet && !prev.cabinet) latch()
     if (s.talk && !prev.talk) talk()

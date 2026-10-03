@@ -162,7 +162,7 @@ export function fresh(v: Bend): Bend {
 
 export type StripState = 'straight' | 'flexed' | 'giving' | 'bent' | 'cracked'
 
-/** What a strip looks like now. `giving` is under a load at or past what it can take: it shows on the lift. */
+/** What a strip looks like now. `giving` is under a load at or past what it can take: it droops, and the lift tells whether the droop stays. */
 export function stripState(v: Bend, id: StripId): StripState {
   const s = STRIP[id]
   if (v.readings[id].gaveAt != null) return s.gives === 'cracks' ? 'cracked' : 'bent'

@@ -8,7 +8,8 @@ import {
   FUEL_ORDER,
   fedBlock,
   getWorld,
-  mouldLookOf,
+  sefuSpot,
+  type SefuSpot,
   CRANE,
   craneTip,
   noteLanding,
@@ -28,6 +29,10 @@ import { Banner, Braces, Chalkboard, Lintel, Skyline, ToolRack } from './Dressin
 import BenchScene from './BenchScene'
 import MouldScene, { PourChannel } from './MouldScene'
 import { MOULD_AT, SEFU_AT_MOULD } from './mouldLayout'
+import { SEFU_AT_VICE, VICE_BENCH_AT } from './viceLayout'
+import StrapBench from './StrapBench'
+import ViceScene from './ViceScene'
+import DrawingBoard from './DrawingBoard'
 import { useWorldMesh, useWorldTexture } from './useWorldMesh'
 import { WORLD_TEXTURES } from '@/lib/worldassets'
 import { WORLD_TEXT } from '@/lib/worldtext'
@@ -64,8 +69,9 @@ export default function Courtyard() {
     return () => offs.forEach((f) => f())
   }, [])
   // Sefu goes where the work is: his post by the belt, or the mould once a charge is on the fire (S2).
-  const sefuAtMould = mouldLookOf(s) !== 'cold'
-  useEffect(() => registerInteractable({ id: 'talk.foreman', verb: 'talk', label: WORLD_TEXT.people.foreman.name, pos: sefuAtMould ? SEFU_AT_MOULD : FOREMAN_AT, radius: 1.4 }), [sefuAtMould])
+  // …and the vice once the kit is cast and his question answered (round A3).
+  const spot = sefuSpot(s)
+  useEffect(() => registerInteractable({ id: 'talk.foreman', verb: 'talk', label: WORLD_TEXT.people.foreman.name, pos: SEFU_AT[spot], radius: spot === 'vice' ? 1.0 : 1.4 }), [spot])
   const heat = THREE.MathUtils.clamp((s.furnace.temp - 20) / (COPPER_MELT_C + 200), 0, 1)
   const lamps = lightingFor(useSun(), 'foundry').lamps
   return (
@@ -75,6 +81,10 @@ export default function Courtyard() {
       <BenchScene />
       {/* S2: the gate mould in its bed of casting sand, at the channel's foot */}
       <MouldScene />
+      {/* S2 round A3: the rusted strap beside Sefu's post; the vice and the repair drawing under the east wall's rack */}
+      <StrapBench />
+      <ViceScene />
+      <DrawingBoard />
       {/* the yard's lamps: up as the sun goes down (Night shift keeps the subject lit, never the room black) */}
       <Lamp position={[-3.4, 3.1, 11.9]} up={lamps} />
       <Lamp position={[3.4, 3.1, 11.9]} up={lamps} />
@@ -159,7 +169,7 @@ export default function Courtyard() {
         ))}
 
         {/* Sefu, the foreman — his W2 mesh with its idle, facing the gate; the capsule stays as the stand-in */}
-        <Foreman atMould={sefuAtMould} />
+        <Foreman spot={spot} />
 
         {/* the gate back */}
         <mesh position={[0, 1.55, 12.7]}>
@@ -652,17 +662,21 @@ function Smoke({ lit }: { lit: boolean }) {
 
 const FOREMAN_AT: [number, number, number] = [3.2, 0, 8]
 const FOREMAN_REST = -Math.PI / 2 + 0.35
+/** Where Sefu stands, by where the work is. */
+const SEFU_AT: Record<SefuSpot, [number, number, number]> = { gate: FOREMAN_AT, mould: SEFU_AT_MOULD, vice: SEFU_AT_VICE }
 
 /**
  * Sefu stands by the belt and turns to whoever is talking to him; the rest yaw
  * faces the yard. Once a charge is on the fire he stands at the mould, facing
- * it (S2): the pour is his, never the child's.
+ * it (S2): the pour is his, never the child's. Once the kit is cast and his
+ * question answered he stands at the vice's south end, by the drawing.
  */
-function Foreman({ atMould }: { atMould: boolean }) {
+function Foreman({ spot }: { spot: SefuSpot }) {
   const turn = useRef<THREE.Group>(null)
-  const at = atMould ? SEFU_AT_MOULD : FOREMAN_AT
-  // At the mould his rest is toward the mould; at his post, toward the yard.
-  const rest = atMould ? Math.atan2(MOULD_AT[0] - at[0], MOULD_AT[2] - at[2]) - FOREMAN_REST : 0
+  const at = SEFU_AT[spot]
+  // At the mould his rest is toward the mould; at the vice, toward the strips; at his post, toward the gate.
+  const face = spot === 'mould' ? MOULD_AT : spot === 'vice' ? VICE_BENCH_AT : null
+  const rest = face ? Math.atan2(face[0] - at[0], face[2] - at[2]) - FOREMAN_REST : 0
   useFrame((_, dtRaw) => {
     const g = turn.current
     if (!g) return
@@ -675,7 +689,7 @@ function Foreman({ atMould }: { atMould: boolean }) {
     g.rotation.y += d * Math.min(1, dt * 5)
   })
   return (
-    <group ref={turn} position={at} name="sefu" userData={{ at: atMould ? 'mould' : 'post' }}>
+    <group ref={turn} position={at} name="sefu" userData={{ at: spot === 'gate' ? 'post' : spot }}>
       <Prop id="foreman" rotation={[0, FOREMAN_REST, 0]} animate>
         <mesh position={[0, 0.7, 0]} castShadow>
           <capsuleGeometry args={[0.28, 0.7, 6, 12]} />

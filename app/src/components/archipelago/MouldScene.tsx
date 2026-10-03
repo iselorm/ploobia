@@ -6,6 +6,7 @@ import { CuboidCollider } from '@react-three/rapier'
 import { getSimTime, getWorld, mouldLookOf, mouldShown, registerInteractable, useWorld } from '@/lib/archipelago'
 import { useBand } from '@/lib/bands'
 import { INGOT_G, PATTERN_CM3, POUR_BEATS, RUNNER_G, castCm3, castG, lastPour, type MouldLook, type Pour } from '@/lib/supply'
+import { TEST_STRIP_G, trayG } from '@/lib/bend'
 import Tag from './SceneTag'
 import { BASIN_AT, CHANNEL, MOULD, MOULD_AT, MOULD_REACH, MOULD_VERB_AT, SAND, STRAP, TRAY_AT } from './mouldLayout'
 
@@ -87,7 +88,7 @@ export default function MouldScene() {
       <SandBed />
       <Spout />
       <Mould look={look} pour={revealed ? pour : null} />
-      <Tray look={look} pour={pour} inRoom={s.room === 'mould'} band={band} />
+      <Tray look={look} pour={pour} inRoom={s.room === 'mould'} band={band} stripCut={!!s.supply?.bend?.cut} />
       {s.room === 'mould' && <Tags look={look} pour={pour} band={band} />}
     </group>
   )
@@ -358,13 +359,20 @@ function Dashes({ x0, x1, z, half }: { x0: number; x1: number; z: number; half: 
 
 /* ---- the recovery tray ------------------------------------------------------ */
 
-function Tray({ look, pour, inRoom, band }: { look: MouldLook; pour: Pour | null; inRoom: boolean; band: string }) {
+function Tray({ look, pour, inRoom, band, stripCut }: { look: MouldLook; pour: Pour | null; inRoom: boolean; band: string; stripCut: boolean }) {
   const back = pour && (look === 'short' || look === 'full') ? pour.spareG : 0
   const spare = Math.max(0, Math.round((back - RUNNER_G) / INGOT_G))
   const at: [number, number, number] = [TRAY_AT[0] - MOULD_AT[0], 0, TRAY_AT[2] - MOULD_AT[2]]
-  const label = band === 'explorer' ? (spare > 0 ? 'The runner and the spare come back' : 'The runner comes back') : `${fmt(back)} g back in the tray`
+  // Round A3: the vice's copper strip is cut from the runner, and the tray says so.
+  const cut = stripCut && back > 0
+  const label =
+    band === 'explorer'
+      ? `${spare > 0 ? 'The runner and the spare come back' : 'The runner comes back'}${cut ? ', less a strip for the vice' : ''}`
+      : cut
+        ? `${fmt(trayG(back, { cut: true }))} g in the tray · ${TEST_STRIP_G} g cut for the vice`
+        : `${fmt(back)} g back in the tray`
   return (
-    <group position={at} rotation={[0, 0.12, 0]} name="cast-tray" userData={{ spareG: back }}>
+    <group position={at} rotation={[0, 0.12, 0]} name="cast-tray" userData={{ spareG: back, stripCut }}>
       <mesh position={[0, 0.03 + SAND.top, 0]} castShadow receiveShadow>
         <boxGeometry args={[0.6, 0.06, 0.42]} />
         <meshStandardMaterial color={IRON} roughness={0.8} metalness={0.2} />
@@ -377,7 +385,7 @@ function Tray({ look, pour, inRoom, band }: { look: MouldLook; pour: Pour | null
         <>
           {/* the runner: the channel's copper, knocked off the cast */}
           <mesh position={[-0.1, 0.085 + SAND.top, 0.02]} rotation={[0, 0.5, 0]} castShadow>
-            <boxGeometry args={[0.3, 0.035, 0.05]} />
+            <boxGeometry args={[cut ? 0.26 : 0.3, 0.035, 0.05]} />
             <meshStandardMaterial color={COPPER_CAST} roughness={0.55} metalness={0.45} />
           </mesh>
           {Array.from({ length: Math.min(4, spare) }, (_, i) => (

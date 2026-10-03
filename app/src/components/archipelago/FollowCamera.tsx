@@ -4,6 +4,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { CRANE, craneTip, getWorld, type RoomId } from '@/lib/archipelago'
 import { BALANCE_CAM, BALANCE_CAM_PHONE, BENCH_CAM, BENCH_CAM_PHONE } from './benchLayout'
 import { MOULD_CAM, MOULD_CAM_PHONE } from './mouldLayout'
+import { DRAWING_CAM, DRAWING_CAM_PHONE, STRAP_CAM, STRAP_CAM_PHONE, VICE_CAM, VICE_CAM_PHONE } from './viceLayout'
 import { control, live } from './live'
 
 /**
@@ -31,6 +32,9 @@ const ROOMS: Record<Exclude<RoomId, 'none'>, { wide: Cut; phone: Cut }> = {
   bench: { wide: cut(BENCH_CAM), phone: cut(BENCH_CAM_PHONE) },
   balance: { wide: cut(BALANCE_CAM), phone: cut(BALANCE_CAM_PHONE) },
   mould: { wide: cut(MOULD_CAM), phone: cut(MOULD_CAM_PHONE) },
+  strap: { wide: cut(STRAP_CAM), phone: cut(STRAP_CAM_PHONE) },
+  vice: { wide: cut(VICE_CAM), phone: cut(VICE_CAM_PHONE) },
+  drawing: { wide: cut(DRAWING_CAM), phone: cut(DRAWING_CAM_PHONE) },
 }
 
 export default function FollowCamera({ hudBottom = 0 }: { hudBottom?: number }) {

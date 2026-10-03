@@ -15,7 +15,8 @@ import { BoardPill, GlassFilter, HandoffCard, KeepReturn, SelaBoard } from './Ke
 import { KEEP_CARD, keepHint, keepOwnsTalk, previewChapters } from '@/lib/keepui'
 import { BenchPill, BenchStrip, FurnaceReady } from './BenchHud'
 import { HeatStrip, MouldPill, MouldStrip } from './MouldHud'
-import { benchHint, benchRoomOf, mouldPill, supplyRoomOf } from '@/lib/benchui'
+import { BendSources, DrawingStrip, StrapStrip, VicePill, ViceStrip } from './ViceHud'
+import { benchHint, benchRoomOf, mouldPill, supplyRoomOf, viceHint, vicePill } from '@/lib/benchui'
 import { kitCast } from '@/lib/supply'
 import { endOfS0 } from '@/lib/keepfixture'
 import { useQualityCaps } from '@/lib/quality'
@@ -28,7 +29,9 @@ import {
   RELIGHT,
   WHYS,
   activeQuest,
+  bendOf,
   benchAvailable,
+  cartStory,
   currentStepId,
   plotActive,
   sendAcross,
@@ -199,7 +202,8 @@ export default function WorldHud({ compact }: { compact: boolean }) {
   // Each bed's brief opens after its first probe and stays until a number is said.
   const plotBrief = onPlot && !!run && run.phase === 'dawn' && run.said.length === 0 && (run.bed === 'first' ? plot.probes >= 1 : run.today.probed || run.days.some((d) => d.probed)) && !plot.naming
   const showGauge = s.zone === 'foundry' && (s.lit.length > 0 || s.furnace.lit)
-  const brief = s.zone === 'foundry' && s.prediction == null && !briefed && s.phase === 'play'
+  // S2: on Sela's errand the rusted strap comes first; the brief waits until the child steps back from it.
+  const brief = s.zone === 'foundry' && s.prediction == null && !briefed && s.phase === 'play' && s.room !== 'strap'
   const inRoom = s.room === 'furnace'
   // S2: a bench room is a cut too; the strip is BenchHud's, the tags are the scene's.
   const benchRoom = benchRoomOf(s)
@@ -210,7 +214,9 @@ export default function WorldHud({ compact }: { compact: boolean }) {
   const driving = s.crane.active
   const afterPour = s.poured && seenPour && after < 4
   const playing = s.phase === 'play'
-  const hintText = note ?? keepHint(s) ?? benchHint(s, band) ?? step.coach
+  // Once the vice's strip is cut, Ploob says where the test stands (round A3); until then the plate's own line points at it.
+  const viceLine = currentStepId(s) === 'test' && bendOf(s).cut ? viceHint(s, band) : null
+  const hintText = note ?? keepHint(s) ?? benchHint(s, band) ?? viceLine ?? step.coach
   const talkingTo = s.talk === 'talk.nara' ? 'nara' : s.talk === 'talk.sela' ? 'sela' : s.talk === 'talk.foreman' ? 'foreman' : null
   // S1: the keep takes over Nara's and Sela's conversations when it has something to ask.
   const keepTalk = keepOwnsTalk(s)
@@ -228,6 +234,8 @@ export default function WorldHud({ compact }: { compact: boolean }) {
   const kitDone = !!s.supply && kitCast(s.supply.cast) && s.supply.cast.why >= 0
   const mouldSlot = !!s.supply && !!mouldPill(mouldLookOf(s), s.supply.cast)
   const benchSlot = compact && s.zone === 'foundry' && !!s.supply && !anyRoom && !s.talk && !kitDone && (mouldSlot || s.supply.bench.phase !== 'idle')
+  // …and then the vice's, from the cut strip until its why is answered (round A3).
+  const viceSlot = compact && s.zone === 'foundry' && !!s.supply && !anyRoom && !s.talk && !benchSlot && !!vicePill(bendOf(s), band)
   const caps = useQualityCaps()
   const reduceGlass = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-transparency: reduce)').matches
 
@@ -330,7 +338,7 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       )}
 
       {/* bottom-right: Ploob's hint — on a phone it sits between the stick and the verb, off both thumbs */}
-      {playing && !brief && !anyRoom && !afterPour && !cinematic && !plotBrief && !keepSlot && !benchSlot && !held && s.talk !== KEEP_CARD && !(compact && plateOpen && onPlot && plateUp(plot)) && (
+      {playing && !brief && !anyRoom && !afterPour && !cinematic && !plotBrief && !keepSlot && !benchSlot && !viceSlot && !held && s.talk !== KEEP_CARD && !(compact && plateOpen && onPlot && plateUp(plot)) && (
         <div className={cn('absolute bottom-3', compact ? 'left-[9rem] right-[13.5rem]' : 'right-3 max-w-[min(24rem,calc(100vw-1.5rem))]')}>
           <button
             type="button"
@@ -441,6 +449,11 @@ export default function WorldHud({ compact }: { compact: boolean }) {
       {playing && benchRoom && <BenchStrip s={s} room={benchRoom} band={band} compact={compact} />}
       {playing && s.room === 'mould' && <MouldStrip s={s} compact={compact} />}
       {playing && benchSlot && (mouldSlot ? <MouldPill s={s} /> : <BenchPill s={s} />)}
+      {/* S2 round A3: the strap beside Sefu, the vice and the repair drawing */}
+      {playing && s.room === 'strap' && <StrapStrip s={s} compact={compact} />}
+      {playing && s.room === 'vice' && <ViceStrip s={s} band={band} compact={compact} />}
+      {playing && s.room === 'drawing' && <DrawingStrip s={s} band={band} compact={compact} />}
+      {playing && viceSlot && <VicePill s={s} band={band} />}
       {playing && heatAsk && !brief && (
         <HeatStrip
           compact={compact}
@@ -1262,6 +1275,8 @@ function Stamp({ journal, onClose }: { journal: Journal; onClose: () => void }) 
             <p className="text-[10px] text-[#5C5646]">Copper melts at 1084.6 °C (CRC Handbook); the gauge says 1085.</p>
           </div>
         </details>
+        {/* S2: what at the vice is sourced and what is modelled */}
+        {cartStory(s) && <BendSources />}
         <div className="mt-2 flex items-center justify-between">
           <span className={cn('atlas-collected text-[12px]', !ready && 'opacity-40')} data-testid="stamp-state">
             {ready ? 'STAMPED' : 'not stamped'}

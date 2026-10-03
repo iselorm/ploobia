@@ -56,6 +56,8 @@ export const WORLD_TEXT = {
     bannerMotto: ['PEOPLE', 'MATERIALS', 'POSSIBILITIES'],
     /** The chalkboard by the fuel yard. */
     chalkboard: ['Small tools.', 'Big questions.'],
+    /** Sela's order slate, on the bench beside Sefu (S2). */
+    slate: ['Jetty gate', 'straps + pins', 'that will not rust', '— Sela'],
     /** The rule on the far wall. */
     rule: 'BUILD · TEST · LEARN · REPEAT',
   },

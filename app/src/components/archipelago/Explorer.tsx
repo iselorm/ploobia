@@ -26,7 +26,10 @@ import {
   type ZoneId,
   enterDoor,
   openBench,
+  openDrawing,
   openMould,
+  openStrap,
+  openVice,
 } from '@/lib/archipelago'
 import { SPAWNS, control, live } from './live'
 import { LANDING_SPAWN } from './landingLayout'
@@ -419,8 +422,11 @@ export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void
         talkTo(id)
         return
       case 'measure':
-        // S2: the jug, the balance or the mould — a camera cut into that station.
+        // S2: the jug, the balance, the mould, the strap, the vice or the drawing — a camera cut into that station.
         if (id === 'cast.mould') openMould()
+        else if (id === 'strap.bench') openStrap()
+        else if (id === 'vice.strips') openVice()
+        else if (id === 'vice.drawing') openDrawing()
         else openBench(id === 'bench.balance' ? 'balance' : 'bench')
         return
     }

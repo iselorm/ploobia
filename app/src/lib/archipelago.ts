@@ -1339,7 +1339,8 @@ export function crossPortal(to: ZoneId): void {
   setWorld((s) => {
     // S2 moment 1: on Sela's errand the first step into the cold Foundry, before the brief, is the rusted strap.
     const beat = to === 'foundry' && cartStory(s) && s.prediction == null && s.strap === 'unseen'
-    return { zone: to, ring: 'world', held: null, near: null, crossings: s.crossings + 1, ...(beat ? { room: 'strap' as const, strap: 'shown' as const } : {}) }
+    // A room never rides through the gate: the crossing closes whatever cut was open.
+    return { zone: to, ring: 'world', held: null, near: null, crossings: s.crossings + 1, room: beat ? ('strap' as const) : ('none' as const), ...(beat ? { strap: 'shown' as const } : {}) }
   })
   // The first return to the Landing with a fortnight out settles it — once (settleDispatch ignores a settled one).
   if (to === 'landing') settleKeep()
@@ -1651,18 +1652,18 @@ export function sefuSpot(s: WorldState): SefuSpot {
 export const BEND_WHY: Why = {
   ask: 'Why does the gate still get copper?',
   options: [
+    { key: 'copper_stronger', text: 'Copper is stronger than iron.', right: false, line: 'Iron is the stronger. It is the rust that loses.' },
     {
       key: 'right',
       text: 'Copper does not rust away in the wet, and the brace carries the weight of the gate: the straps only have to last and keep it straight.',
       right: true,
       line: 'Copper lasts in the wet, and the brace takes the weight.',
     },
-    { key: 'copper_stronger', text: 'Copper is stronger than iron.', right: false, line: 'Iron is the stronger. It is the rust that loses.' },
     { key: 'only_metal', text: 'Copper is the only metal Sefu had.', right: false, line: 'Sefu has iron: it is in the vice. He picked copper for a gate that stands in the wet.' },
   ],
 }
-/** What each option is on screen: a few words to tap. */
-export const BEND_SHORT: readonly string[] = ['No rust, and the brace takes the weight', 'Stronger than iron', 'What Sefu had']
+/** What each option is on screen: a few words to tap, in the options' order. */
+export const BEND_SHORT: readonly string[] = ['Stronger than iron', 'No rust, and the brace takes the weight', 'What Sefu had']
 /** Ploob's one nudge when a typed answer is on the right track but stops short. */
 export const BEND_NUDGE = 'Your record has two old strips in it. What did the wet do to each?'
 

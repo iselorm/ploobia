@@ -89,6 +89,7 @@ function atVice(guess = 'copper') {
   A.viceCut()
   A.vicePredict(guess)
 }
+const optionOf = (key) => A.BEND_WHY.options.findIndex((o) => o.key === key)
 const step = (band = 'explorer') => {
   A.viceHang()
   A.viceLift(band)
@@ -111,6 +112,11 @@ check('back to work: the yard, and the brief can open', w().room === 'none' && w
 A.crossPortal('landing')
 A.crossPortal('foundry')
 check('a second crossing does not replay it', w().room === 'none' && w().strap === 'taken')
+
+onErrand()
+A.crossPortal('foundry')
+A.crossPortal('landing')
+check('crossing back with the strap still up closes it: no room rides to the Landing', w().zone === 'landing' && w().room === 'none' && w().strap === 'shown')
 
 A.resetWorld()
 A.setWorld({ phase: 'play', zone: 'landing' })
@@ -248,29 +254,30 @@ check('the pick starts the drawing\'s clip on the sim clock', typeof w().supply.
 }
 
 /* 6 · the why ------------------------------------------------------------------ */
-check('the why: "Why does the gate still get copper?", three answers', A.BEND_WHY.ask === 'Why does the gate still get copper?' && A.BEND_WHY.options.length === 3 && A.BEND_WHY.options[0].right && A.BEND_WHY.options.filter((o) => o.right).length === 1)
+check('the why: "Why does the gate still get copper?", three answers', A.BEND_WHY.ask === 'Why does the gate still get copper?' && A.BEND_WHY.options.length === 3 && A.BEND_WHY.options.filter((o) => o.right).length === 1)
+check('…the right one is not the first on the list', !A.BEND_WHY.options[0].right && /No rust/.test(A.BEND_SHORT[optionOf('right')]))
 check('…with short labels to tap', A.BEND_SHORT.length === 3 && A.BEND_SHORT.every((t) => t.length <= 40), A.BEND_SHORT.join(' | '))
-check('Ploob’s reasoned line carries the child’s own numbers', /cracked at 2/.test(A.bendWhyLine(w(), 0)) && / 3/.test(A.bendWhyLine(w(), 0)), A.bendWhyLine(w(), 0))
-check('…for "stronger than iron": copper stayed bent, iron came back', /copper stayed bent at 3/i.test(A.bendWhyLine(w(), 1)) && /came back/.test(A.bendWhyLine(w(), 1)), A.bendWhyLine(w(), 1))
-check('…for "what Sefu had": the iron is in the vice', /iron/.test(A.bendWhyLine(w(), 2)), A.bendWhyLine(w(), 2))
+check('Ploob’s reasoned line carries the child’s own numbers', /cracked at 2/.test(A.bendWhyLine(w(), optionOf('right'))) && / 3/.test(A.bendWhyLine(w(), optionOf('right'))), A.bendWhyLine(w(), optionOf('right')))
+check('…for "stronger than iron": copper stayed bent, iron came back', /copper stayed bent at 3/i.test(A.bendWhyLine(w(), optionOf('copper_stronger'))) && /came back/.test(A.bendWhyLine(w(), optionOf('copper_stronger'))), A.bendWhyLine(w(), optionOf('copper_stronger')))
+check('…for "what Sefu had": the iron is in the vice', /iron/.test(A.bendWhyLine(w(), optionOf('only_metal'))), A.bendWhyLine(w(), optionOf('only_metal')))
 const facts = A.bendFacts(w())
 check('the judge is told what the child measured', facts.new_copper === 'stayed bent at 3' && facts.rusted_iron === 'cracked at 2' && facts.new_iron === 'came back from 3' && facts.old_copper === 'stayed bent at 3' && facts.guessed_first_to_give === 'new copper' && facts.pointed_at_on_the_drawing === 'brace', JSON.stringify(facts))
-A.answerBendWhy(1)
-check('answered once; the plate moves to "Bring them to Sela"', bend().why === 1 && A.currentStepId(w()) === 'deliver' && A.currentStep(w()).target === 'portal.landing')
-A.answerBendWhy(0)
-check('…and stays answered', bend().why === 1)
+A.answerBendWhy(optionOf('copper_stronger'))
+check('answered once; the plate moves to "Bring them to Sela"', A.BEND_WHY.options[bend().why].key === 'copper_stronger' && A.currentStepId(w()) === 'deliver' && A.currentStep(w()).target === 'portal.landing')
+A.answerBendWhy(optionOf('right'))
+check('…and stays answered', A.BEND_WHY.options[bend().why].key === 'copper_stronger')
 check('Sefu stays by the vice', A.sefuSpot(w()) === 'vice')
 
 atVice()
 step()
 step()
 step()
-A.answerBendWhy(0)
+A.answerBendWhy(optionOf('right'))
 check('no answer before the drawing', bend().why === -1)
 A.openDrawing()
 A.drawingPick('strap')
 A.answerBendWhyText('copper does not rust and the brace holds the weight', 'right', null)
-check('in their own words, judged right: the right option, their sentence kept', bend().why === 0 && bend().whyText === 'copper does not rust and the brace holds the weight')
+check('in their own words, judged right: the right option, their sentence kept', A.BEND_WHY.options[bend().why].right && bend().whyText === 'copper does not rust and the brace holds the weight')
 atVice()
 step()
 step()
@@ -337,7 +344,7 @@ S.restoreWorld(orphan)
 check('a cut strip with no pour on record is nobody’s strip: the vice starts again', bend().cut === false)
 
 const lies = roundTrip(snap)
-lies.s.supply.bend.why = 0
+lies.s.supply.bend.why = 1
 A.resetWorld()
 S.restoreWorld(lies)
 check('an answer with no test done and no drawing is not kept', bend().why === -1 && bend().pick === null)
