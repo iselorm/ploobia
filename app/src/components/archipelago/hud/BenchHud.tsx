@@ -16,7 +16,7 @@ import {
   openBench,
   type WorldState,
 } from '@/lib/archipelago'
-import { PIECES, benchGap, benchLevel_, benchReached, benchToMark, densityOf, kitCast, massOf, runnerOffered, trayFor, type Bench, type Piece } from '@/lib/supply'
+import { PIECES, benchGap, benchLevel_, benchReached, benchToMark, densityOf, kitCast, massOf, runnerOffered, tooHeavy, trayFor, type Bench, type Piece } from '@/lib/supply'
 import { benchPill, type BenchRoom } from '@/lib/benchui'
 
 /**
@@ -185,6 +185,8 @@ export function BenchStrip({ s, room, band, compact }: { s: WorldState; room: Be
   const level = benchLevel_(b)
   const gap = benchGap(b)
   const canInspect = band === 'analyst' && b.dry > 0 && !level
+  // A dry-heavy pan is never sent: Sefu melts no more than was measured (Selorm, 2 Oct).
+  const heavy = tooHeavy(b)
   return (
     <>
       <Strip
@@ -194,6 +196,8 @@ export function BenchStrip({ s, room, band, compact }: { s: WorldState; room: Be
             <>
               “Wet stays here. Dry goes to the fire.” <span className="font-semibold text-[#6F6857]">{runnerOffered(b) ? '“And one more for the channel. It comes back.”' : ''}</span>
             </>
+          ) : heavy ? (
+            "“Dry side's heavy. I'll not melt more than you measured.”"
           ) : (
             '“Wet stays here. Dry goes to the fire.”'
           )
@@ -208,9 +212,11 @@ export function BenchStrip({ s, room, band, compact }: { s: WorldState; room: Be
             Inspect the set
           </Btn>
         )}
-        <Btn primary={level} onClick={() => balanceToFire()} data-testid="balance-fire" disabled={b.dry === 0}>
-          {level ? 'To the fire' : 'Send it anyway'}
-        </Btn>
+        {!heavy && (
+          <Btn primary={level} onClick={() => balanceToFire()} data-testid="balance-fire" disabled={b.dry === 0}>
+            {level ? 'To the fire' : 'Send it anyway'}
+          </Btn>
+        )}
         {back}
       </Strip>
       {canInspect && inspecting && <InspectSheet b={b} compact={compact} gap={gap} />}

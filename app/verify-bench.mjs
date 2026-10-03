@@ -189,7 +189,8 @@ const smallTargets = (page, root) =>
   await page.waitForTimeout(700)
   const tag = (await text(page, 'balance-tag')) ?? ''
   check('ten ingots: Measured 8,851 · Predicted 8,960 · 109 g below prediction, grouped in one readout', /Measured 8,851 g/.test(tag) && /Predicted 8,960 g/.test(tag) && /109 g below prediction/.test(tag), tag)
-  check('…the beam is not level: the dry side sits heavy, Send it anyway', (await page.evaluate(() => window.__world.scene?.getObjectByName?.('bench-balance')?.userData.tilt ?? 0)) > 0 && /Send it anyway/.test((await text(page, 'balance-fire')) ?? ''))
+  // A dry-heavy pan is never sent (Selorm, 2 Oct): no "Send it anyway" here — Sefu will not melt more than was measured.
+  check('…the beam is not level: the dry side sits heavy, and Sefu will not take the pan', (await page.evaluate(() => window.__world.scene?.getObjectByName?.('bench-balance')?.userData.tilt ?? 0)) > 0 && !(await has(page, 'balance-fire')) && /I'll not melt more than you measured/.test((await text(page, 'balance-strip')) ?? ''), await text(page, 'balance-strip'))
   check('nothing marks the lump before the child looks: no inspect sheet, no red ring', !(await has(page, 'inspect-sheet')) && !(await page.evaluate(() => !!document.querySelector('[data-testid^=inspect-]'))))
   await page.screenshot({ path: path.join(SHOTS, 'bench-lump-desktop.png') })
   await tap(page, 'balance-inspect')

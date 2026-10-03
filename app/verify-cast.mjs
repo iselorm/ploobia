@@ -90,8 +90,9 @@ const FIVE = SIX.slice(1)
 async function charge(page, pieces, dry) {
   await page.evaluate(
     ([inJug, n]) => {
-      const cm3 = inJug.reduce((a, id) => a + (id === 'scrap.nugget' || id === 'scrap.pin' ? 100 : 200), 0)
-      const wet = Math.round(cm3 * 8.96)
+      const small = (id) => id === 'scrap.nugget' || id === 'scrap.pin' || id === 'scrap.grey'
+      const cm3 = inJug.reduce((a, id) => a + (small(id) ? 100 : 200), 0)
+      const wet = inJug.reduce((a, id) => a + (id === 'scrap.grey' ? 787 : Math.round((small(id) ? 100 : 200) * 8.96)), 0)
       window.__world.set({
         supply: {
           bench: { phase: 'charged', inJug, patternIn: false, marked: true, matched: cm3, dry: n, runner: true, inspected: [], sentUnlevel: Math.abs(n * 896 - wet) > 50, charge: n * 896 + 896, recasts: 0, castDry: 0 },
@@ -201,7 +202,13 @@ async function pour(page) {
   for (const id of ['nugget', 'pin', 'offcut', 'knob', 'drip', 'bell']) await tap(page, `drop-${id}`)
   await tap(page, 'bench-done')
   await waitFor(page, () => window.__world.get().room === 'balance')
-  for (let i = 0; i < 10; i++) await tap(page, 'balance-add')
+  for (let i = 0; i < 11; i++) await tap(page, 'balance-add')
+  await page.waitForTimeout(600)
+  check('eleven ingots against a ten-ingot set: the dry side is heavy, no way to send it, and Sefu says why', (await node(page, 'bench-balance'))?.tilt > 0 && !(await has(page, 'balance-fire')) && /I'll not melt more than you measured/.test((await text(page, 'balance-strip')) ?? ''), await text(page, 'balance-strip'))
+  await page.screenshot({ path: path.join(SHOTS, 'cast-heavy-desktop.png') })
+  await tap(page, 'balance-take')
+  await page.waitForTimeout(500)
+  check('…take one off: level at ten, To the fire is back', (await node(page, 'bench-balance'))?.level === true && /To the fire/.test((await text(page, 'balance-fire')) ?? ''))
   await tap(page, 'balance-fire')
   await page.waitForTimeout(400)
   check('charged at ten: the plate moves to Cast the fittings and Sefu goes to the mould', (await bench(page)).charge === 9856 && (await look(page)) === 'waiting' && (await node(page, 'sefu'))?.at === 'mould', JSON.stringify(await node(page, 'sefu')))
@@ -396,14 +403,15 @@ for (const [name, width, height, touch] of [['desktop', 1280, 800, false], ['740
   await page.screenshot({ path: path.join(SHOTS, 'cast-two-ingots-desktop.png') })
   await tap(page, 'mould-back')
   await waitFor(page, () => window.__world.get().room === 'none')
-  await charge(page, SIX, 12)
+  // The one guess that can still fill the mould: a wet set over the mark (all six and the grey lump), ten ingots light.
+  await charge(page, [...SIX, 'scrap.grey'], 10)
   await toMould(page)
   await pour(page)
   check('Sefu melts what they left: the kit is cast, once', (await look(page)) === 'full' && (await cast(page)).pours.length === 1)
-  check('twelve ingots sent anyway: the spare is in the tray with the runner', (await node(page, 'cast-tray'))?.spareG === 2688 && /spare/.test((await text(page, 'tray-tag')) ?? ''), await text(page, 'tray-tag'))
+  check('…only the runner comes back: nothing over ten ingots ever reaches the fire', (await node(page, 'cast-tray'))?.spareG === 896, JSON.stringify(await node(page, 'cast-tray')))
   await tap(page, 'point-water')
   await page.waitForTimeout(300)
-  check('…a kit cast by a guess is still named a guess, and the spare goes back', /You sent me a guess/.test((await text(page, 'mould-line')) ?? '') && /More than the mould holds/.test((await text(page, 'mould-line')) ?? ''), await text(page, 'mould-line'))
+  check('…a kit cast by a guess is still named a guess', /You sent me a guess/.test((await text(page, 'mould-line')) ?? '') && !/More than the mould holds/.test((await text(page, 'mould-line')) ?? ''), await text(page, 'mould-line'))
   await tap(page, 'mould-back')
   await waitFor(page, () => window.__world.get().room === 'none')
   await page.waitForTimeout(500)

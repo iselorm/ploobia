@@ -1,5 +1,5 @@
 import { benchAvailable, mouldLookOf, pourBlocked, type WorldState } from './archipelago'
-import { benchGap, benchLevel, benchLevel_, benchReached, benchToMark, castCm3, lastPour, markLevel, PATTERN_CM3, type Bench, type CastRecord, type MouldLook } from './supply'
+import { benchGap, benchLevel, benchLevel_, benchReached, benchToMark, castCm3, lastPour, markLevel, PATTERN_CM3, tooHeavy, type Bench, type CastRecord, type MouldLook } from './supply'
 
 /**
  * S2's HUD helpers, outside the components so react-refresh stays happy and
@@ -53,6 +53,7 @@ export function benchHint(s: WorldState, band: string): string | null {
       return benchReached(b) ? "That's the mark. Take the set to the balance." : `Drop scrap in until the water reaches the mark — ${fmt(benchToMark(b))} to go.`
     case 'balancing':
       if (benchLevel_(b)) return "Level. Sefu's got one more for the channel."
+      if (tooHeavy(b) && !(band === 'analyst' && benchGap(b) !== 0)) return "The dry side's down. Take one off."
       if (band === 'analyst' && benchGap(b) !== 0 && b.dry > 0) return 'That grey one. Is it even copper?'
       return 'Add dry ingots until the beam sits level.'
     case 'charged':

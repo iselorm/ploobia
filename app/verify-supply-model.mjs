@@ -103,8 +103,10 @@ e = S.done(e)
 check('Engineer: the grey set reaches the mark and goes to the balance at 8,851 g', e.phase === 'balancing' && S.benchWetMass(e) === 8851 && S.benchPredicted(e) === 8960)
 for (let i = 0; i < 10; i++) e = S.addIngot(e)
 check('…ten ingots: heavy, never level; the discrepancy reads 109 g under', !S.benchLevel_(e) && S.benchTilt(e) > 0 && S.benchGap(e) === -109)
-const eSent = S.toFire(e)
-check('…sent anyway at ten: charged full but flagged as a guess', eSent.phase === 'charged' && eSent.sentUnlevel && S.castOf(eSent.dry).fraction === 1)
+// A dry-heavy pan is never sent (Selorm, 2 Oct): Sefu melts no more than was measured. A light one still goes.
+check('…ten is heavy: the pan is refused, nothing is charged', S.tooHeavy(e) && S.toFire(e) === e)
+const eSent = S.toFire(S.takeIngot(e))
+check('…nine is light: sent anyway, flagged as a guess, and it will cast short', eSent.phase === 'charged' && eSent.sentUnlevel && eSent.dry === 9 && S.castOf(eSent.dry).short)
 e = S.inspect(e, S.GREY_LUMP.id)
 check('…inspect the grey lump: it is recorded, and reads 7.9', e.inspected.includes(S.GREY_LUMP.id) && Math.round(S.densityOf(S.GREY_LUMP) * 10) / 10 === 7.9)
 e = S.take(e, S.GREY_LUMP.id)
@@ -174,13 +176,19 @@ const guessBack = S.backToBench(guessBench, guessCast)
 check('…back to the BALANCE (the water was at the mark), eight ingots’ worth kept', guessBack.phase === 'balancing' && guessBack.dry === 8 && guessBack.castDry === 8 && !guessBack.sentUnlevel)
 
 // too much: twelve ingots sent anyway
-const fatCast = S.pourCharge(charged(tray, 12), none)
-check('twelve ingots: full, 2,688 g back to the tray, flagged as a guess', S.kitCast(fatCast) && S.lastPour(fatCast).spareG === 2688 && S.lastPour(fatCast).guess)
+const fat = charged(tray, 12)
+check('twelve ingots against a ten-ingot set: the dry side is heavy, the pan stays on the balance', fat.phase === 'balancing' && S.tooHeavy(fat) && fat.charge === null && S.pourCharge(fat, none) === none)
+check('…eleven is refused too; ten level is sent; nine light is sent', charged(tray, 11).phase === 'balancing' && charged(tray, 10).phase === 'charged' && charged(tray, 9).phase === 'charged')
+check('a level or a light pan is never "too heavy"', !S.tooHeavy(S.takeIngot(S.takeIngot(fat))) && !S.tooHeavy(S.initialBench()))
+// What a guess can still do: the Analyst's set over the mark (all six and the grey lump), ten ingots — light, sent, and full.
+const over = charged([...tray, S.GREY_LUMP], 10)
+const overCast = S.pourCharge(over, none)
+check('the one guess that still fills the mould: a set over the mark, ten ingots light — full, and flagged', over.phase === 'charged' && over.sentUnlevel && S.kitCast(overCast) && S.lastPour(overCast).guess && S.lastPour(overCast).spareG === 896)
 
 // the mass record: what went in is what came out, at every charge
 check(
   'the mass record balances for every charge: in = cast + tray',
-  Array.from({ length: 14 }, (_, i) => i + 1).every((n) => {
+  Array.from({ length: 10 }, (_, i) => i + 1).every((n) => {
     const p = S.lastPour(S.pourCharge(charged(tray, n), none))
     return p.chargeG === n * 896 + 896 && S.castG(p) + p.spareG === p.chargeG
   }),

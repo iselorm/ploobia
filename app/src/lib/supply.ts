@@ -297,9 +297,19 @@ export function inspect(b: Bench, id: string): Bench {
   return { ...b, inspected: [...b.inspected, id] }
 }
 
-/** The dry pan goes to the fire with Sefu's runner. Level or not — a guess is flagged. */
+/** The dry side sits heavy: more copper on the pan than the wet set weighs. */
+export function tooHeavy(b: Bench): boolean {
+  return b.phase === 'balancing' && benchTilt(b) > 0
+}
+
+/**
+ * The dry pan goes to the fire with Sefu's runner. Level, or light — a light
+ * pan is a guess, flagged, and its short cast is the lesson. A HEAVY pan is
+ * never sent (Selorm, 2 Oct): Sefu melts no more than was measured, so the
+ * kit cannot be cast by piling ingots on.
+ */
 export function toFire(b: Bench): Bench {
-  if (b.phase !== 'balancing' || b.dry === 0) return b
+  if (b.phase !== 'balancing' || b.dry === 0 || tooHeavy(b)) return b
   return { ...b, phase: 'charged', runner: true, sentUnlevel: !isLevel(b.dry, benchWetMass(b)), charge: chargeOf(b.dry, true) }
 }
 

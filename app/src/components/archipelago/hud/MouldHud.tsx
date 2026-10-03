@@ -4,7 +4,7 @@ import { Tile } from '@/components/ui/tile'
 import Ploob2 from '@/components/brand/Ploob2'
 import { useBandCaps } from '@/lib/bands'
 import { MEASURE_NUDGE, MEASURE_POINTS, MEASURE_WHY, answerCastWhy, answerCastWhyText, castBack, castPour, leaveRoom, mouldLookOf, openMould, pourBlocked, type WorldState } from '@/lib/archipelago'
-import { RUNNER_G, benchReached, lastPour } from '@/lib/supply'
+import { benchReached, lastPour } from '@/lib/supply'
 import { mouldPill } from '@/lib/benchui'
 import { judgeCastWhy, TRUST } from '@/lib/whyjudge'
 import { SEFU_LINES } from '@/lib/sefu'
@@ -83,13 +83,12 @@ function KitLine({ s, compact, back }: { s: WorldState; compact: boolean; back: 
   const c = s.supply!.cast
   const pour = lastPour(c)
   const chosen = MEASURE_WHY.options[c.why]
-  const spare = !!pour && pour.spareG > RUNNER_G
   return (
     <Strip
       who={SEFU}
       line={
         <>
-          “{SEFU_LINES.kit[0]}”{spare && <span className="font-semibold text-[#6F6857]"> “More than the mould holds. The rest goes back in the tray.”</span>}
+          “{SEFU_LINES.kit[0]}”
           {/* a kit cast by a guess is still a guess: the beam said so before the fire did */}
           {pour?.guess && <span className="font-semibold text-[#B8741A]"> “You sent me a guess. The beam wasn't level.”</span>}
           <span className="mt-1 flex items-start gap-2">
