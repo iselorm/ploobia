@@ -31,7 +31,6 @@ import {
   activeQuest,
   bendOf,
   benchAvailable,
-  cartStory,
   currentStepId,
   plotActive,
   sendAcross,
@@ -702,6 +701,8 @@ function Gauge({ fuel, temp, hearths, lit, compact }: { fuel: FuelId | null; tem
 }
 
 function Brief({ onDone }: { onDone: () => void }) {
+  // On Sela's errand Sefu has just said the bells are waiting, over the rusted strap: he does not say it twice.
+  const heard = useWorld().strap !== 'unseen'
   const [v, setV] = useState('')
   const n = Number(v)
   const ok = v.trim() !== '' && Number.isFinite(n) && n > 0
@@ -709,7 +710,9 @@ function Brief({ onDone }: { onDone: () => void }) {
     <div className="pointer-events-auto absolute inset-0 grid place-items-center bg-[#2A2823]/25 p-4" data-focus-layer="">
       <div className="atlas-plate w-full max-w-[24rem] rounded-[22px] px-6 py-5" data-testid="brief">
         <span className="atlas-eyebrow block">{WORLD_TEXT.people.foreman.name} · {WORLD_TEXT.people.foreman.title}</span>
-        <p className="mt-1 text-[14px] leading-snug font-semibold text-[#2A2823]">“It went cold in the night. Forty bells due Friday. I have fed it everything and nothing.”</p>
+        <p className="mt-1 text-[14px] leading-snug font-semibold text-[#2A2823]" data-testid="brief-line">
+          {heard ? '“It went cold in the night. I have fed it everything and nothing.”' : '“It went cold in the night. Forty bells due Friday. I have fed it everything and nothing.”'}
+        </p>
         <p className="mt-3 text-[13px] font-extrabold text-[#2A2823]">{RELIGHT.predict.ask}</p>
         <div className="mt-2 flex items-center gap-2">
           <input
@@ -1276,7 +1279,8 @@ function Stamp({ journal, onClose }: { journal: Journal; onClose: () => void }) 
           </div>
         </details>
         {/* S2: what at the vice is sourced and what is modelled */}
-        {cartStory(s) && <BendSources />}
+        {/* …shown once the child's own test is done: the counts are theirs to find first */}
+        {bendOf(s).done && <BendSources />}
         <div className="mt-2 flex items-center justify-between">
           <span className={cn('atlas-collected text-[12px]', !ready && 'opacity-40')} data-testid="stamp-state">
             {ready ? 'STAMPED' : 'not stamped'}

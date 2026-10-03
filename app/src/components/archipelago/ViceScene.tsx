@@ -5,7 +5,7 @@ import { Html } from '@react-three/drei'
 import { CuboidCollider } from '@react-three/rapier'
 import { bendOf, getWorld, registerInteractable, useWorld, vicePredict, viceShown, viceStageOf } from '@/lib/archipelago'
 import { useBand } from '@/lib/bands'
-import { STRIP, STRIPS, readingText, stripState, type Bend, type StripId, type StripSpec } from '@/lib/bend'
+import { STRIP, STRIPS, dip, readingText, stripState, type Bend, type StripId, type StripSpec } from '@/lib/bend'
 import Tag from './SceneTag'
 import { ARM, JAW_Z, RULE, STRIP_X, STRIP_Y, VICE_BENCH, VICE_BENCH_AT, VICE_REACH, VICE_VERB_AT } from './viceLayout'
 
@@ -48,26 +48,23 @@ const SEGS = 5
 
 const jawOf = (id: StripId): number => JAW_Z[STRIPS.findIndex((s) => s.id === id)]
 
-/** The curve (elastic, along the arm) and the kink (at the jaw) a strip is heading for. */
-function targets(v: Bend, s: StripSpec): { curve: number; kink: number } {
-  switch (stripState(v, s.id)) {
-    case 'bent':
-      return { curve: 0, kink: SET_RAD }
-    case 'cracked':
-      return { curve: 0, kink: CRACK_RAD }
-    case 'giving':
-      // At or past what it can take the strip gives under the load: the kink is there already, with the spring on top
-      // of it. The lift takes the spring away and leaves the kink — or shows the crack for what it is.
-      return s.gives === 'cracks' ? { curve: 0, kink: CRACK_RAD } : { curve: v.load * s.flex * FLEX_RAD, kink: SET_RAD }
-    case 'flexed':
-      return { curve: v.load * s.flex * FLEX_RAD, kink: 0 }
-    default:
-      return { curve: 0, kink: 0 }
-  }
+/** Scratch for the frame loop: nothing is allocated per frame. */
+const WANT = { curve: 0, kink: 0 }
+const TIP = { z: 0, y: 0 }
+
+/** The curve (elastic, along the arm) and the kink (at the jaw) a strip is heading for — written into `WANT`. */
+function targets(v: Bend, s: StripSpec): typeof WANT {
+  const state = stripState(v, s.id)
+  // The spring is lib/bend.ts's dip, in radians along the arm; a strip that has given carries none.
+  WANT.curve = state === 'flexed' || (state === 'giving' && s.gives === 'bends') ? dip(v, s.id) * FLEX_RAD : 0
+  // At or past what it can take the strip gives under the load: the kink is there already, with the spring on top
+  // of it. The lift takes the spring away and leaves the kink — or shows the crack for what it is.
+  WANT.kink = state === 'cracked' || (state === 'giving' && s.gives === 'cracks') ? CRACK_RAD : state === 'bent' || state === 'giving' ? SET_RAD : 0
+  return WANT
 }
 
-/** Where the tip is for a curve and a kink: [reach along z, drop], in metres from the jaw. */
-function tipOf(curve: number, kink: number): [number, number] {
+/** Where the tip is for a curve and a kink: reach along z and drop, in metres from the jaw — written into `TIP`. */
+function tipOf(curve: number, kink: number): typeof TIP {
   let z = 0
   let y = 0
   const seg = ARM.len / SEGS
@@ -76,7 +73,9 @@ function tipOf(curve: number, kink: number): [number, number] {
     z += seg * Math.cos(a)
     y += seg * Math.sin(a)
   }
-  return [z, y]
+  TIP.z = z
+  TIP.y = y
+  return TIP
 }
 
 export default function ViceScene() {
@@ -137,7 +136,7 @@ export default function ViceScene() {
             const empty = st.id === 'copper' && !v.cut
             const reading = readingText(STRIP[st.id], v.readings[st.id])
             return (
-              <Html key={st.id} position={[STRIP_X, STRIP_Y + 0.26, jawOf(st.id) + ARM.len * 0.45]} center zIndexRange={[30, 0]} style={{ pointerEvents: 'none' }}>
+              <Html key={st.id} position={[STRIP_X, STRIP_Y + 0.2, jawOf(st.id) + ARM.len * 0.45]} center zIndexRange={[30, 0]} style={{ pointerEvents: 'none' }}>
                 <Tag small stack dark={!!reading && v.readings[st.id].gaveAt != null} testid={empty ? 'strip-tag-empty' : `strip-tag-${st.id}`}>
                   {empty ? 'empty' : st.label}
                   {reading && (
@@ -191,15 +190,19 @@ function Strip({ spec, top, pickable }: { spec: StripSpec; top: number; pickable
   const halo = useRef<THREE.MeshStandardMaterial>(null)
   const look = LOOK[spec.id]
   const jaw = jawOf(spec.id)
-  const first = targets(v, spec)
-  // The arm's own motion: a damped spring on the curve, a quick ease on the kink.
-  const m = useRef({ curve: first.curve, vel: 0, kink: first.kink, hang: v.on ? 1 : 0 })
+  // The arm's own motion: a damped spring on the curve, a quick ease on the kink. It starts where the record puts it.
+  const m = useRef<{ curve: number; vel: number; kink: number; hang: number } | null>(null)
+  if (m.current == null) {
+    const first = targets(v, spec)
+    m.current = { curve: first.curve, vel: 0, kink: first.kink, hang: v.on ? 1 : 0 }
+  }
   const reduced = useMemo(() => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches, [])
   useFrame((state, dtRaw) => {
     const dt = Math.min(0.05, dtRaw)
     const now = bendOf(getWorld())
     const want = targets(now, spec)
     const a = m.current
+    if (!a) return
     // Underdamped, so a lifted strip visibly springs; critically damped under reduced motion.
     const k = 220
     const c = reduced ? 2 * Math.sqrt(k) : 9
@@ -210,7 +213,9 @@ function Strip({ spec, top, pickable }: { spec: StripSpec; top: number; pickable
     const g = root.current
     if (g) {
       g.rotation.x = a.kink
-      const [tz, ty] = tipOf(a.curve, a.kink)
+      const tip = tipOf(a.curve, a.kink)
+      const tz = tip.z
+      const ty = tip.y
       // Written here, never as a prop: a prop would wipe it on every re-render.
       g.userData.angle = Math.atan2(ty, tz)
       g.userData.state = stripState(now, spec.id)
@@ -224,9 +229,10 @@ function Strip({ spec, top, pickable }: { spec: StripSpec; top: number; pickable
         h.visible = now.load > 0
       }
     }
-    segs.current.forEach((sg) => {
+    for (let i = 0; i < SEGS; i++) {
+      const sg = segs.current[i]
       if (sg) sg.rotation.x = a.curve / SEGS
-    })
+    }
     if (halo.current) halo.current.opacity = pickable ? (reduced ? 0.5 : 0.3 + 0.25 * Math.sin(state.clock.elapsedTime * 3.2)) : 0
   })
   const seg = ARM.len / SEGS
@@ -260,7 +266,9 @@ function Strip({ spec, top, pickable }: { spec: StripSpec; top: number; pickable
   const r = v.readings[spec.id]
   const gave = r.gaveAt != null
   const wedge = useMemo(() => {
-    const [tz, ty] = tipOf(0, spec.gives === 'cracks' ? CRACK_RAD : SET_RAD)
+    const tip = tipOf(0, spec.gives === 'cracks' ? CRACK_RAD : SET_RAD)
+    const tz = tip.z
+    const ty = tip.y
     const g = new THREE.BufferGeometry()
     // In the board's plane: the jaw, the tip on the ruled line, the tip where it stayed.
     g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, ARM.len, 0, -ty, tz], 3))

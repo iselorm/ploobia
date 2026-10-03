@@ -18,7 +18,7 @@ import { DOORS, bendOf, cartStory, furnaceReady, mouldLookOf, sefuSpot, type Ste
 import { bendStage } from './bend'
 
 /** Which set of lines a state calls for. `arrive` and `done` never reach him: he is only in the courtyard, and `done` is the pour. */
-export type SefuMood = Exclude<StepId, 'arrive' | 'done'> | 'poured' | 'bench' | 'heat' | 'left' | 'charged' | 'pouring' | 'cold' | 'short' | 'kit' | 'strap' | 'vice' | 'bent' | 'gate'
+export type SefuMood = Exclude<StepId, 'arrive' | 'done'> | 'poured' | 'bench' | 'heat' | 'left' | 'charged' | 'pouring' | 'cold' | 'short' | 'kit' | 'strap' | 'vice' | 'testing' | 'bent' | 'gate'
 
 export const SEFU_LINES: Record<SefuMood, readonly string[]> = {
   clear: [
@@ -63,6 +63,7 @@ export const SEFU_LINES: Record<SefuMood, readonly string[]> = {
   // Round A3 — the strap on arrival, then the vice and the drawing.
   strap: ["Off the watch's jetty gate. Rusted through. Sela wants ones that won't.", "I can't pour a thing cold. And I've forty bells waiting behind it."],
   vice: ['You tell me which gives first.'],
+  testing: ['You said it. Now show me.'],
   bent: ['So what would you never make from that strip?'],
   gate: ['The brace carries the gate. These keep it straight. Smaller job.'],
 }
@@ -79,7 +80,7 @@ export function sefuMood(s: WorldState): SefuMood {
       const v = bendOf(s)
       if (sefuSpot(s) === 'vice' && v.why < 0) {
         const st = bendStage(v)
-        return st === 'drawn' ? 'gate' : st === 'tested' ? 'bent' : 'vice'
+        return st === 'drawn' ? 'gate' : st === 'tested' ? 'bent' : v.guess != null ? 'testing' : 'vice'
       }
       return DOORS['door.bench'].unlocked(s) ? 'bench' : 'kit'
     }

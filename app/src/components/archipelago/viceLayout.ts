@@ -43,7 +43,7 @@ export const VICE_CAM = { pos: [9.8, 1.5, -4.45] as Vec3, look: [12.0, 1.2, -4.4
 export const VICE_CAM_PHONE = { pos: [10.1, 1.45, -4.25] as Vec3, look: [12.0, 1.5, -4.25] as Vec3 }
 
 /** Where Sefu stands for the test and the drawing: at the bench's south end, between the two. */
-export const SEFU_AT_VICE: Vec3 = [12.1, 0, -2.55]
+export const SEFU_AT_VICE: Vec3 = [12.2, 0, -2.4]
 
 /* ---- the repair drawing ------------------------------------------------------- */
 

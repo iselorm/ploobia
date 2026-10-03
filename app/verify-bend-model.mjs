@@ -156,6 +156,33 @@ check('the why is answered once', a.why === 0 && B.answerBend(a, 1) === a && B.b
 check('an answer off the list is nothing', B.answerBend(d, 7) === d && B.answerBend(d, -1) === d)
 check('nothing is hung once the test is answered', B.hang(a) === a)
 
+/* 8b · what the review found --------------------------------------------------- */
+{
+  // A coarse first give is still a first give: the rusted strip went alone.
+  const two = (g) => B.lift(B.hang(B.hang(ready(g))), 'explorer')
+  check('two at once: the rusted strip gave alone, so the guess is compared', B.guessRight(two('rusted')) === true && B.guessRight(two('copper')) === false && B.guessRight(two('unsure')) === null)
+  check('…and stays compared once the coppers give', B.guessRight(step(two('rusted'))) === true)
+  check('a guess is a strip’s own name, not anything an object answers to', B.predict(vCut, 'toString') === vCut && B.predict(vCut, 'constructor') === vCut)
+  // A band change before the latch: the record that satisfies the new band is a finished test.
+  let sc = ready()
+  for (let i = 0; i < 3; i++) sc = step(sc, 'scientist')
+  sc = B.lift(times(5, B.hang, sc), 'scientist')
+  check('a Scientist’s record (1, 2, 3, then 8) is stuck for a Scientist', !sc.done && B.bendStage(sc, 'scientist') === 'stuck')
+  check('…and a finished test for an Explorer, with nothing redone', B.bendStage(sc, 'explorer') === 'tested' && B.settle(sc, 'explorer').done && B.settle(sc, 'scientist') === sc)
+  // one, two, then five at once as a Scientist: an Explorer's finished test too — but not while a load hangs
+  const hsc = B.hang(B.lift(times(3, B.hang, step(step(ready(), 'scientist'), 'scientist')), 'scientist'))
+  check('…never settled with the hanger on', hsc.on && B.settle(hsc, 'explorer') === hsc && B.bendStage(hsc, 'explorer') !== 'tested')
+  // A saved vice is believed only when play could have left it.
+  check('every state on the careful path is coherent', [vCut, vG, h1, l1, h2, l2, l3, s8, c5, c5s, f, d, a].every((v) => B.coherent(v)))
+  check('a hanger of eight over blank readings is not', !B.coherent({ ...vG, load: 8 }))
+  check('a finished test with no readings is not', !B.coherent({ ...vG, done: true }) && !B.coherent({ ...vG, done: true, pick: 'brace', why: 1 }))
+  check('a hanger on at a load already lifted is not', !B.coherent({ ...l2, on: true }))
+  check('a reading no lift could have left is not', !B.coherent({ ...l3, readings: { ...l3.readings, iron: { back: 1, gaveAt: null } } }))
+  check('four exact readings and not done is not', !B.coherent({ ...s8, done: false }))
+  check('a guess not yet made means a blank vice', !B.coherent({ ...l2, guess: null }))
+  check('a pick with no test done, or an answer with no pick, is not', !B.coherent({ ...l2, pick: 'brace' }) && !B.coherent({ ...l3, why: 0 }))
+}
+
 /* 9 · the drawing moves, by the clock ------------------------------------------ */
 check('the clip: copper brace, sag, hold, timber brace, square — 4.3 s in all', B.DRAW_TOTAL === 4.3 && Math.abs(B.DRAW_BEATS.copper + B.DRAW_BEATS.sag + B.DRAW_BEATS.hold + B.DRAW_BEATS.timber + B.DRAW_BEATS.back - B.DRAW_TOTAL) < 1e-9)
 check('no clock: the drawing is still', B.drawBeat(null) === 'still' && B.drawSag(null) === 0)

@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import { CuboidCollider } from '@react-three/rapier'
-import { bendOf, drawingBeatOf, drawingElapsed, drawingPick, getWorld, registerInteractable, useWorld, viceShown } from '@/lib/archipelago'
+import { bendOf, drawingBeatOf, drawingElapsed, drawingPick, drawingShown, getWorld, registerInteractable, useWorld, viceShown } from '@/lib/archipelago'
 import { braceCopper, drawBeat, drawSag, type DrawingPart } from '@/lib/bend'
 import Tag from './SceneTag'
 import { DRAWING, DRAWING_AT, DRAWING_REACH, DRAWING_VERB_AT } from './viceLayout'
@@ -39,13 +39,23 @@ const B_ANG = Math.atan2(B1[1] - B0[1], B1[0] - B0[0])
 const STRAP_Y = [0.14, 0.56] as const
 const STRAP_LEN = LEAF.w - 0.04
 
+/** Lay a unit-long bar from one point to another in the leaf's plane. */
+function place(m: THREE.Mesh | null, x0: number, y0: number, x1: number, y1: number): void {
+  if (!m) return
+  m.position.set((x0 + x1) / 2, (y0 + y1) / 2, 0.012)
+  m.rotation.z = Math.atan2(y1 - y0, x1 - x0)
+  m.scale.x = Math.hypot(x1 - x0, y1 - y0)
+}
+
 export default function DrawingBoard() {
   const s = useWorld()
   const shown = viceShown(s) && s.zone === 'foundry'
+  // The board stands there from the start; its verb comes with the finished test, so it is never a dead button.
+  const open = shown && drawingShown(s)
   useEffect(() => {
-    if (!shown) return
+    if (!open) return
     return registerInteractable({ id: 'vice.drawing', verb: 'measure', label: 'The repair drawing', pos: DRAWING_VERB_AT, radius: DRAWING_REACH })
-  }, [shown])
+  }, [open])
   const root = useRef<THREE.Group>(null)
   const leaf = useRef<THREE.Group>(null)
   const timber = useRef<THREE.Mesh>(null)
@@ -59,11 +69,28 @@ export default function DrawingBoard() {
   const v = bendOf(s)
   const inRoom = s.room === 'drawing'
   const pickable = inRoom && v.done && v.pick == null
+  const last = useRef({ sag: -1, copper: false, pulse: -1 })
   useFrame((state) => {
     const w = getWorld()
     const el = drawingElapsed(w)
     const sag = drawSag(el)
     const inCopper = braceCopper(el)
+    const pulse = pickable ? (reduced ? 0.45 : 0.25 + 0.25 * Math.sin(state.clock.elapsedTime * 3.2)) : 0
+    const r = root.current
+    if (r) {
+      // Written here, never as a prop: a prop would wipe it on every re-render.
+      r.userData.sag = sag
+      r.userData.phase = el == null ? (bendOf(w).pick != null ? 'square' : 'still') : drawBeat(el)
+    }
+    const was = last.current
+    if (was.pulse !== pulse) {
+      was.pulse = pulse
+      for (const m of halo.current) if (m) m.opacity = pulse
+    }
+    // The drawing only moves during its clip: nothing below runs on a still frame.
+    if (was.sag === sag && was.copper === inCopper) return
+    was.sag = sag
+    was.copper = inCopper
     const g = leaf.current
     if (g) {
       // A shear about the hinge: the latch side drops, the hinge side stays on its post.
@@ -76,26 +103,12 @@ export default function DrawingBoard() {
     const bow = (B_LEN / 2) * Math.tan(sag * 2.4)
     const mx = (B0[0] + B1[0]) / 2 + Math.sin(B_ANG) * bow
     const my = (B0[1] + B1[1]) / 2 - Math.cos(B_ANG) * bow
-    const place = (m: THREE.Mesh | null, from: [number, number], to: [number, number]) => {
-      if (!m) return
-      m.position.set((from[0] + to[0]) / 2, (from[1] + to[1]) / 2, 0.012)
-      m.rotation.z = Math.atan2(to[1] - from[1], to[0] - from[0])
-      m.scale.x = Math.hypot(to[0] - from[0], to[1] - from[1])
-    }
-    place(halfA.current, B0, [mx, my])
-    place(halfB.current, [mx, my], B1)
+    place(halfA.current, B0[0], B0[1], mx, my)
+    place(halfB.current, mx, my, B1[0], B1[1])
     // The straps kink at the middle as the leaf racks.
     const kink = sag * 1.5
-    strapsA.current.forEach((h) => h && (h.rotation.z = -kink))
-    strapsB.current.forEach((h) => h && (h.rotation.z = kink))
-    const pulse = pickable ? (reduced ? 0.45 : 0.25 + 0.25 * Math.sin(state.clock.elapsedTime * 3.2)) : 0
-    halo.current.forEach((m) => m && (m.opacity = pulse))
-    const r = root.current
-    if (r) {
-      // Written here, never as a prop: a prop would wipe it on every re-render.
-      r.userData.sag = sag
-      r.userData.phase = el == null ? (bendOf(w).pick != null ? 'square' : 'still') : drawBeat(el)
-    }
+    for (const h of strapsA.current) if (h) h.rotation.z = -kink
+    for (const h of strapsB.current) if (h) h.rotation.z = kink
   })
   if (!shown) return null
   const beat = drawingBeatOf(s)

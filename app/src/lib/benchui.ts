@@ -1,5 +1,5 @@
-import { bendOf, benchAvailable, mouldLookOf, pourBlocked, viceShown, type WorldState } from './archipelago'
-import { STRIP, STRIPS, bendStage, exact, readingText, runnerInTray, type BandId as BendBand, type Bend } from './bend'
+import { bendOf, benchAvailable, mouldLookOf, pourBlocked, runnerBack, viceShown, type WorldState } from './archipelago'
+import { STRIPS, bendStage, exact, type BandId as BendBand, type Bend } from './bend'
 import { benchGap, benchLevel, benchLevel_, benchReached, benchToMark, castCm3, lastPour, markLevel, PATTERN_CM3, tooHeavy, type Bench, type CastRecord, type MouldLook } from './supply'
 
 /**
@@ -119,23 +119,32 @@ export function viceHint(s: WorldState, band: BendBand): string | null {
   const saw = gave.includes('bends') ? 'It stayed bent.' : gave.includes('cracks') ? 'It cracked.' : null
   switch (stage) {
     case 'uncut':
-      return runnerInTray(s.supply?.cast) ? "One clamp's empty. The new copper comes off the runner." : 'The new copper strip comes off the runner. Nothing has been poured yet.'
+      return runnerBack(s) ? "One clamp's empty. The new copper comes off the runner." : 'The new copper strip comes off the runner. There is no runner in the tray yet.'
     case 'predict':
       return 'Which one gives first? Point at it.'
-    case 'testing':
+    case 'testing': {
       if (v.on) return 'Lift them off. Watch which come back.'
       if (saw) return saw
-      return v.load > 0 ? 'They all came back. One more ingot.' : 'Hang an ingot on all four.'
+      if (v.load === 0) return 'Hang an ingot on all four.'
+      // Say only what the record says: the strips still straight came back; the bent ones did not.
+      const straight = STRIPS.filter((st) => v.readings[st.id].gaveAt == null)
+      const who = straight.length === STRIPS.length ? 'They all' : straight.length === 1 ? `${straight[0].label[0].toUpperCase()}${straight[0].label.slice(1)}` : 'The rest'
+      return `${who} came back. One more ingot.`
+    }
     case 'stuck': {
-      if (band === 'explorer') return 'All four gave together. Nothing tells them apart. Fresh strips, fewer ingots.'
+      if (band === 'explorer') {
+        // New iron gave in the same lift as the copper: nothing in the record tells them apart.
+        const all = STRIPS.every((st) => v.readings[st.id].gaveAt === v.readings.iron.gaveAt)
+        return all ? 'All four gave together. Nothing tells them apart. Fresh strips, fewer ingots.' : 'New iron gave with the copper. Nothing tells them apart. Fresh strips, fewer ingots.'
+      }
       const coarse = STRIPS.find((st) => v.readings[st.id].gaveAt != null && !exact(v.readings[st.id]))
       const r = coarse ? v.readings[coarse.id] : null
       return coarse && r ? `The ${coarse.label} gave somewhere between ${r.back + 1} and ${r.gaveAt}. Fresh strips, one ingot at a time.` : 'Fresh strips, one ingot at a time.'
     }
     case 'tested':
-      return s.room === 'vice' && saw ? saw : "The record's in the vice. Sefu's at the drawing beside it."
+      return s.room === 'vice' && saw ? saw : "The record's in the vice. The drawing is beside it."
     case 'drawn':
-      return "Sefu's asking. Why copper?"
+      return 'One question left, at the drawing: why copper?'
     case 'answered':
       return null
   }
@@ -152,14 +161,10 @@ export function vicePill(v: Bend, band: BendBand): { text: string; sub: string }
       return { text: 'Vice', sub: `${v.load} on the hanger · ${gave} of 4 gave` }
     }
     case 'tested':
+      return { text: 'Vice', sub: 'the drawing next' }
     case 'drawn':
-      return { text: 'Vice', sub: 'Sefu has a question' }
+      return { text: 'Vice', sub: 'one question left' }
     default:
       return null
   }
-}
-
-/** One strip's tag: its name, and what its record says so far. */
-export function stripTag(v: Bend, id: keyof typeof STRIP): { label: string; reading: string } {
-  return { label: STRIP[id].label, reading: readingText(STRIP[id], v.readings[id]) }
 }

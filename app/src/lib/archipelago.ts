@@ -107,6 +107,7 @@ import {
   pickDrawing,
   predict as predictStrip,
   readingText,
+  settle as settleBend,
   type Bend,
   type DrawBeat,
   type BandId as BendBand,
@@ -432,7 +433,7 @@ export interface Supply {
   pouredAt: number | null
   /** The vice and the repair drawing (round A3, lib/bend.ts). */
   bend: Bend
-  /** Sim time the drawing's clip began; its beats are read off it. Null when it is not playing. Never saved. */
+  /** Sim time the drawing's clip began; its beats are read off it. Null when it is not playing (the ticker clears it at the end). Not restored. */
   drawnAt: number | null
 }
 
@@ -1004,8 +1005,10 @@ export function tickWorld(dtRaw: number): void {
   const opens = story && atHeat && !s.poured && !sup
   // While a pour plays, the store's clock is kept fresh so the HUD can read its beat.
   const drawn = sup?.drawnAt != null ? simTime - sup.drawnAt : null
-  const revealing = (elapsed != null && elapsed < POUR_TOTAL + 2 * FLUSH_EVERY) || (drawn != null && drawn < DRAW_TOTAL + 2 * FLUSH_EVERY)
-  if ((hot || revealing || poured !== s.poured) && (sinceFlush >= FLUSH_EVERY || poured !== s.poured || opens)) {
+  // The drawing's clip ends with a write of its own (its clock is cleared), so the HUD hears of it whatever else is burning.
+  const clipOver = drawn != null && drawn >= DRAW_TOTAL
+  const revealing = (elapsed != null && elapsed < POUR_TOTAL + 2 * FLUSH_EVERY) || drawn != null
+  if ((hot || revealing || poured !== s.poured) && (sinceFlush >= FLUSH_EVERY || poured !== s.poured || opens || clipOver)) {
     sinceFlush = 0
     // The curve: one point every ~0.5 s of the furnace's life, from lighting.
     let curve = s.curve
@@ -1026,7 +1029,7 @@ export function tickWorld(dtRaw: number): void {
     const nextFurnace = furnaceTemp !== s.furnace.temp ? { ...s.furnace, temp: furnaceTemp } : s.furnace
     wroteHearths = nextHearths
     wroteFurnace = nextFurnace.temp
-    setWorld({ hearths: nextHearths, furnace: nextFurnace, poured, curve, journal, time: simTime, ...(opens ? { supply: newSupply() } : {}) })
+    setWorld({ hearths: nextHearths, furnace: nextFurnace, poured, curve, journal, time: simTime, ...(opens ? { supply: newSupply() } : clipOver && sup ? { supply: { ...sup, drawnAt: null } } : {}) })
   }
   tickPlot(dt)
   advanceQuest()
@@ -1602,15 +1605,33 @@ function withBend(f: (v: Bend, sup: Supply) => Bend, also?: (v: Bend) => Partial
   })
 }
 
-/** Sefu cuts the test strip from the runner in the recovery tray. No pour, no runner, no strip. */
-export const viceCut = (): void => withBend((v, sup) => cutStrip(v, sup.cast))
+/** A runner is in the recovery tray right now: the mould has opened on a pour, and that pour's copper has not gone back to the bench. */
+export function runnerBack(s: WorldState): boolean {
+  const look = mouldLookOf(s)
+  return look === 'short' || look === 'full'
+}
+
+/** Sefu cuts the test strip from the runner in the recovery tray. No runner in the tray, no strip. */
+export function viceCut(): void {
+  if (!runnerBack(getWorld())) return
+  withBend((v, sup) => cutStrip(v, sup.cast))
+}
 export const vicePredict = (g: Guess): void => withBend((v) => predictStrip(v, g))
 export const viceHang = (): void => withBend(hangIngot)
 export const viceLift = (band: BendBand): void => withBend((v) => liftHanger(v, band))
 export const viceFresh = (): void => withBend(freshStrips)
 
-/** The repair drawing, on its board beside the vice: only once the strips have told their story. */
-export function openDrawing(): void {
+/** The drawing has its verb once the strips have told their story. */
+export function drawingShown(s: WorldState): boolean {
+  return viceShown(s) && bendOf(s).done
+}
+
+/**
+ * The repair drawing, on its board beside the vice: only once the test is done. A record that already satisfies
+ * the band (the band was changed mid-test) is settled as done on the way.
+ */
+export function openDrawing(band?: BendBand): void {
+  if (band) withBend((v) => settleBend(v, band))
   setWorld((s) => (s.zone === 'foundry' && bendOf(s).done && !s.held ? { room: 'drawing' } : {}))
 }
 
@@ -1639,9 +1660,13 @@ export function drawingBeatOf(s: WorldState): DrawBeat {
 export type SefuSpot = 'gate' | 'mould' | 'vice'
 export function sefuSpot(s: WorldState): SefuSpot {
   const sup = s.supply
+  const look = mouldLookOf(s)
+  const pouring = look === 'run' || look === 'cool' || look === 'open'
   // He does not walk off while the child is still looking at the mould with him.
   if (sup && kitCast(sup.cast) && sup.cast.why >= 0 && s.room !== 'mould') return 'vice'
-  return mouldLookOf(s) !== 'cold' ? 'mould' : 'gate'
+  // Before the kit, he comes over while the child is at the vice or the drawing — never away from a pour.
+  if ((s.room === 'vice' || s.room === 'drawing') && !pouring) return 'vice'
+  return look !== 'cold' ? 'mould' : 'gate'
 }
 
 /**
@@ -1652,7 +1677,7 @@ export function sefuSpot(s: WorldState): SefuSpot {
 export const BEND_WHY: Why = {
   ask: 'Why does the gate still get copper?',
   options: [
-    { key: 'copper_stronger', text: 'Copper is stronger than iron.', right: false, line: 'Iron is the stronger. It is the rust that loses.' },
+    { key: 'copper_stronger', text: 'Copper is stronger than iron.', right: false, line: 'Iron is the stronger. But iron rusts.' },
     {
       key: 'right',
       text: 'Copper does not rust away in the wet, and the brace carries the weight of the gate: the straps only have to last and keep it straight.',

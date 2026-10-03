@@ -32,6 +32,7 @@ import {
   openVice,
 } from '@/lib/archipelago'
 import { SPAWNS, control, live } from './live'
+import { getBand } from '@/lib/bands'
 import { LANDING_SPAWN } from './landingLayout'
 import { bodies } from './bodies'
 import { craneGrabOrRelease } from './crane'
@@ -426,7 +427,7 @@ export default function Explorer({ onPortal }: { onPortal?: (to: ZoneId) => void
         if (id === 'cast.mould') openMould()
         else if (id === 'strap.bench') openStrap()
         else if (id === 'vice.strips') openVice()
-        else if (id === 'vice.drawing') openDrawing()
+        else if (id === 'vice.drawing') openDrawing(getBand())
         else openBench(id === 'bench.balance' ? 'balance' : 'bench')
         return
     }

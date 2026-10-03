@@ -120,8 +120,9 @@ function Strap({ top, inRoom, taken }: { top: number; inRoom: boolean; taken: bo
   const long = useRef<THREE.Group>(null)
   const ring = useRef<THREE.MeshStandardMaterial>(null)
   const bits = useRef<THREE.Group>(null)
-  const lift = useRef(taken ? 1 : 0)
-  const fell = useRef(taken ? 1 : 0)
+  // Mounted with the cut already open (the yard loaded after the tap): the lift and the fall are still played.
+  const lift = useRef(0)
+  const fell = useRef(taken && !inRoom ? 1 : 0)
   const scatter = useMemo(() => flakes(22), [])
   const reduced = useMemo(() => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches, [])
   useFrame((state, dtRaw) => {
@@ -141,14 +142,15 @@ function Strap({ top, inRoom, taken }: { top: number; inRoom: boolean; taken: bo
     fell.current += (want - fell.current) * (reduced ? 1 : Math.min(1, dt * 1.6))
     const b = bits.current
     if (b) {
-      b.children.forEach((m, i) => {
+      for (let i = 0; i < b.children.length; i++) {
+        const m = b.children[i]
         const f = scatter[i]
         // Half of them start on the strap and drop; the rest were already on the bench.
         const from = i % 2 === 0 ? S.thick + LIFT * lift.current * (1 - fell.current) : 0
         const t = Math.min(1, fell.current * (1.2 + f.fall))
         m.position.y = top + 0.004 + from * (1 - t * t)
         m.visible = i % 2 === 1 || want === 1
-      })
+      }
     }
     if (ring.current) ring.current.opacity = s.strap === 'shown' && s.room === 'strap' ? (reduced ? 0.7 : 0.45 + 0.35 * Math.sin(state.clock.elapsedTime * 3.4)) : 0
   })

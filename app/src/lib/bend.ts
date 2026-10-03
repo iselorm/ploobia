@@ -118,7 +118,7 @@ export function cutStrip(v: Bend, c: CastRecord | null | undefined): Bend {
   return { ...v, cut: true }
 }
 
-const isGuess = (g: unknown): g is Guess => g === 'unsure' || (typeof g === 'string' && g in STRIP)
+const isGuess = (g: unknown): g is Guess => g === 'unsure' || (typeof g === 'string' && Object.prototype.hasOwnProperty.call(STRIP, g))
 
 /** The guess, once, before the first weight. */
 export function predict(v: Bend, g: Guess): Bend {
@@ -178,14 +178,14 @@ export function dip(v: Bend, id: StripId): number {
   return v.on ? v.load * s.flex : 0
 }
 
-/** The guess against the record: true or false once ONE strip has given alone; null for "not sure", or while nothing tells. */
+/** The guess against the record: true or false once ONE strip has given alone (at whatever step); null for "not sure", or while nothing tells. */
 export function guessRight(v: Bend): boolean | null {
   if (v.guess == null || v.guess === 'unsure') return null
   const gave = STRIPS.filter((s) => v.readings[s.id].gaveAt != null)
   if (!gave.length) return null
   const least = Math.min(...gave.map((s) => v.readings[s.id].gaveAt as number))
   const first = gave.filter((s) => v.readings[s.id].gaveAt === least)
-  if (first.length !== 1 || !exact(v.readings[first[0].id])) return null
+  if (first.length !== 1) return null
   return first[0].id === v.guess
 }
 
@@ -198,9 +198,53 @@ export function bendStage(v: Bend, band: BandId = 'explorer'): BendStage {
   if (v.done) return 'tested'
   if (!v.cut) return 'uncut'
   if (v.guess == null) return 'predict'
+  // A record that already satisfies this band (the band was changed mid-test) is a finished test: nothing is redone.
+  if (!v.on && tested(v, band)) return 'tested'
   const r = v.readings
   const stuck = band === 'explorer' ? r.iron.gaveAt != null : STRIPS.some((s) => r[s.id].gaveAt != null && !exact(r[s.id]))
   return stuck && !v.on ? 'stuck' : 'testing'
+}
+
+/** Latch a finished test outside a lift: the record already satisfies the band and the hanger is off. */
+export function settle(v: Bend, band: BandId): Bend {
+  if (v.done || !v.cut || v.guess == null || v.on || !tested(v, band)) return v
+  return { ...v, done: true }
+}
+
+/**
+ * Could play have left the vice like this? A saved block is believed only if so: its readings are exactly what the
+ * lifts they imply would leave, the hanger agrees with them, and nothing later (the test done, the pick, the answer)
+ * stands without what came before it.
+ */
+export function coherent(v: Bend): boolean {
+  if (!v.cut) return true
+  const r = v.readings
+  const blankNow = STRIPS.every((s) => r[s.id].back === 0 && r[s.id].gaveAt == null)
+  if (v.guess == null) return v.load === 0 && !v.on && !v.done && v.pick == null && v.why < 0 && blankNow
+  const lifts = new Set<number>()
+  for (const s of STRIPS) {
+    if (r[s.id].back > 0) lifts.add(r[s.id].back)
+    if (r[s.id].gaveAt != null) lifts.add(r[s.id].gaveAt as number)
+  }
+  const order = [...lifts].sort((a, b) => a - b)
+  const top = order.length ? order[order.length - 1] : 0
+  for (const s of STRIPS) {
+    let back = 0
+    let gaveAt: number | null = null
+    for (const l of order) {
+      if (gaveAt != null) break
+      if (l >= s.givesAt) gaveAt = l
+      else back = l
+    }
+    if (r[s.id].back !== back || (r[s.id].gaveAt ?? null) !== gaveAt) return false
+  }
+  if (v.load < 0 || v.load > HANGER_MAX) return false
+  if (v.on ? v.load <= top : v.load !== top) return false
+  if (v.done && !tested(v, 'explorer')) return false
+  if (!v.done && tested(v, 'scientist')) return false
+  if (v.pick != null && !v.done) return false
+  if (v.why >= 0 && v.pick == null) return false
+  return true
 }
 
 /** A reading in words, for the tag on the strip. Empty until the strip has carried a load. */
@@ -296,18 +340,25 @@ export const BEND_SOURCES: readonly BendSource[] = [
     source: 'RSC Education, “What causes iron to rust?”; J. Clark, Chemguide, “Rusting of iron”.',
   },
   {
-    claim: 'Copper weathers to a skin and then stops: that is why it lasts in the wet.',
+    claim: 'Copper weathers to a skin, settles into a balance with the weather, and then changes very little: that is why it lasts in the wet.',
     basis: 'sourced',
     source: 'Copper Development Association, Architecture Design Handbook, “Fundamentals”.',
   },
   {
     claim: 'Sound iron is stronger and stiffer than copper.',
     basis: 'sourced',
-    source: 'Yield strength: annealed copper about 33 MPa, wrought iron 160–220 MPa. Young’s modulus: copper 110–128 GPa, wrought iron about 190 GPa (handbook values).',
+    source:
+      'Yield strength: annealed copper about 33 MPa (Wikipedia, “Yield (engineering)”); wrought iron 160–220 MPa (nuclear-power.com, “Wrought iron”). Young’s modulus: copper 110–128 GPa (Wikipedia, “Copper”); wrought iron about 190 GPa (nuclear-power.com).',
   },
   {
     claim: 'The ingot counts at the vice: 3, 3, 8 and 2.',
     basis: 'modelled',
-    source: 'Authored test strips, sized so each answer is a whole number of ingots. The order is real; the counts are ours.',
+    source:
+      'Authored test strips, sized so each answer is a whole number of ingots. The order is real; the counts are ours. Real iron would take more against copper than 8 to 3: its count is kept low enough to fit the hanger. The dip assumes strips of the same section.',
+  },
+  {
+    claim: 'The rusted strip cracks instead of bending, and the copper test strip weighs 90 g.',
+    basis: 'modelled',
+    source: 'Ours. Rust eats the section and pits it, so a rusted strip fails early; that it snaps is how we show it. 90 g is 10 cm³ of the runner.',
   },
 ]

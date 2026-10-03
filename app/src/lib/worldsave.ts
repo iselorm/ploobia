@@ -35,7 +35,7 @@ import {
 } from './archipelago'
 import { salvageKeep, seenWords, validKeep, type Keep } from './keep'
 import { initialBench, initialCast, type Bench, type CastRecord, type Pour } from './supply'
-import { HANGER_MAX, STRIPS, initialBend, runnerInTray, type Bend, type Reading } from './bend'
+import { HANGER_MAX, STRIPS, coherent, initialBend, runnerInTray, type Bend, type Reading } from './bend'
 
 /**
  * v2 (S0): the plot rides in the save — the stage, the run in progress, the attempts. A v1 save is a fresh start.
@@ -277,9 +277,9 @@ export function restoreSupply(raw: unknown): Supply | null {
 }
 
 /**
- * The vice as saved (round A3): whole when every field reads true and it fits the record it came with. An A2 save has
- * no block: a new vice. A strip cut with no pour on record is nobody's strip; a pick with no test done, or an answer
- * with no pick, is dropped rather than believed.
+ * The vice as saved (round A3): whole when every field reads true, it fits the record it came with, and play could
+ * have left it so (`coherent`). An A2 save has no block: a new vice. A strip cut with no pour on record is nobody's
+ * strip.
  */
 export function restoreBend(raw: unknown, cast: CastRecord): Bend {
   if (raw == null || typeof raw !== 'object') return initialBend()
@@ -299,21 +299,23 @@ export function restoreBend(raw: unknown, cast: CastRecord): Bend {
     (v.pick == null || v.pick === 'brace' || v.pick === 'strap') && whole(v.why, -1, 2) && (v.whyText == null || typeof v.whyText === 'string')
   if (!ok || !v.cut || !runnerInTray(cast)) return initialBend()
   const b = v as Bend
-  const loaded = b.guess != null && b.load > 0
-  const pick = b.done ? (b.pick ?? null) : null
-  const why = pick ? b.why : -1
-  return {
+  const why = b.why
+  const read: Bend = {
     cut: true,
     guess: b.guess ?? null,
-    load: b.guess != null ? b.load : 0,
-    on: loaded && b.on,
+    load: b.load,
+    on: b.on,
     readings: Object.fromEntries(STRIPS.map((st) => [st.id, { back: b.readings[st.id].back, gaveAt: b.readings[st.id].gaveAt ?? null }])) as Bend['readings'],
     sets: b.sets,
     done: b.done,
-    pick,
+    pick: b.pick ?? null,
     why,
-    whyText: why >= 0 ? (b.whyText ?? null) : null,
+    // Their sentence is kept to the length the box allows.
+    whyText: why >= 0 && typeof b.whyText === 'string' ? b.whyText.slice(0, 300) : null,
   }
+  // Believed only if play could have left it: a hanger the readings never saw, a test done with nothing tested,
+  // an answer with no pick — any of those and the vice starts again (the kit is untouched).
+  return coherent(read) ? read : initialBend()
 }
 
 /** The mould's record as saved, when every pour reads true and it fits the bench it came with; else null (the record starts again). */

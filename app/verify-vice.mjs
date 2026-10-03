@@ -163,6 +163,7 @@ if (runs(1)) {
   await waitFor(page, () => window.__world.get().room === 'none')
   await page.waitForTimeout(500)
   check('"Back to work": the yard, and now the brief', await has(page, 'brief'))
+  check('…which does not say the forty bells a second time', !/Forty bells/i.test((await text(page, 'brief-line')) ?? 'Forty bells'), await text(page, 'brief-line'))
   // Walk up to it again later: it opens by its own verb, with nothing to take.
   await page.evaluate(() => window.__world.set({ prediction: 1000 }))
   await page.waitForTimeout(300)
@@ -188,6 +189,8 @@ if (runs(2)) {
   check('after the kit the plate reads Test the straps', /Test the straps/.test(plate), plate.slice(0, 140))
   check('…Ploob points at the vice', /vice/i.test((await text(page, 'coach')) ?? ''), await text(page, 'coach'))
   check('…and Sefu stands by it', (await node(page, 'sefu'))?.at === 'vice', JSON.stringify(await node(page, 'sefu')))
+  await walkTo(page, ...AT_DRAWING)
+  check('before the test the drawing has no verb: nothing to press that does nothing', (await w(page)).near !== 'vice.drawing', `${(await w(page)).near}`)
   await walkTo(page, ...AT_VICE)
   await waitFor(page, () => window.__world.get().near === 'vice.strips')
   check('by the vice the verb reads The vice', /The vice/.test((await text(page, 'interact')) ?? ''), await text(page, 'interact'))
@@ -379,9 +382,15 @@ if (runs(4)) {
   await page.waitForTimeout(700)
   await page.evaluate(() => document.querySelector('[data-testid=codex-close]')?.click())
   await toVice(page)
-  check('before any pour the vice opens, with nothing to cut', !(await has(page, 'vice-cut')) && !(await has(page, 'vice-hang')) && /runner/.test((await text(page, 'vice-ploob')) ?? ''), await text(page, 'vice-ploob'))
+  check('before any pour the vice opens, with nothing to cut', !(await has(page, 'vice-cut')) && !(await has(page, 'vice-hang')) && /no runner in the tray/.test((await text(page, 'vice-ploob')) ?? ''), await text(page, 'vice-ploob'))
   await tap(page, 'vice-back')
   await waitFor(page, () => window.__world.get().room === 'none')
+  await page.waitForTimeout(300)
+  await tap(page, 'journal')
+  await page.waitForTimeout(300)
+  check('before the test the journal does not print the vice\'s numbers', (await has(page, 'stamp')) && !(await has(page, 'bend-sources')))
+  await tap(page, 'journal')
+  await page.waitForTimeout(200)
 
   await kitDone(page, 'analyst')
   // The Analyst's record, set by the store: four exact readings.
@@ -411,6 +420,12 @@ if (runs(4)) {
   check('"No rust, and the brace takes the weight": Ploob gives it back in their readings', /cracked at 2/.test((await text(page, 'bend-why-line')) ?? '') && /stayed bent at 3/.test((await text(page, 'bend-why-line')) ?? ''), await text(page, 'bend-why-line'))
   check('…and the Analyst gets one more: what a better gate metal would need', /better gate metal/i.test((await text(page, 'bend-seed')) ?? ''), await text(page, 'bend-seed'))
   await page.screenshot({ path: path.join(SHOTS, 'vice-answered-desktop.png') })
+  await tap(page, 'drawing-back')
+  await waitFor(page, () => window.__world.get().room === 'none')
+  await page.waitForTimeout(300)
+  await tap(page, 'journal')
+  await page.waitForTimeout(300)
+  check('the journal says what at the vice is sourced and what is modelled, once the test is done', /modelled/.test((await text(page, 'bend-sources')) ?? '') && /sourced/.test((await text(page, 'bend-sources')) ?? ''), ((await text(page, 'bend-sources')) ?? '').slice(0, 80))
   check('no console errors across the Analyst walk', errors.length === 0, errors.slice(0, 3).join(' | '))
   await ctx.close()
 }
@@ -472,6 +487,12 @@ for (const [n, vp] of [[5, { width: 844, height: 390 }], [6, { width: 740, heigh
   check(`[${tag}] the guess was the rusted strip: "You said the rusted iron. It gave first."`, /You said the rusted iron\. It gave first\./.test((await text(page, 'vice-guess-line')) ?? ''), await text(page, 'vice-guess-line'))
   await step(page)
   await page.waitForTimeout(600)
+  {
+    // The tallest strip the vice has (Sefu's ask, Ploob's line, the guess): the readings must still be readable under it.
+    const st = await box(page, 'vice-strip')
+    const tg = await Promise.all(['copper', 'oldCopper', 'iron', 'rusted'].map((id) => box(page, `strip-tag-${id}`)))
+    check(`[${tag}] with the test done the four readings are still clear of the strip`, !!st && tg.every((t) => !!t && t.y >= st.y + st.height), JSON.stringify({ strip: st && Math.round(st.y + st.height), tags: tg.map((t) => t && Math.round(t.y)) }))
+  }
   await page.screenshot({ path: path.join(SHOTS, `vice-bent-${tag}.png`) })
   await tap(page, 'vice-to-drawing')
   await waitFor(page, () => window.__world.get().room === 'drawing')

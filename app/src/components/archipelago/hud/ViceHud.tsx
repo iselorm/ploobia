@@ -17,6 +17,7 @@ import {
   leaveRoom,
   openDrawing,
   openVice,
+  runnerBack,
   takeStrap,
   viceCut,
   viceFresh,
@@ -25,7 +26,7 @@ import {
   vicePredict,
   type WorldState,
 } from '@/lib/archipelago'
-import { BEND_SOURCES, HANGER_MAX, STRIP, STRIPS, bendStage, firstToGive, guessRight, readingText, runnerInTray, type BandId, type Bend, type Guess, type StripId } from '@/lib/bend'
+import { BEND_SOURCES, HANGER_MAX, STRIP, STRIPS, bendStage, firstToGive, guessRight, readingText, type BandId, type Bend, type Guess, type StripId } from '@/lib/bend'
 import { viceHint, vicePill } from '@/lib/benchui'
 import { judgeBendWhy, TRUST } from '@/lib/whyjudge'
 import { SEFU_LINES } from '@/lib/sefu'
@@ -74,7 +75,7 @@ export function StrapStrip({ s, compact }: { s: WorldState; compact: boolean }) 
     )
   }
   return (
-    <Strip who={arriving ? SEFU : 'The rusted strap'} line={arriving ? `“${SEFU_LINES.strap[1]}”` : "Off the watch's jetty gate. It lies in two pieces."} compact={compact} testid="strap-strip" lineTestid="strap-line" low>
+    <Strip who={arriving ? SEFU : 'The rusted strap'} line={arriving ? `“${SEFU_LINES.strap[1]}”` : "Off the watch's jetty gate. Snapped at the pin hole."} compact={compact} testid="strap-strip" lineTestid="strap-line" low>
       <Btn primary={arriving} onClick={() => leaveRoom()} data-testid="strap-back">
         {arriving ? 'Back to work' : 'Step back'}
       </Btn>
@@ -124,7 +125,7 @@ export function ViceStrip({ s, band, compact }: { s: WorldState; band: BandId; c
     case 'uncut':
       return (
         <Strip who="The vice · Test" line={<span data-testid="vice-ploob">{hint}</span>} compact={compact} testid="vice-strip" lineTestid="vice-line" low>
-          {runnerInTray(s.supply?.cast) && (
+          {runnerBack(s) && (
             <Btn primary onClick={() => viceCut()} data-testid="vice-cut">
               Cut a strip from the runner
             </Btn>
@@ -204,7 +205,7 @@ export function ViceStrip({ s, band, compact }: { s: WorldState; band: BandId; c
           {v.on ? (
             lift
           ) : (
-            <Btn primary onClick={() => openDrawing()} data-testid="vice-to-drawing">
+            <Btn primary onClick={() => openDrawing(band)} data-testid="vice-to-drawing">
               To the drawing
             </Btn>
           )}
@@ -217,8 +218,10 @@ export function ViceStrip({ s, band, compact }: { s: WorldState; band: BandId; c
     case 'answered':
       return (
         <Strip who="The vice" line="The strips stay in the vice: that is the record." compact={compact} testid="vice-strip" lineTestid="vice-line" low>
+          {/* a hanger left on comes off: nothing stays loaded for good */}
+          {v.on && lift}
           {stage === 'drawn' && (
-            <Btn primary onClick={() => openDrawing()} data-testid="vice-to-drawing">
+            <Btn primary onClick={() => openDrawing(band)} data-testid="vice-to-drawing">
               To the drawing
             </Btn>
           )}
@@ -317,7 +320,7 @@ export function DrawingStrip({ s, band, compact }: { s: WorldState; band: BandId
       </Strip>
     )
   }
-  return <BendWhy s={s} compact={compact} />
+  return <BendWhy s={s} compact={compact} back={back} />
 }
 
 /** The two things a child can point at on the drawing. */
@@ -380,7 +383,7 @@ function Record({ v, compact }: { v: Bend; compact: boolean }) {
  * Investigator or Engineer says it first and a typed judge decides. No judge
  * — offline, no key, slow — and the three answers take over without a word.
  */
-function BendWhy({ s, compact }: { s: WorldState; compact: boolean }) {
+function BendWhy({ s, compact, back }: { s: WorldState; compact: boolean; back: React.ReactNode }) {
   const caps = useBandCaps()
   const v = bendOf(s)
   const [text, setText] = useState('')
@@ -398,7 +401,8 @@ function BendWhy({ s, compact }: { s: WorldState; compact: boolean }) {
     if (!j) return setTapping(true)
     const trusted = j.confidence >= TRUST
     if (j.verdict === 'right' && trusted) return answerBendWhyText(text, 'right', null)
-    if (j.verdict === 'misconception' && trusted && j.misconception) return answerBendWhyText(text, 'misconception', j.misconception)
+    // A misconception the judge names must be one of ours; anything else is treated as off the mark.
+    if (j.verdict === 'misconception' && trusted && BEND_WHY.options.some((o) => !o.right && o.key === j.misconception)) return answerBendWhyText(text, 'misconception', j.misconception)
     // On the right track, off, or not trusted: one nudge and another go; then the three answers.
     if (tries === 0) {
       setTries(1)
@@ -447,6 +451,7 @@ function BendWhy({ s, compact }: { s: WorldState; compact: boolean }) {
             <Btn onClick={() => setTapping(true)} data-testid="bend-why-tap">
               Choose instead
             </Btn>
+            {back}
           </>
         ) : (
           <span className="flex flex-wrap justify-end gap-2" data-testid="bend-whys">
@@ -455,6 +460,7 @@ function BendWhy({ s, compact }: { s: WorldState; compact: boolean }) {
                 {label}
               </Btn>
             ))}
+            {back}
           </span>
         )}
       </Strip>
@@ -503,7 +509,7 @@ export function VicePill({ s, band }: { s: WorldState; band: BandId }) {
   const drawing = bendOf(s).done
   return (
     <div className="pointer-events-auto absolute bottom-3 left-[9rem] right-[13.5rem] flex justify-center">
-      <Tile className="lg flex h-11 items-center gap-2 !rounded-full px-3.5 text-[14px] font-extrabold text-[#2A2823]" data-testid="vice-pill" onClick={() => (drawing ? openDrawing() : openVice())}>
+      <Tile className="lg flex h-11 items-center gap-2 !rounded-full px-3.5 text-[14px] font-extrabold text-[#2A2823]" data-testid="vice-pill" onClick={() => (drawing ? openDrawing(band) : openVice())}>
         <span className="inline-block h-1.5 w-6 rounded-[2px] bg-[#C8743A]" aria-hidden />
         {pill.text}
         <span className="font-bold text-[#6F6857]">· {pill.sub}</span>
