@@ -211,7 +211,11 @@ check('…the step holds at cast until Sefu\'s question is answered', A.currentS
 check('…the measure why: three things to point at, the water is right', A.MEASURE_WHY.options.length === 3 && A.MEASURE_WHY.options[0].key === 'right' && A.MEASURE_WHY.ask === 'Which measurement told you how much?')
 A.answerCastWhy(1)
 check('answered (the gauge): recorded as chosen, the step moves on to the straps', cast().why === 1 && A.currentStepId(w()) === 'test')
-check('…Sefu: "Sela\'s, this one. The bells can wait for a better metal."', F.sefuMood(w()) === 'kit' && F.sefuLines(w())[0] === "Sela's, this one. The bells can wait for a better metal.")
+// Round A3: he says it at the mould; once the child steps away he is at the vice, and the vice leads.
+A.openMould()
+check('…Sefu, at the mould: "Sela\'s, this one. The bells can wait for a better metal."', F.sefuMood(w()) === 'kit' && F.sefuLines(w())[0] === "Sela's, this one. The bells can wait for a better metal.")
+A.leaveRoom()
+check('…and away from it he is at the vice, asking for the guess', A.sefuSpot(w()) === 'vice' && F.sefuMood(w()) === 'vice')
 A.castPour()
 check('one kit: a second pour is refused', cast().pours.length === 1)
 

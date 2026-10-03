@@ -20,6 +20,7 @@
 
 import { read, write, remove } from './persist'
 import {
+  type StrapBeat,
   currentStep,
   getWorld,
   resetWorld,
@@ -34,6 +35,7 @@ import {
 } from './archipelago'
 import { salvageKeep, seenWords, validKeep, type Keep } from './keep'
 import { initialBench, initialCast, type Bench, type CastRecord, type Pour } from './supply'
+import { HANGER_MAX, STRIPS, initialBend, runnerInTray, type Bend, type Reading } from './bend'
 
 /**
  * v2 (S0): the plot rides in the save — the stage, the run in progress, the attempts. A v1 save is a fresh start.
@@ -81,7 +83,7 @@ export interface WorldSave {
   pos: [number, number, number] | null
   /** Which way they faced and looked; absent in a save without it. */
   look?: { facing: number; cam: [number, number] }
-  s: Pick<WorldState, SavedKeys> & { drops: Crane['drops']; keep?: Keep | null; supply?: Supply | null }
+  s: Pick<WorldState, SavedKeys> & { drops: Crane['drops']; keep?: Keep | null; supply?: Supply | null; strap?: StrapBeat }
 }
 
 const FUEL_IDS: FuelId[] = ['wetwood', 'drywood', 'charcoal']
@@ -127,6 +129,8 @@ export function snapshot(s: WorldState, spot: Spot | null): WorldSave {
       // results are stored whole, so a reload replays the report and never re-runs a fortnight.
       keep: s.keep,
       supply: s.supply,
+      // S2 round A3: the strap on the bench by the gate. Optional: a save without it has not seen the strap.
+      strap: s.strap,
     },
   }
 }
@@ -223,7 +227,7 @@ export function clearSave(): void {
  */
 export function restoreWorld(save: WorldSave): Spot | null {
   resetWorld()
-  const { drops, keep: rawKeep, supply: rawSupply, ...kept } = save.s
+  const { drops, keep: rawKeep, supply: rawSupply, strap: rawStrap, ...kept } = save.s
   const base = getWorld()
   // A save taken mid-pause resumes at the record; a naming card is never saved open.
   const plot = { ...kept.plot, naming: false, stage: kept.plot.stage === 'pause' ? ('record' as const) : kept.plot.stage }
@@ -232,6 +236,7 @@ export function restoreWorld(save: WorldSave): Spot | null {
     plot,
     keep: restoreKeep(rawKeep, plot),
     supply: restoreSupply(rawSupply),
+    strap: rawStrap === 'shown' || rawStrap === 'taken' ? rawStrap : 'unseen',
     phase: 'welcome',
     resumed: true,
     crane: { ...base.crane, drops: { ...drops } },
@@ -249,7 +254,7 @@ const BENCH_PHASES = new Set(['idle', 'pattern', 'marked', 'matching', 'balancin
  */
 export function restoreSupply(raw: unknown): Supply | null {
   if (raw == null || typeof raw !== 'object') return null
-  const r = raw as { bench?: unknown; cast?: unknown; pouredAt?: unknown }
+  const r = raw as { bench?: unknown; cast?: unknown; pouredAt?: unknown; bend?: unknown }
   const b = r.bench
   const x = (b && typeof b === 'object' ? b : {}) as Partial<Bench>
   const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every((i) => typeof i === 'string')
@@ -267,7 +272,48 @@ export function restoreSupply(raw: unknown): Supply | null {
   // A record that cannot be read starts again — and the bench's count of returns with it, or the next pours would
   // be taken for ones already answered.
   const bench = cast ? read : { ...read, recasts: 0, castDry: 0 }
-  return { bench, cast: cast ?? initialCast(), pouredAt: cast && cast.pours.length > 0 && isNum(r.pouredAt) ? r.pouredAt : null }
+  const record = cast ?? initialCast()
+  return { bench, cast: record, pouredAt: cast && cast.pours.length > 0 && isNum(r.pouredAt) ? r.pouredAt : null, bend: restoreBend(r.bend, record), drawnAt: null }
+}
+
+/**
+ * The vice as saved (round A3): whole when every field reads true and it fits the record it came with. An A2 save has
+ * no block: a new vice. A strip cut with no pour on record is nobody's strip; a pick with no test done, or an answer
+ * with no pick, is dropped rather than believed.
+ */
+export function restoreBend(raw: unknown, cast: CastRecord): Bend {
+  if (raw == null || typeof raw !== 'object') return initialBend()
+  const v = raw as Partial<Bend>
+  const whole = (n: unknown, lo: number, hi: number): n is number => isNum(n) && Number.isInteger(n) && n >= lo && n <= hi
+  const guessOk = v.guess == null || v.guess === 'unsure' || STRIPS.some((st) => st.id === v.guess)
+  const readings = v.readings as Record<string, Partial<Reading>> | undefined
+  const readingsOk =
+    !!readings && typeof readings === 'object' &&
+    STRIPS.every((st) => {
+      const r = readings[st.id]
+      if (!r || !whole(r.back, 0, st.givesAt - 1)) return false
+      return r.gaveAt == null || (whole(r.gaveAt, st.givesAt, HANGER_MAX) && r.gaveAt > r.back)
+    })
+  const ok =
+    isBool(v.cut) && guessOk && whole(v.load, 0, HANGER_MAX) && isBool(v.on) && readingsOk && whole(v.sets, 1, 999) && isBool(v.done) &&
+    (v.pick == null || v.pick === 'brace' || v.pick === 'strap') && whole(v.why, -1, 2) && (v.whyText == null || typeof v.whyText === 'string')
+  if (!ok || !v.cut || !runnerInTray(cast)) return initialBend()
+  const b = v as Bend
+  const loaded = b.guess != null && b.load > 0
+  const pick = b.done ? (b.pick ?? null) : null
+  const why = pick ? b.why : -1
+  return {
+    cut: true,
+    guess: b.guess ?? null,
+    load: b.guess != null ? b.load : 0,
+    on: loaded && b.on,
+    readings: Object.fromEntries(STRIPS.map((st) => [st.id, { back: b.readings[st.id].back, gaveAt: b.readings[st.id].gaveAt ?? null }])) as Bend['readings'],
+    sets: b.sets,
+    done: b.done,
+    pick,
+    why,
+    whyText: why >= 0 ? (b.whyText ?? null) : null,
+  }
 }
 
 /** The mould's record as saved, when every pour reads true and it fits the bench it came with; else null (the record starts again). */

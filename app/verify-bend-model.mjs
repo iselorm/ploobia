@@ -62,6 +62,7 @@ check('nothing poured, no runner: the strip cannot be cut', !B.runnerInTray(M.in
 check('one pour puts a runner in the tray', B.runnerInTray(poured()))
 const vCut = B.cutStrip(v0, poured())
 check('…and the strip is cut from it, once', vCut.cut && B.cutStrip(vCut, poured()) === vCut)
+check('the tray gives up the strip’s 90 g once it is cut, and not before', B.trayG(896, v0) === 896 && B.trayG(896, vCut) === 806)
 check('no guess before the strip is cut', B.predict(v0, 'copper') === v0)
 check('no ingot before the strip is cut', B.hang(v0) === v0)
 check('stage: uncut, then predict', B.bendStage(v0) === 'uncut' && B.bendStage(vCut) === 'predict')
@@ -154,6 +155,15 @@ const a = B.answerBend(d, 0)
 check('the why is answered once', a.why === 0 && B.answerBend(a, 1) === a && B.bendStage(a) === 'answered')
 check('an answer off the list is nothing', B.answerBend(d, 7) === d && B.answerBend(d, -1) === d)
 check('nothing is hung once the test is answered', B.hang(a) === a)
+
+/* 9 · the drawing moves, by the clock ------------------------------------------ */
+check('the clip: copper brace, sag, hold, timber brace, square — 4.3 s in all', B.DRAW_TOTAL === 4.3 && Math.abs(B.DRAW_BEATS.copper + B.DRAW_BEATS.sag + B.DRAW_BEATS.hold + B.DRAW_BEATS.timber + B.DRAW_BEATS.back - B.DRAW_TOTAL) < 1e-9)
+check('no clock: the drawing is still', B.drawBeat(null) === 'still' && B.drawSag(null) === 0)
+check('the beats in order', B.drawBeat(0) === 'copper' && B.drawBeat(0.6) === 'sag' && B.drawBeat(2.1) === 'hold' && B.drawBeat(2.9) === 'timber' && B.drawBeat(3.5) === 'back' && B.drawBeat(4.3) === 'square' && B.drawBeat(60) === 'square')
+check('the leaf hangs square while the brace turns to copper', B.drawSag(0) === 0 && B.drawSag(0.5) === 0)
+check('…sags as the copper brace gives, to the full sag by the hold', B.drawSag(1.2) > 0 && B.drawSag(1.2) < B.SAG_MAX && B.drawSag(2.0) === B.SAG_MAX && B.drawSag(2.6) === B.SAG_MAX)
+check('…stays down while the timber brace goes back in, then comes up square', B.drawSag(3.2) === B.SAG_MAX && B.drawSag(3.8) < B.SAG_MAX && B.drawSag(3.8) > 0 && B.drawSag(4.3) === 0 && B.drawSag(99) === 0)
+check('the brace is copper from the first beat until the timber one goes back', B.braceCopper(0.2) && B.braceCopper(2.5) && !B.braceCopper(3.0) && !B.braceCopper(null) && !B.braceCopper(9))
 
 console.log(`\n${passes} passed, ${fails} failed`)
 process.exit(fails ? 1 : 0)

@@ -91,6 +91,28 @@ import {
   type CastRecord,
   type MouldLook,
 } from './supply'
+import {
+  DRAW_TOTAL,
+  STRIP,
+  STRIPS,
+  answerBend,
+  drawBeat,
+  bendStage,
+  cutStrip,
+  exact,
+  fresh as freshStrips,
+  hang as hangIngot,
+  initialBend,
+  lift as liftHanger,
+  pickDrawing,
+  predict as predictStrip,
+  readingText,
+  type Bend,
+  type DrawBeat,
+  type BandId as BendBand,
+  type DrawingPart,
+  type Guess,
+} from './bend'
 
 /* ----------------------------------------------------------------------------
  * Zones and rings
@@ -204,7 +226,10 @@ function clamp01(x: number): number {
 export type StepId = 'arrive' | 'clear' | 'probe' | 'lens' | 'build' | 'feed' | 'done'
 
 /** A room is a cabinet interior entered from the world by a camera cut — same React tree, no reload. */
-export type RoomId = 'none' | 'furnace' | 'bench' | 'balance' | 'mould'
+export type RoomId = 'none' | 'furnace' | 'bench' | 'balance' | 'mould' | 'strap' | 'vice' | 'drawing'
+
+/** S2 moment 1 — the rusted strap on the bench by the gate: not yet seen, shown, or taken in the hand. */
+export type StrapBeat = 'unseen' | 'shown' | 'taken'
 
 /**
  * The crane — the way the heavy piece is cleared, and board 1's bet: drop a
@@ -394,6 +419,8 @@ export interface WorldState {
   keep: Keep | null
   /** S2 — the cold bench and what it charged (lib/supply.ts). Null until the child first measures. */
   supply: Supply | null
+  /** S2 — the rusted strap off the watch's gate, on the bench beside Sefu (round A3). */
+  strap: StrapBeat
 }
 
 /** S2's state: the bench and the mould now; the vice and the road join them in later rounds. */
@@ -403,10 +430,14 @@ export interface Supply {
   cast: CastRecord
   /** Sim time the last pour began; the channel, the cooling and the reveal are read off it. Null when nothing is in the mould. */
   pouredAt: number | null
+  /** The vice and the repair drawing (round A3, lib/bend.ts). */
+  bend: Bend
+  /** Sim time the drawing's clip began; its beats are read off it. Null when it is not playing. Never saved. */
+  drawnAt: number | null
 }
 
 export function newSupply(): Supply {
-  return { bench: initialBench(), cast: initialCast(), pouredAt: null }
+  return { bench: initialBench(), cast: initialCast(), pouredAt: null, bend: initialBend(), drawnAt: null }
 }
 
 /** Cabinets a courtyard door can open. Each is an existing arcade page; the door is the link. */
@@ -470,6 +501,7 @@ const initial = (): WorldState => ({
   plot: initialPlot(),
   keep: null,
   supply: null,
+  strap: 'unseen',
 })
 
 export const worldStore = createStore<WorldState>(initial)
@@ -765,7 +797,7 @@ export const CART_QUEST: Quest<CartStepId> = {
     ...RELIGHT.steps.map((st) => (st.id === 'feed' ? { ...st, label: 'Reach 1085 °C' } : st)),
     { id: 'measure', label: 'Measure the pattern', coach: 'The cold bench, by the west wall: water first. Water tells you what copper will.', target: 'bench.jug', until: { type: 'never' } },
     { id: 'cast', label: 'Cast the fittings', coach: "Sefu's got the dry pan. The mould's at the furnace foot.", target: 'cast.mould', until: { type: 'never' } },
-    { id: 'test', label: 'Test the straps', coach: 'The fittings are cast. Next, the vice: which strap keeps a bend?', target: null, until: { type: 'never' } },
+    { id: 'test', label: 'Test the straps', coach: 'The fittings are cast. The vice is by the east wall: which strip keeps a bend?', target: 'vice.strips', until: { type: 'never' } },
     { id: 'deliver', label: 'Bring them to Sela', coach: 'Back through the crossing, with the kit.', target: 'portal.landing', until: { type: 'never' } },
   ],
   whys: RELIGHT.whys,
@@ -788,7 +820,7 @@ function cartStepId(s: WorldState): CartStepId {
   // or an old pour is done. From then on the bench and the mould lead — whatever relight step a child who
   // skipped ahead was left on.
   if (!sup) return s.step === 'done' ? 'measure' : s.step
-  if (kitCast(sup.cast)) return sup.cast.why >= 0 ? 'test' : 'cast'
+  if (kitCast(sup.cast)) return sup.cast.why < 0 ? 'cast' : bendOf(s).why >= 0 ? 'deliver' : 'test'
   return mouldStage(sup.bench, sup.cast) === 'empty' ? 'measure' : 'cast'
 }
 
@@ -971,7 +1003,8 @@ export function tickWorld(dtRaw: number): void {
   const poured = s.poured || castDone || (!story && atHeat)
   const opens = story && atHeat && !s.poured && !sup
   // While a pour plays, the store's clock is kept fresh so the HUD can read its beat.
-  const revealing = elapsed != null && elapsed < POUR_TOTAL + 2 * FLUSH_EVERY
+  const drawn = sup?.drawnAt != null ? simTime - sup.drawnAt : null
+  const revealing = (elapsed != null && elapsed < POUR_TOTAL + 2 * FLUSH_EVERY) || (drawn != null && drawn < DRAW_TOTAL + 2 * FLUSH_EVERY)
   if ((hot || revealing || poured !== s.poured) && (sinceFlush >= FLUSH_EVERY || poured !== s.poured || opens)) {
     sinceFlush = 0
     // The curve: one point every ~0.5 s of the furnace's life, from lighting.
@@ -1303,7 +1336,11 @@ export function talkTo(id: string | null): void {
 }
 
 export function crossPortal(to: ZoneId): void {
-  setWorld((s) => ({ zone: to, ring: 'world', held: null, near: null, crossings: s.crossings + 1 }))
+  setWorld((s) => {
+    // S2 moment 1: on Sela's errand the first step into the cold Foundry, before the brief, is the rusted strap.
+    const beat = to === 'foundry' && cartStory(s) && s.prediction == null && s.strap === 'unseen'
+    return { zone: to, ring: 'world', held: null, near: null, crossings: s.crossings + 1, ...(beat ? { room: 'strap' as const, strap: 'shown' as const } : {}) }
+  })
   // The first return to the Landing with a fortnight out settles it — once (settleDispatch ignores a settled one).
   if (to === 'landing') settleKeep()
 }
@@ -1515,6 +1552,165 @@ export function castFacts(s: WorldState): Record<string, string | number | boole
     furnace_reading_c: Math.round(s.furnace.temp),
     sefu_gave_a_number: false,
   }
+}
+
+/* ----------------------------------------------------------------------------
+ * S2 round A3 — the strap, the vice and the repair drawing (lib/bend.ts)
+ * ------------------------------------------------------------------------- */
+
+/** The strap bench stands beside Sefu for a child on Sela's errand. */
+export function strapShown(s: WorldState): boolean {
+  return cartStory(s)
+}
+
+/** Walk up to the strap bench: a camera cut onto the rusted strap and Sela's slate. */
+export function openStrap(): void {
+  setWorld((s) => (s.zone === 'foundry' && strapShown(s) && !s.held ? { room: 'strap', strap: s.strap === 'unseen' ? 'shown' : s.strap } : {}))
+}
+
+/** One tap takes the strap in the hand: the flakes fall, and what it is can be read off it. Only at the bench. */
+export function takeStrap(): void {
+  setWorld((s) => (s.room === 'strap' && s.strap === 'shown' ? { strap: 'taken' } : {}))
+}
+
+/** The vice stands under the east wall's rack whenever the mould stands in the yard. */
+export function viceShown(s: WorldState): boolean {
+  return mouldShown(s)
+}
+
+const NEW_BEND: Bend = initialBend()
+
+/** The vice's state; a new vice until the bench has been opened. */
+export function bendOf(s: WorldState): Bend {
+  return s.supply?.bend ?? NEW_BEND
+}
+
+/** Walk up to the vice: a camera cut side-on to the strips. */
+export function openVice(): void {
+  // Not while carrying: a piece in hand is put down by the explorer, never dropped by a camera cut.
+  setWorld((s) => (s.zone === 'foundry' && viceShown(s) && !s.held ? { room: 'vice' } : {}))
+}
+
+function withBend(f: (v: Bend, sup: Supply) => Bend, also?: (v: Bend) => Partial<Supply>): void {
+  setWorld((s) => {
+    const sup = s.supply
+    if (!sup) return {}
+    const cur = sup.bend ?? NEW_BEND
+    const v = f(cur, sup)
+    return v === cur ? {} : { supply: { ...sup, bend: v, ...(also?.(v) ?? {}) } }
+  })
+}
+
+/** Sefu cuts the test strip from the runner in the recovery tray. No pour, no runner, no strip. */
+export const viceCut = (): void => withBend((v, sup) => cutStrip(v, sup.cast))
+export const vicePredict = (g: Guess): void => withBend((v) => predictStrip(v, g))
+export const viceHang = (): void => withBend(hangIngot)
+export const viceLift = (band: BendBand): void => withBend((v) => liftHanger(v, band))
+export const viceFresh = (): void => withBend(freshStrips)
+
+/** The repair drawing, on its board beside the vice: only once the strips have told their story. */
+export function openDrawing(): void {
+  setWorld((s) => (s.zone === 'foundry' && bendOf(s).done && !s.held ? { room: 'drawing' } : {}))
+}
+
+/** The child points at a part of the drawing, and the drawing moves: its clip starts on the sim clock. */
+export const drawingPick = (part: DrawingPart): void => withBend((v) => pickDrawing(v, part), () => ({ drawnAt: simTime }))
+
+/** "Watch again": the clip from the top. Only once something has been pointed at. */
+export function drawingReplay(): void {
+  setWorld((s) => (s.supply && bendOf(s).pick != null ? { supply: { ...s.supply, drawnAt: simTime } } : {}))
+}
+
+/** Seconds into the drawing's clip, or null when it is not playing. */
+export function drawingElapsed(s: WorldState): number | null {
+  const at = s.supply?.drawnAt
+  return at == null ? null : simTime - at
+}
+
+/** Which beat of its clip the drawing is on: still until something is pointed at, square once it has played. */
+export function drawingBeatOf(s: WorldState): DrawBeat {
+  const el = drawingElapsed(s)
+  if (el == null) return bendOf(s).pick != null ? 'square' : 'still'
+  return drawBeat(el)
+}
+
+/** Where Sefu stands: by the gate, at the mould while there is something in it, at the vice once the kit is cast and his question answered. */
+export type SefuSpot = 'gate' | 'mould' | 'vice'
+export function sefuSpot(s: WorldState): SefuSpot {
+  const sup = s.supply
+  // He does not walk off while the child is still looking at the mould with him.
+  if (sup && kitCast(sup.cast) && sup.cast.why >= 0 && s.room !== 'mould') return 'vice'
+  return mouldLookOf(s) !== 'cold' ? 'mould' : 'gate'
+}
+
+/**
+ * The bend's why. The options' `text` is what the judge weighs; `BEND_SHORT`
+ * is what the child taps; Ploob's line back is built from the child's own
+ * record (`bendWhyLine`).
+ */
+export const BEND_WHY: Why = {
+  ask: 'Why does the gate still get copper?',
+  options: [
+    {
+      key: 'right',
+      text: 'Copper does not rust away in the wet, and the brace carries the weight of the gate: the straps only have to last and keep it straight.',
+      right: true,
+      line: 'Copper lasts in the wet, and the brace takes the weight.',
+    },
+    { key: 'copper_stronger', text: 'Copper is stronger than iron.', right: false, line: 'Iron is the stronger. It is the rust that loses.' },
+    { key: 'only_metal', text: 'Copper is the only metal Sefu had.', right: false, line: 'Sefu has iron: it is in the vice. He picked copper for a gate that stands in the wet.' },
+  ],
+}
+/** What each option is on screen: a few words to tap. */
+export const BEND_SHORT: readonly string[] = ['No rust, and the brace takes the weight', 'Stronger than iron', 'What Sefu had']
+/** Ploob's one nudge when a typed answer is on the right track but stops short. */
+export const BEND_NUDGE = 'Your record has two old strips in it. What did the wet do to each?'
+
+/** Ploob's reasoned line for an answer, in the child's own readings. */
+export function bendWhyLine(s: WorldState, choice: number): string {
+  const r = bendOf(s).readings
+  const opt = BEND_WHY.options[choice]
+  if (!opt) return ''
+  const cu = readingText(STRIP.copper, r.copper)
+  if (opt.key === 'right') return `The rusted strip ${readingText(STRIP.rusted, r.rusted)}. Old copper held as long as new: it ${cu}. ${opt.line}`
+  if (opt.key === 'copper_stronger') return `Your record: copper ${cu}; new iron ${readingText(STRIP.iron, r.iron)}. ${opt.line}`
+  return opt.line
+}
+
+export function answerBendWhy(choice: number): void {
+  withBend((v) => answerBend(v, choice))
+}
+
+/** The same, in the learner's own words, judged: their sentence is kept when it was right. */
+export function answerBendWhyText(text: string, verdict: 'right' | 'partial' | 'misconception' | 'off', misconception: string | null): void {
+  withBend((v) => {
+    if (verdict === 'right') return answerBend(v, BEND_WHY.options.findIndex((o) => o.right), text.trim())
+    if (verdict === 'misconception') return answerBend(v, BEND_WHY.options.findIndex((o) => o.key === misconception))
+    return v
+  })
+}
+
+/** What the learner saw at the vice and the drawing: the facts a judge may weigh. */
+export function bendFacts(s: WorldState): Record<string, string | number | boolean> {
+  const v = bendOf(s)
+  const say = (id: keyof typeof STRIP): string => readingText(STRIP[id], v.readings[id]) || 'not loaded'
+  return {
+    weights: 'copper ingots of 896 g, the same number hung on all four strips at once',
+    new_copper: say('copper'),
+    old_copper: say('oldCopper'),
+    new_iron: say('iron'),
+    rusted_iron: say('rusted'),
+    every_reading_exact: STRIPS.every((st) => exact(v.readings[st.id])),
+    guessed_first_to_give: v.guess == null ? 'none' : v.guess === 'unsure' ? 'not sure' : STRIP[v.guess].label,
+    pointed_at_on_the_drawing: v.pick ?? 'nothing',
+    the_drawing_shows: 'a timber brace carrying the gate leaf; copper straps and copper pins keeping it straight; no iron touching copper',
+    sefu_gave_a_number: false,
+  }
+}
+
+/** Where the vice stands for a band (the HUD's and the suites' one read). */
+export function viceStageOf(s: WorldState, band: BendBand): ReturnType<typeof bendStage> {
+  return bendStage(bendOf(s), band)
 }
 
 export function commitPrediction(n: number): void {

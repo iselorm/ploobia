@@ -14,10 +14,11 @@
  * the strings; the name is fixed across languages (the bible).
  */
 
-import { DOORS, cartStory, furnaceReady, mouldLookOf, type StepId, type WorldState } from './archipelago'
+import { DOORS, bendOf, cartStory, furnaceReady, mouldLookOf, sefuSpot, type StepId, type WorldState } from './archipelago'
+import { bendStage } from './bend'
 
 /** Which set of lines a state calls for. `arrive` and `done` never reach him: he is only in the courtyard, and `done` is the pour. */
-export type SefuMood = Exclude<StepId, 'arrive' | 'done'> | 'poured' | 'bench' | 'heat' | 'left' | 'charged' | 'pouring' | 'cold' | 'short' | 'kit'
+export type SefuMood = Exclude<StepId, 'arrive' | 'done'> | 'poured' | 'bench' | 'heat' | 'left' | 'charged' | 'pouring' | 'cold' | 'short' | 'kit' | 'strap' | 'vice' | 'bent' | 'gate'
 
 export const SEFU_LINES: Record<SefuMood, readonly string[]> = {
   clear: [
@@ -59,6 +60,11 @@ export const SEFU_LINES: Record<SefuMood, readonly string[]> = {
   cold: ["Fire's dropped. I can't pour a thing cold."],
   short: ["Short copper, short strap. Find what's missing."],
   kit: ["Sela's, this one. The bells can wait for a better metal.", 'Now tell me what you changed. I want to know it, not guess it.'],
+  // Round A3 — the strap on arrival, then the vice and the drawing.
+  strap: ["Off the watch's jetty gate. Rusted through. Sela wants ones that won't.", "I can't pour a thing cold. And I've forty bells waiting behind it."],
+  vice: ['You tell me which gives first.'],
+  bent: ['So what would you never make from that strip?'],
+  gate: ['The brace carries the gate. These keep it straight. Smaller job.'],
 }
 
 /** Sefu's lines for the state: the Bench once its door is open, the pour once it has happened, else the step. */
@@ -68,7 +74,15 @@ export function sefuMood(s: WorldState): SefuMood {
     const look = mouldLookOf(s)
     if (look === 'run' || look === 'cool' || look === 'open') return 'pouring'
     if (look === 'short') return 'short'
-    if (look === 'full') return DOORS['door.bench'].unlocked(s) ? 'bench' : 'kit'
+    if (look === 'full') {
+      // The kit is cast and his question answered: once he is at the vice, it and the drawing lead until their why is.
+      const v = bendOf(s)
+      if (sefuSpot(s) === 'vice' && v.why < 0) {
+        const st = bendStage(v)
+        return st === 'drawn' ? 'gate' : st === 'tested' ? 'bent' : 'vice'
+      }
+      return DOORS['door.bench'].unlocked(s) ? 'bench' : 'kit'
+    }
     // Before a pour, charged or not: he says nothing about heat he does not have.
     if (s.supply && !furnaceReady(s)) return 'cold'
     if (look === 'waiting') return 'charged'
@@ -77,6 +91,8 @@ export function sefuMood(s: WorldState): SefuMood {
     // "You left me good copper" is for a child on Sela's errand; anyone else keeps the relight's own lines.
     if (s.poured && cartStory(s)) return 'left'
     if (s.supply && !s.poured) return 'heat'
+    // Arrival, before the brief: the rusted strap is why the furnace is being lit.
+    if (cartStory(s) && !s.supply && !s.poured && s.prediction == null) return 'strap'
   }
   if (DOORS['door.bench'].unlocked(s)) return 'bench'
   if (s.poured) return 'poured'

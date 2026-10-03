@@ -56,6 +56,11 @@ export const HANGER_MAX = 8
 export const TEST_STRIP_CM3 = 10
 export const TEST_STRIP_G = 90
 
+/** What the recovery tray holds once the test strip has been cut from the runner, grams. */
+export function trayG(spareG: number, v: Pick<Bend, 'cut'>): number {
+  return v.cut ? spareG - TEST_STRIP_G : spareG
+}
+
 /** Which strip gives under the least load. */
 export function firstToGive(): StripId {
   return STRIPS.reduce((a, b) => (b.givesAt < a.givesAt ? b : a)).id
@@ -218,3 +223,91 @@ export function answerBend(v: Bend, choice: number, text: string | null = null):
   if (v.pick == null || v.why >= 0 || !Number.isInteger(choice) || choice < 0 || choice >= BEND_WHY_OPTIONS) return v
   return { ...v, why: choice, whyText: text }
 }
+
+/* ----------------------------------------------------------------------------
+ * The repair drawing moves — a few seconds, read off the sim clock
+ * ------------------------------------------------------------------------- */
+
+/**
+ * The clip, in seconds of sim time: the brace is redrawn in copper, the leaf
+ * sags as it gives, holds, the timber brace goes back in, the leaf comes up
+ * square. Watched, not read; nothing is recorded.
+ */
+export const DRAW_BEATS = { copper: 0.5, sag: 1.5, hold: 0.8, timber: 0.5, back: 1.0 } as const
+export const DRAW_TOTAL = 4.3
+/** How far the leaf's latch side drops at the worst, as a shear (drop per unit of width). */
+export const SAG_MAX = 0.14
+export type DrawBeat = 'still' | 'copper' | 'sag' | 'hold' | 'timber' | 'back' | 'square'
+
+const smooth = (t: number): number => {
+  const x = Math.min(1, Math.max(0, t))
+  return x * x * (3 - 2 * x)
+}
+
+/** `elapsed` is seconds since the clip began; null when no clip is running. */
+export function drawBeat(elapsed: number | null): DrawBeat {
+  if (elapsed == null) return 'still'
+  const b = DRAW_BEATS
+  if (elapsed < b.copper) return 'copper'
+  if (elapsed < b.copper + b.sag) return 'sag'
+  if (elapsed < b.copper + b.sag + b.hold) return 'hold'
+  if (elapsed < b.copper + b.sag + b.hold + b.timber) return 'timber'
+  if (elapsed < DRAW_TOTAL) return 'back'
+  return 'square'
+}
+
+/** The leaf's sag at this instant of the clip. */
+export function drawSag(elapsed: number | null): number {
+  if (elapsed == null) return 0
+  const b = DRAW_BEATS
+  switch (drawBeat(elapsed)) {
+    case 'sag':
+      return SAG_MAX * smooth((elapsed - b.copper) / b.sag)
+    case 'hold':
+    case 'timber':
+      return SAG_MAX
+    case 'back':
+      return SAG_MAX * (1 - smooth((elapsed - b.copper - b.sag - b.hold - b.timber) / b.back))
+    default:
+      return 0
+  }
+}
+
+/** The brace is drawn in copper from the first beat until the timber one goes back in. */
+export function braceCopper(elapsed: number | null): boolean {
+  const beat = drawBeat(elapsed)
+  return beat === 'copper' || beat === 'sag' || beat === 'hold'
+}
+
+/* ----------------------------------------------------------------------------
+ * Where the numbers come from (the journal shows these)
+ * ------------------------------------------------------------------------- */
+
+export interface BendSource {
+  claim: string
+  basis: 'sourced' | 'modelled'
+  source: string
+}
+
+export const BEND_SOURCES: readonly BendSource[] = [
+  {
+    claim: 'Iron needs air and water to rust, and rust is porous and flaky: it does not protect the iron under it.',
+    basis: 'sourced',
+    source: 'RSC Education, “What causes iron to rust?”; J. Clark, Chemguide, “Rusting of iron”.',
+  },
+  {
+    claim: 'Copper weathers to a skin and then stops: that is why it lasts in the wet.',
+    basis: 'sourced',
+    source: 'Copper Development Association, Architecture Design Handbook, “Fundamentals”.',
+  },
+  {
+    claim: 'Sound iron is stronger and stiffer than copper.',
+    basis: 'sourced',
+    source: 'Yield strength: annealed copper about 33 MPa, wrought iron 160–220 MPa. Young’s modulus: copper 110–128 GPa, wrought iron about 190 GPa (handbook values).',
+  },
+  {
+    claim: 'The ingot counts at the vice: 3, 3, 8 and 2.',
+    basis: 'modelled',
+    source: 'Authored test strips, sized so each answer is a whole number of ingots. The order is real; the counts are ours.',
+  },
+]
